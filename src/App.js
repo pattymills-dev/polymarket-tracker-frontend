@@ -113,35 +113,53 @@ const PolymarketTracker = () => {
     }).format(amount || 0);
   };
 
-  const formatTimestamp = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diff = Math.floor((now - date) / 1000);
-      
-      // Blockchain timestamps can be slightly in the future
-      // If timestamp is in the future (within 15 minutes), treat as "just now"
-      if (diff < 0 && diff > -900) {
-        return 'just now';
-      }
-      
-      // If way in the future, something is wrong
-      if (diff < -900) {
-        return 'invalid date';
-      }
-      
-      if (diff < 60) return `${diff}s ago`;
-      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-      if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-      
-      // For older dates, show actual date
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } catch (error) {
-      return 'N/A';
-    }
-  };
+  const toMs = (ts) => {
+  if (ts == null) return null;
+
+  // If it's already a Date
+  if (ts instanceof Date) return ts.getTime();
+
+  // If it's a string (ISO, etc.)
+  if (typeof ts === 'string') {
+    const parsed = Date.parse(ts);
+    if (Number.isFinite(parsed)) return parsed;
+
+    // If the string is actually a number like "1768412028"
+    const asNum = Number(ts);
+    if (Number.isFinite(asNum)) ts = asNum;
+    else return null;
+  }
+
+  // If it's a number (seconds or ms)
+  if (typeof ts === 'number') {
+    // seconds are ~1e9 to 1e10; ms are ~1e12 to 1e13
+    return ts < 1e12 ? ts * 1000 : ts;
+  }
+
+  return null;
+};
+
+const formatTimestamp = (ts) => {
+  const ms = toMs(ts);
+  if (!ms) return 'N/A';
+
+  const date = new Date(ms);
+  const now = new Date();
+  const diffSeconds = Math.floor((now.getTime() - ms) / 1000);
+
+  // If it's slightly in the future (clock skew / indexing delay), treat as "just now"
+  if (diffSeconds < 0 && diffSeconds > -900) return 'just now';
+
+  // If it's way in the future, show the absolute time so we can debug (don't hide it)
+  if (diffSeconds <= -900) return date.toLocaleString();
+
+  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+  if (diffSeconds < 604800) return `${Math.floor(diffSeconds / 86400)}d ago`;
+
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
 
   const filteredBets = largeBets.filter(bet => {
     if (bet.amount < minBetSize) return false;
@@ -506,7 +524,7 @@ const PolymarketTracker = () => {
           </p>
         </div>
       </div>
-    </div>
+    </div> 
   );
 };
 
