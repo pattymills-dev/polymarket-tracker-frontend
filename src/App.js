@@ -148,18 +148,32 @@ const formatTimestamp = (ts) => {
   const diffSeconds = Math.floor((now.getTime() - ms) / 1000);
 
   // If it's slightly in the future (clock skew / indexing delay), treat as "just now"
-  if (diffSeconds < 0 && diffSeconds > -900) return 'just now';
+ // Slightly in the future (indexing / block timing)
+if (diffSeconds < 0 && diffSeconds > -900) {
+  return 'just now';
+}
 
-  // If it's way in the future, show the absolute time so we can debug (don't hide it)
-  if (diffSeconds <= -900) return date.toLocaleString();
+// Way in the future – show absolute local time so it's obvious
+if (diffSeconds <= -900) {
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
 
-  if (diffSeconds < 60) return `${diffSeconds}s ago`;
-  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
-  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
-  if (diffSeconds < 604800) return `${Math.floor(diffSeconds / 86400)}d ago`;
+if (diffSeconds < 60) return `${diffSeconds}s ago`;
+if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
 
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
+// Older than 24h → show absolute local time
+return date.toLocaleString(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit'
+});
 
   const filteredBets = largeBets.filter(bet => {
     if (bet.amount < minBetSize) return false;
