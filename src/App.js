@@ -114,68 +114,59 @@ const PolymarketTracker = () => {
   };
 
   const toMs = (ts) => {
-  if (ts == null) return null;
+    if (ts == null) return null;
+    if (ts instanceof Date) return ts.getTime();
 
-  // If it's already a Date
-  if (ts instanceof Date) return ts.getTime();
+    if (typeof ts === 'string') {
+      const parsed = Date.parse(ts);
+      if (Number.isFinite(parsed)) return parsed;
 
-  // If it's a string (ISO, etc.)
-  if (typeof ts === 'string') {
-    const parsed = Date.parse(ts);
-    if (Number.isFinite(parsed)) return parsed;
+      const asNum = Number(ts);
+      if (Number.isFinite(asNum)) ts = asNum;
+      else return null;
+    }
 
-    // If the string is actually a number like "1768412028"
-    const asNum = Number(ts);
-    if (Number.isFinite(asNum)) ts = asNum;
-    else return null;
-  }
+    if (typeof ts === 'number') {
+      return ts < 1e12 ? ts * 1000 : ts;
+    }
 
-  // If it's a number (seconds or ms)
-  if (typeof ts === 'number') {
-    // seconds are ~1e9 to 1e10; ms are ~1e12 to 1e13
-    return ts < 1e12 ? ts * 1000 : ts;
-  }
+    return null;
+  };
 
-  return null;
-};
+  const formatTimestamp = (ts) => {
+    const ms = toMs(ts);
+    if (!ms) return 'N/A';
 
-const formatTimestamp = (ts) => {
-  const ms = toMs(ts);
-  if (!ms) return 'N/A';
+    const date = new Date(ms);
+    const nowMs = Date.now();
+    const diffSeconds = Math.floor((nowMs - ms) / 1000);
 
-  const date = new Date(ms);
-  const now = new Date();
-  const diffSeconds = Math.floor((now.getTime() - ms) / 1000);
+    if (diffSeconds < 0 && diffSeconds > -900) {
+      return 'just now';
+    }
 
-  // If it's slightly in the future (clock skew / indexing delay), treat as "just now"
- // Slightly in the future (indexing / block timing)
-if (diffSeconds < 0 && diffSeconds > -900) {
-  return 'just now';
-}
+    if (diffSeconds <= -900) {
+      return date.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    }
 
-// Way in the future – show absolute local time so it's obvious
-if (diffSeconds <= -900) {
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
-  });
-}
+    if (diffSeconds < 60) return `${diffSeconds}s ago`;
+    if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+    if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
 
-if (diffSeconds < 60) return `${diffSeconds}s ago`;
-if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
-if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  };
 
-// Older than 24h → show absolute local time
-return date.toLocaleString(undefined, {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit'
-});
-
-  const filteredBets = largeBets.filter(bet => {
+  const filteredBets = largeBets.filter((bet) => {
     if (bet.amount < minBetSize) return false;
     return true;
   });
