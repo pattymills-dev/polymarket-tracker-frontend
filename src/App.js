@@ -22,53 +22,52 @@ const PolymarketTracker = () => {
   const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtdWt0bGdjbHd2YXhuZHV1aW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMzI0MTQsImV4cCI6MjA4MzkwODQxNH0.tZMxayi3YL7DzUeG2_YcAfZzZDxMsO16RGurS-MiBUo';
 
-  // Fetch data from Supabase Edge Functions
+  // Fetch data from Supabase
   const fetchData = async () => {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const headers = {
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json'
-    };
+      const headers = {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      };
 
-    // Fetch stats
-    const statsRes = await fetch(`${SUPABASE_URL}/functions/v1/get-stats/market-stats`, { headers });
-    const statsData = await statsRes.json();
-    setMarketStats(statsData[0] || {});
+      // Fetch markets directly from database
+      const marketsRes = await fetch(`${SUPABASE_URL}/rest/v1/markets?order=updated_at.desc&limit=50`, { headers });
+      const markets = await marketsRes.json();
 
-    // Fetch markets directly from Supabase
-    const marketsRes = await fetch(`${SUPABASE_URL}/rest/v1/markets?limit=50`, { 
-      headers: {
-        ...headers,
-        'apikey': SUPABASE_ANON_KEY
-      }
-    });
-    const markets = await marketsRes.json();
+      // Display as bets
+      const displayBets = markets.map((market, idx) => ({
+        id: market.id,
+        markets: {
+          question: market.question,
+          category: market.category
+        },
+        trader_address: 'N/A',
+        amount: market.volume || 0,
+        outcome: 'Active',
+        price: 0,
+        timestamp: market.updated_at,
+        tx_hash: market.id
+      }));
 
-    // Display as "bets"
-    const displayBets = markets.map((market, idx) => ({
-      id: market.id,
-      markets: {
-        question: market.question,
-        category: market.category
-      },
-      trader_address: 'N/A',
-      amount: market.volume || 0,
-      outcome: 'N/A',
-      price: 0,
-      timestamp: market.created_at,
-      tx_hash: market.id
-    }));
+      setLargeBets(displayBets);
+      
+      setMarketStats({
+        total_volume_24h: 0,
+        total_trades_24h: 0,
+        active_markets: markets.length,
+        unique_traders_24h: 0
+      });
 
-    setLargeBets(displayBets);
-    setLoading(false);
-    setLastUpdate(new Date());
-  } catch (error) {
-    console.error('Error:', error);
-    setLoading(false);
-  }
-};
+      setLoading(false);
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Error:', error);
+      setLoading(false);
+    }
+  };
 
   // Trigger data sync
   const syncData = async () => {
@@ -80,12 +79,6 @@ const PolymarketTracker = () => {
 
       // Trigger market sync
       await fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
-        method: 'POST',
-        headers
-      });
-
-      // Trigger trade sync
-      await fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
         method: 'POST',
         headers
       });
@@ -135,6 +128,11 @@ const PolymarketTracker = () => {
     return `${Math.floor(diff / 86400)}d ago`;
   };
 
+  const filteredBets = largeBets.filter(bet => {
+    if (selectedCategory === 'all') return true;
+    return bet.markets?.category === selectedCategory;
+  });
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-6">
       <div className="max-w-7xl mx-auto">
@@ -160,18 +158,6 @@ const PolymarketTracker = () => {
                 Sync Data
               </button>
               <button
-                onClick={() => setShowAlerts(!showAlerts)}
-                className="relative px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors flex items-center gap-2"
-              >
-                <Bell className="w-5 h-5" />
-                Alerts
-                {alerts.length > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center">
-                    {alerts.length}
-                  </span>
-                )}
-              </button>
-              <button
                 onClick={fetchData}
                 disabled={loading}
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
@@ -182,45 +168,6 @@ const PolymarketTracker = () => {
             </div>
           </div>
         </div>
-
-        {/* Alerts Panel */}
-        {showAlerts && (
-          <div className="mb-6 bg-orange-900/30 backdrop-blur-sm rounded-lg p-4 border border-orange-500/30">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold flex items-center gap-2">
-                <Bell className="w-5 h-5 text-orange-400" />
-                Recent Alerts
-              </h3>
-              <button
-                onClick={() => setAlerts([])}
-                className="text-sm text-gray-400 hover:text-white"
-              >
-                Clear All
-              </button>
-            </div>
-            {alerts.length === 0 ? (
-              <p className="text-gray-400 text-sm">No alerts yet. They'll appear when large bets are detected.</p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {alerts.slice(0, 10).map((alert, idx) => (
-                  <div key={idx} className="bg-slate-800/50 rounded p-3 border border-orange-500/20">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                          alert.type === 'mega_whale' ? 'bg-red-600/30 text-red-300' : 'bg-blue-600/30 text-blue-300'
-                        }`}>
-                          {alert.type === 'mega_whale' ? '🐋 MEGA WHALE' : '🐳 WHALE'}
-                        </span>
-                        <p className="text-sm mt-2">{alert.message}</p>
-                        <p className="text-xs text-gray-400 mt-1">{formatTimestamp(alert.created_at)}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Filters */}
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-4 mb-6 border border-purple-500/20">
@@ -243,7 +190,7 @@ const PolymarketTracker = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Min Bet Size</label>
+              <label className="block text-sm text-gray-400 mb-2">Min Volume</label>
               <input 
                 type="number"
                 value={minBetSize}
@@ -311,130 +258,37 @@ const PolymarketTracker = () => {
         {loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-400 mx-auto"></div>
-            <p className="mt-4 text-gray-400">Loading whale activity...</p>
+            <p className="mt-4 text-gray-400">Loading markets...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Large Bets Feed */}
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 gap-6">
+            {/* Markets Feed */}
+            <div>
               <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-purple-500/20">
                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                   <AlertCircle className="w-6 h-6 text-purple-400" />
-                  Large Bets Feed
+                  Active Markets
                 </h2>
-                {largeBets.length === 0 ? (
+                {filteredBets.length === 0 ? (
                   <div className="text-center py-12">
-                    <p className="text-gray-400">No large bets found. Click "Sync Data" to fetch latest trades.</p>
+                    <p className="text-gray-400">No markets found. Click "Sync Data" to fetch latest markets.</p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {largeBets.map((bet, idx) => {
-                      const isWatched = watchedTraders.includes(bet.trader_address);
-                      return (
-                        <div key={idx} className={`bg-slate-700/50 rounded-lg p-4 border transition-colors ${
-                          isWatched ? 'border-yellow-500/50' : 'border-slate-600 hover:border-purple-500/50'
-                        }`}>
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="px-2 py-0.5 bg-purple-600/30 rounded text-xs font-semibold uppercase">
-                                  {bet.markets?.category || 'other'}
-                                </span>
-                                <span className="text-xs text-gray-400">{formatTimestamp(bet.timestamp)}</span>
-                                {isWatched && (
-                                  <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                                )}
-                              </div>
-                              <h3 className="font-semibold text-lg mb-1">{bet.markets?.question || 'Market'}</h3>
-                              <p className="text-sm text-gray-400">
-                                Trader: <span className="text-purple-400 font-mono">{bet.trader_address}</span>
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-2xl font-bold text-green-400">{formatCurrency(bet.amount)}</p>
-                              <p className="text-sm text-gray-400">on {bet.outcome}</p>
-                            </div>
-                          </div>
-                          <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-600">
-                            <span className="text-gray-400">Price: <span className="text-white font-semibold">{(bet.price * 100).toFixed(0)}¢</span></span>
-                            <span className="text-xs text-gray-500 font-mono">{bet.tx_hash?.substring(0, 10)}...</span>
-                          </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredBets.map((bet, idx) => (
+                      <div key={idx} className="bg-slate-700/50 rounded-lg p-4 border border-slate-600 hover:border-purple-500/50 transition-colors">
+                        <div className="mb-2">
+                          <span className="px-2 py-0.5 bg-purple-600/30 rounded text-xs font-semibold uppercase">
+                            {bet.markets?.category || 'other'}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Top Traders Leaderboard */}
-            <div className="lg:col-span-1">
-              <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-purple-500/20 sticky top-6">
-                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                  <Trophy className="w-6 h-6 text-yellow-400" />
-                  Top Traders
-                </h2>
-                
-                {topTraders.length === 0 ? (
-                  <div className="text-center py-12">
-                    <p className="text-gray-400 text-sm">No trader data yet. Sync data to populate.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {topTraders.map((trader, index) => {
-                      const isWatched = watchedTraders.includes(trader.address);
-                      const winRate = trader.win_rate || 0;
-                      return (
-                        <div 
-                          key={trader.address} 
-                          className={`bg-slate-700/50 rounded-lg p-4 border cursor-pointer hover:border-purple-500/50 transition-colors ${
-                            isWatched ? 'border-yellow-500/50' : 'border-slate-600'
-                          }`}
-                          onClick={() => setSelectedTrader(trader)}
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-2 flex-1">
-                              <span className="text-2xl font-bold text-purple-400">#{index + 1}</span>
-                              <div className="flex-1">
-                                <p className="font-mono text-sm text-purple-300">{trader.address}</p>
-                                <p className="text-xs text-gray-400">{formatTimestamp(trader.last_activity)}</p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleWatchTrader(trader.address);
-                              }}
-                              className={`transition-colors ${
-                                isWatched ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-400'
-                              }`}
-                            >
-                              <Star className={`w-5 h-5 ${isWatched ? 'fill-yellow-400' : ''}`} />
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm mt-3">
-                            <div>
-                              <p className="text-gray-400">Win Rate</p>
-                              <p className="font-bold text-green-400">{(winRate * 100).toFixed(1)}%</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-400">Volume</p>
-                              <p className="font-bold">{formatCurrency(trader.total_volume)}</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-400">Bets</p>
-                              <p className="font-bold">{trader.total_bets}</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-400">P/L</p>
-                              <p className={`font-bold ${trader.profit_loss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {trader.profit_loss >= 0 ? '+' : ''}{formatCurrency(trader.profit_loss)}
-                              </p>
-                            </div>
-                          </div>
+                        <h3 className="font-semibold text-lg mb-2">{bet.markets?.question || 'Market'}</h3>
+                        <div className="flex justify-between items-center text-sm text-gray-400">
+                          <span>Volume: {formatCurrency(bet.amount)}</span>
+                          <span>{formatTimestamp(bet.timestamp)}</span>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -444,10 +298,9 @@ const PolymarketTracker = () => {
 
         {/* Info Note */}
         <div className="mt-6 bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-          <h3 className="font-semibold mb-2 text-blue-300">🎉 You're Running on Real Data!</h3>
+          <h3 className="font-semibold mb-2 text-blue-300">🎉 Live Polymarket Data!</h3>
           <p className="text-sm text-gray-300">
-            This tracker is now powered by Supabase Edge Functions fetching real data from Polymarket. 
-            Click "Sync Data" to manually fetch the latest markets and trades. Data auto-refreshes every minute when enabled.
+            Showing current active markets from Polymarket. Click "Sync Data" to fetch the latest markets from Polymarket's API.
           </p>
         </div>
       </div>
