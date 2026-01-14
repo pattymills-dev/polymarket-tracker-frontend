@@ -114,16 +114,28 @@ const PolymarketTracker = () => {
   };
 
   const formatTimestamp = (dateString) => {
-    if (!dateString) return 'N/A';
+  if (!dateString) return 'N/A';
+  try {
     const date = new Date(dateString);
     const now = new Date();
     const diff = Math.floor((now - date) / 1000);
     
+    // Handle future dates (shouldn't happen but just in case)
+    if (diff < 0) {
+      return 'just now';
+    }
+    
     if (diff < 60) return `${diff}s ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
-  };
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    
+    // For older dates, show actual date
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch (error) {
+    return 'N/A';
+  }
+};
 
   const filteredBets = largeBets.filter(bet => {
     if (bet.amount < minBetSize) return false;
