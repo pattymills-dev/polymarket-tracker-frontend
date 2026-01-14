@@ -485,9 +485,14 @@ const PolymarketTracker = () => {
                                 )}
                               </div>
 
-                              <h3 className="font-semibold text-slate-100 leading-snug">
-                                {bet.market_id}
-                              </h3>
+                              <a
+  href={bet.market_slug ? `https://polymarket.com/market/${bet.market_slug}` : undefined}
+  target="_blank"
+  rel="noreferrer"
+  className="font-semibold text-lg mb-1 hover:underline block"
+>
+  {bet.market_title || bet.market_slug || bet.market_id}
+</a>
 
                               <p className="text-sm text-slate-400 mt-2">
                                 Trader:{' '}
