@@ -99,21 +99,21 @@ const PolymarketTracker = () => {
     });
   };
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
+  const tradesRes = await fetch(
+  `${SUPABASE_URL}/rest/v1/trades?amount=gte.${minBetSize}&order=timestamp.desc&limit=100`,
+  { headers }
+);
 
-      // Trades (include market question if you have FK relation named markets)
-      const tradesUrl =
-        `${SUPABASE_URL}/rest/v1/trades` +
-        `?select=*,markets(question)` +
-        `&amount=gte.${minBetSize}` +
-        `&order=timestamp.desc` +
-        `&limit=100`;
+const tradesJson = await tradesRes.json();
 
-      const tradesRes = await fetch(tradesUrl, { headers, cache: 'no-store' });
-      if (!tradesRes.ok) throw new Error(`Trades fetch failed: ${tradesRes.status}`);
-      const trades = await tradesRes.json();
+if (!tradesRes.ok) {
+  console.error('Trades error:', tradesJson);
+  setLargeBets([]);
+  setLoading(false);
+  return;
+}
+
+const trades = tradesJson;
 
       const tradersUrl =
         `${SUPABASE_URL}/rest/v1/traders` + `?order=total_volume.desc&limit=20`;
