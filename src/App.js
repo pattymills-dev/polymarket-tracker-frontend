@@ -99,52 +99,62 @@ const PolymarketTracker = () => {
     });
   };
 
-  const tradesRes = await fetch(
-  `${SUPABASE_URL}/rest/v1/trades?amount=gte.${minBetSize}&order=timestamp.desc&limit=100`,
-  { headers }
-);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
 
-const tradesJson = await tradesRes.json();
+      const tradesRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/trades?amount=gte.${minBetSize}&order=timestamp.desc&limit=100`,
+        { headers }
+      );
+      const tradesJson = await tradesRes.json();
 
-if (!tradesRes.ok) {
-  console.error('Trades error:', tradesJson);
-  setLargeBets([]);
-  setLoading(false);
-  return;
-}
+      if (!tradesRes.ok) {
+        console.error('Trades error:', tradesJson);
+        setLargeBets([]);
+        return;
+      }
 
-const trades = tradesJson;
+      const tradersRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/traders?order=total_volume.desc&limit=20`,
+        { headers }
+      );
+      const tradersJson = await tradersRes.json();
 
-      const tradersUrl =
-        `${SUPABASE_URL}/rest/v1/traders` + `?order=total_volume.desc&limit=20`;
+      if (!tradersRes.ok) {
+        console.error('Traders error:', tradersJson);
+        setTopTraders([]);
+      } else {
+        setTopTraders(Array.isArray(tradersJson) ? tradersJson : []);
+      }
 
-      const tradersRes = await fetch(tradersUrl, { headers, cache: 'no-store' });
-      if (!tradersRes.ok) throw new Error(`Traders fetch failed: ${tradersRes.status}`);
-      const traders = await tradersRes.json();
+      const alertsRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/alerts?order=created_at.desc&limit=50`,
+        { headers }
+      );
+      const alertsJson = await alertsRes.json();
 
-      const alertsUrl =
-        `${SUPABASE_URL}/rest/v1/alerts` + `?order=created_at.desc&limit=50`;
+      if (!alertsRes.ok) {
+        console.error('Alerts error:', alertsJson);
+        setAlerts([]);
+      } else {
+        setAlerts(Array.isArray(alertsJson) ? alertsJson : []);
+      }
 
-      const alertsRes = await fetch(alertsUrl, { headers, cache: 'no-store' });
-      if (!alertsRes.ok) throw new Error(`Alerts fetch failed: ${alertsRes.status}`);
-      const alertsData = await alertsRes.json();
+      const trades = Array.isArray(tradesJson) ? tradesJson : [];
+      setLargeBets(trades);
 
-      setLargeBets(Array.isArray(trades) ? trades : []);
-      setTopTraders(Array.isArray(traders) ? traders : []);
-      setAlerts(Array.isArray(alertsData) ? alertsData : []);
-
-      const totalVol = (trades || []).reduce((sum, t) => sum + Number(t.amount || 0), 0);
+      const totalVol = trades.reduce((sum, t) => sum + Number(t.amount || 0), 0);
       setMarketStats({
         total_volume_24h: totalVol,
-        total_trades_24h: trades?.length || 0,
-        active_markets: 0, // optional: compute if you store markets
-        unique_traders_24h: new Set((trades || []).map((t) => t.trader_address)).size
+        total_trades_24h: trades.length,
+        active_markets: 0,
+        unique_traders_24h: new Set(trades.map((t) => t.trader_address)).size
       });
 
       setLastUpdate(new Date());
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(err);
+    } catch (error) {
+      console.error('Error:', error);
     } finally {
       setLoading(false);
     }
@@ -167,21 +177,16 @@ const trades = tradesJson;
         headers: fnHeaders
       });
 
-      // If either fails, show in console
       if (!marketsResp.ok) {
-        // eslint-disable-next-line no-console
         console.error('fetch-markets failed', marketsResp.status, await marketsResp.text());
       }
       if (!tradesResp.ok) {
-        // eslint-disable-next-line no-console
         console.error('fetch-trades failed', tradesResp.status, await tradesResp.text());
       }
 
-      // Refresh after a beat
       setTimeout(() => fetchData(), 1500);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Error syncing:', err);
+    } catch (error) {
+      console.error('Error syncing:', error);
     }
   };
 
@@ -294,10 +299,7 @@ const trades = tradesJson;
                 {alerts.slice(0, 20).map((alert, idx) => {
                   const isMega = alert.type === 'mega_whale';
                   return (
-                    <div
-                      key={idx}
-                      className="bg-slate-950 rounded-md border border-slate-800 p-3"
-                    >
+                    <div key={idx} className="bg-slate-950 rounded-md border border-slate-800 p-3">
                       <div className="flex items-center gap-2">
                         <span
                           className={`text-[11px] font-semibold px-2 py-1 rounded-md border ${
@@ -460,8 +462,6 @@ const trades = tradesJson;
                   <div className="space-y-3">
                     {filteredBets.map((bet, idx) => {
                       const isWatched = watchedTraders.includes(bet.trader_address);
-                      const question = bet.markets?.question;
-
                       return (
                         <div
                           key={idx}
@@ -485,8 +485,8 @@ const trades = tradesJson;
                                 )}
                               </div>
 
-                              <h3 className="font-semibold text-slate-100 leading-snug line-clamp-2">
-                                {question || bet.market_id}
+                              <h3 className="font-semibold text-slate-100 leading-snug">
+                                {bet.market_id}
                               </h3>
 
                               <p className="text-sm text-slate-400 mt-2">
@@ -557,7 +557,6 @@ const trades = tradesJson;
                   <div className="space-y-3">
                     {visibleTraders.map((trader, index) => {
                       const isWatched = watchedTraders.includes(trader.address);
-
                       return (
                         <div
                           key={trader.address}
@@ -594,7 +593,9 @@ const trades = tradesJson;
                               aria-label="Toggle watchlist"
                             >
                               <Star
-                                className={`w-5 h-5 ${isWatched ? 'fill-cyan-300 text-cyan-300' : ''}`}
+                                className={`w-5 h-5 ${
+                                  isWatched ? 'fill-cyan-300 text-cyan-300' : ''
+                                }`}
                               />
                             </button>
                           </div>
