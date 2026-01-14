@@ -122,10 +122,12 @@ const formatTimestamp = (ts) => {
     try {
       setLoading(true);
 
-      const tradesRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/trades?amount=gte.${minBetSize}&order=timestamp.desc&limit=100`,
-        { headers }
-      );
+     const FEED_LIMIT = 500;
+
+const tradesRes = await fetch(
+  `${SUPABASE_URL}/rest/v1/trades?amount=gte.${minBetSize}&order=timestamp.desc&limit=${FEED_LIMIT}`,
+  { headers }
+);
       const tradesJson = await tradesRes.json();
 
       if (!tradesRes.ok) {
@@ -478,7 +480,7 @@ const formatTimestamp = (ts) => {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="max-h-[70vh] overflow-y-auto pr-2 space-y-3">
                     {filteredBets.map((bet, idx) => {
                       const isWatched = watchedTraders.includes(bet.trader_address);
                       return (
