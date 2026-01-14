@@ -24,44 +24,51 @@ const PolymarketTracker = () => {
 
   // Fetch data from Supabase Edge Functions
   const fetchData = async () => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const headers = {
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      };
+    const headers = {
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json'
+    };
 
-      // Fetch market stats
-      const statsRes = await fetch(`${SUPABASE_URL}/functions/v1/get-stats/market-stats`, { headers });
-      const statsData = await statsRes.json();
-      setMarketStats(statsData[0] || {});
+    // Fetch stats
+    const statsRes = await fetch(`${SUPABASE_URL}/functions/v1/get-stats/market-stats`, { headers });
+    const statsData = await statsRes.json();
+    setMarketStats(statsData[0] || {});
 
-      // Fetch large bets
-      const betsRes = await fetch(
-        `${SUPABASE_URL}/functions/v1/get-stats/large-bets?minAmount=${minBetSize}&category=${selectedCategory}&limit=50`,
-        { headers }
-      );
-      const betsData = await betsRes.json();
-      setLargeBets(betsData || []);
+    // Fetch markets directly from Supabase
+    const marketsRes = await fetch(`${SUPABASE_URL}/rest/v1/markets?limit=50`, { 
+      headers: {
+        ...headers,
+        'apikey': SUPABASE_ANON_KEY
+      }
+    });
+    const markets = await marketsRes.json();
 
-      // Fetch top traders
-      const tradersRes = await fetch(`${SUPABASE_URL}/functions/v1/get-stats/top-traders?limit=20`, { headers });
-      const tradersData = await tradersRes.json();
-      setTopTraders(tradersData || []);
+    // Display as "bets"
+    const displayBets = markets.map((market, idx) => ({
+      id: market.id,
+      markets: {
+        question: market.question,
+        category: market.category
+      },
+      trader_address: 'N/A',
+      amount: market.volume || 0,
+      outcome: 'N/A',
+      price: 0,
+      timestamp: market.created_at,
+      tx_hash: market.id
+    }));
 
-      // Fetch alerts
-      const alertsRes = await fetch(`${SUPABASE_URL}/functions/v1/get-stats/alerts?limit=50`, { headers });
-      const alertsData = await alertsRes.json();
-      setAlerts(alertsData || []);
-
-      setLoading(false);
-      setLastUpdate(new Date());
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      setLoading(false);
-    }
-  };
+    setLargeBets(displayBets);
+    setLoading(false);
+    setLastUpdate(new Date());
+  } catch (error) {
+    console.error('Error:', error);
+    setLoading(false);
+  }
+};
 
   // Trigger data sync
   const syncData = async () => {
