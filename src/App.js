@@ -53,51 +53,70 @@ const PolymarketTracker = () => {
     }).format(Number(amount || 0));
 
   const toMs = (ts) => {
-    if (ts == null) return null;
+  if (ts == null) return null;
 
-    if (ts instanceof Date) return ts.getTime();
+  // Date object
+  if (ts instanceof Date) return ts.getTime();
 
-    if (typeof ts === 'string') {
-      const parsed = Date.parse(ts);
-      if (Number.isFinite(parsed)) return parsed;
+  // Numeric string or ISO string
+  if (typeof ts === "string") {
+    // If it's an ISO-like string but missing timezone ("Z" or +/-hh:mm),
+    // treat it as UTC by appending "Z".
+    const looksIso = /^\d{4}-\d{2}-\d{2}T/.test(ts);
+    const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(ts);
+    const normalized = looksIso && !hasTz ? `${ts}Z` : ts;
 
-      const asNum = Number(ts);
-      if (Number.isFinite(asNum)) ts = asNum;
-      else return null;
-    }
+    const parsed = Date.parse(normalized);
+    if (Number.isFinite(parsed)) return parsed;
 
-    if (typeof ts === 'number') {
-      // seconds are ~1e9..1e10; ms are ~1e12..1e13
-      return ts < 1e12 ? ts * 1000 : ts;
-    }
+    // If the string is actually a number like "1768412028"
+    const asNum = Number(ts);
+    if (Number.isFinite(asNum)) ts = asNum;
+    else return null;
+  }
 
-    return null;
-  };
+  // Number (seconds or ms)
+  if (typeof ts === "number") {
+    return ts < 1e12 ? ts * 1000 : ts; // seconds -> ms
+  }
 
-  const formatTimestamp = (ts) => {
-    const ms = toMs(ts);
-    if (!ms) return 'N/A';
+  return null;
+};
 
-    const nowMs = Date.now();
-    const diffSeconds = Math.floor((nowMs - ms) / 1000);
-    const date = new Date(ms);
+const formatTimestamp = (ts) => {
+  const ms = toMs(ts);
+  if (!ms) return "N/A";
 
-    // Slightly in the future (indexing / clock skew)
-    if (diffSeconds < 0 && diffSeconds > -300) return 'just now';
+  const nowMs = Date.now();
+  const diffSeconds = Math.floor((nowMs - ms) / 1000);
+  const date = new Date(ms);
 
-    if (diffSeconds < 60) return `${diffSeconds}s ago`;
-    if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
-    if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
-    if (diffSeconds < 604800) return `${Math.floor(diffSeconds / 86400)}d ago`;
+  // Future timestamps: never show "-123s ago"
+  if (diffSeconds < 0) {
+    // If it's only slightly ahead (indexing / block timing), call it "just now"
+    if (diffSeconds > -300) return "just now";
 
-    // Older: show local date/time (not UTC)
+    // Otherwise show absolute local time (so it’s obvious)
     return date.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
     });
-  };
+  }
+
+  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+
+  // Older than 24h -> show absolute local time
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
 
   const fetchData = async () => {
     try {
