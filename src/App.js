@@ -63,30 +63,34 @@ const PolymarketTracker = () => {
   };
 
   const syncData = async () => {
-    try {
-      const headers = {
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      };
+  try {
+    const headers = {
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json'
+    };
 
-      // Trigger market and trade sync
-      await fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
-        method: 'POST',
-        headers
-      });
+    const marketsResp = await fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
+      method: 'POST',
+      headers
+    });
 
-      await fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
-        method: 'POST',
-        headers
-      });
+    const marketsText = await marketsResp.text();
+    console.log('fetch-markets status:', marketsResp.status, marketsText);
 
-      // Refresh data
-      setTimeout(() => fetchData(), 2000);
-    } catch (error) {
-      console.error('Error syncing:', error);
-    }
-  };
+    const tradesResp = await fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
+      method: 'POST',
+      headers
+    });
 
+    const tradesText = await tradesResp.text();
+    console.log('fetch-trades status:', tradesResp.status, tradesText);
+
+    // Refresh data
+    setTimeout(() => fetchData(), 2000);
+  } catch (error) {
+    console.error('Error syncing:', error);
+  }
+};
   useEffect(() => {
     fetchData();
     
