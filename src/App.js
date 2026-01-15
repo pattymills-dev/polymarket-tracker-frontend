@@ -58,18 +58,27 @@ const PolymarketTracker = () => {
   // Date object
   if (ts instanceof Date) return ts.getTime();
 
-  // Numeric string or ISO string
+  // String
   if (typeof ts === "string") {
-    // If it's an ISO-like string but missing timezone ("Z" or +/-hh:mm),
-    // treat it as UTC by appending "Z".
-    const looksIso = /^\d{4}-\d{2}-\d{2}T/.test(ts);
-    const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(ts);
-    const normalized = looksIso && !hasTz ? `${ts}Z` : ts;
+    let s = ts.trim();
 
-    const parsed = Date.parse(normalized);
+    // If Postgres-style "YYYY-MM-DD HH:MM:SS" (no timezone), normalize to ISO.
+    // We assume it's UTC because your backend creates ISO strings from epoch seconds (UTC).
+    // Supabase may drop the "T" and "Z" depending on column type/format.
+    const looksPg = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s);
+    if (looksPg) {
+      s = s.replace(" ", "T");
+    }
+
+    // If it's ISO-like but missing timezone, treat as UTC by appending "Z"
+    const looksIso = /^\d{4}-\d{2}-\d{2}T/.test(s);
+    const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(s);
+    if (looksIso && !hasTz) s = `${s}Z`;
+
+    const parsed = Date.parse(s);
     if (Number.isFinite(parsed)) return parsed;
 
-    // If the string is actually a number like "1768412028"
+    // Numeric string fallback
     const asNum = Number(ts);
     if (Number.isFinite(asNum)) ts = asNum;
     else return null;
@@ -77,7 +86,7 @@ const PolymarketTracker = () => {
 
   // Number (seconds or ms)
   if (typeof ts === "number") {
-    return ts < 1e12 ? ts * 1000 : ts; // seconds -> ms
+    return ts < 1e12 ? ts * 1000 : ts;
   }
 
   return null;
@@ -132,6 +141,7 @@ const tradesRes = await fetch(
 
       if (!tradesRes.ok) {
         console.error('Trades error:', tradesJson);
+        setMarketStats(null);
         setLargeBets([]);
         return;
       }
@@ -153,6 +163,7 @@ const tradesRes = await fetch(
         `${SUPABASE_URL}/rest/v1/alerts?order=created_at.desc&limit=50`,
         { headers }
       );
+      
       const alertsJson = await alertsRes.json();
 
       if (!alertsRes.ok) {
@@ -162,16 +173,35 @@ const tradesRes = await fetch(
         setAlerts(Array.isArray(alertsJson) ? alertsJson : []);
       }
 
+      // Fetch whale stats (>= $10k, last 24h)
+const statsRes = await fetch(
+  `${SUPABASE_URL}/rest/v1/rpc/whale_stats_24h`,
+  {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ min_amount: 10000 }),
+  }
+);
+
+const statsArr = await statsRes.json();
+const stats = statsArr?.[0] ?? null;
+
       const trades = Array.isArray(tradesJson) ? tradesJson : [];
       setLargeBets(trades);
 
-      const totalVol = trades.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-      setMarketStats({
-        total_volume_24h: totalVol,
-        total_trades_24h: trades.length,
-        active_markets: 0,
-        unique_traders_24h: new Set(trades.map((t) => t.trader_address)).size
-      });
+      if (!statsRes.ok) {
+  console.error("Stats error:", statsArr);
+}
+
+setMarketStats({
+  // DB-computed: >= $10k, last 24h (does NOT depend on minBetSize)
+  total_volume_24h: stats?.total_volume ?? 0,
+  total_trades_24h: stats?.total_trades ?? 0,
+  unique_traders_24h: stats?.unique_traders ?? 0,
+
+  // keep as placeholder unless you add a real query for it
+  active_markets: 0,
+});
 
       setLastUpdate(new Date());
     } catch (error) {
@@ -406,7 +436,7 @@ const tradesRes = await fetch(
             <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Total volume (current feed)</p>
+                  <p className="text-xs text-slate-400">Total volume (≥ $10k, last 24h)</p>
                   <p className="text-2xl font-semibold mt-1">
                     {formatCurrency(marketStats.total_volume_24h)}
                   </p>
