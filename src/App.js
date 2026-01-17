@@ -52,6 +52,42 @@ const PolymarketTracker = () => {
       maximumFractionDigits: 2
     }).format(Number(amount || 0));
 
+  // Heat map color coding for bet amounts
+  const getBetAmountColor = (amount) => {
+    const num = Number(amount || 0);
+    if (num >= 100000) return 'text-rose-400 font-bold';
+    if (num >= 50000) return 'text-orange-400 font-semibold';
+    if (num >= 25000) return 'text-amber-400 font-semibold';
+    if (num >= 10000) return 'text-yellow-400 font-medium';
+    return 'text-slate-100';
+  };
+
+  const getBetBorderColor = (amount) => {
+    const num = Number(amount || 0);
+    if (num >= 100000) return 'border-rose-500/40 bg-rose-500/5';
+    if (num >= 50000) return 'border-orange-500/40 bg-orange-500/5';
+    if (num >= 25000) return 'border-amber-500/30 bg-amber-500/5';
+    if (num >= 10000) return 'border-yellow-500/30 bg-yellow-500/5';
+    return 'border-slate-800 hover:border-slate-700';
+  };
+
+  const getOutcomeColor = (outcome) => {
+    if (!outcome) return 'text-slate-400';
+    const normalized = outcome.toLowerCase();
+    if (normalized.includes('yes')) return 'text-emerald-400';
+    if (normalized.includes('no')) return 'text-rose-400';
+    return 'text-cyan-400';
+  };
+
+  const getBetSizeLabel = (amount) => {
+    const num = Number(amount || 0);
+    if (num >= 100000) return { label: 'MEGA WHALE', color: 'bg-rose-500/20 text-rose-300 border-rose-500/50' };
+    if (num >= 50000) return { label: 'WHALE', color: 'bg-orange-500/20 text-orange-300 border-orange-500/50' };
+    if (num >= 25000) return { label: 'LARGE', color: 'bg-amber-500/20 text-amber-300 border-amber-500/50' };
+    if (num >= 10000) return { label: 'NOTABLE', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50' };
+    return null;
+  };
+
   const toMs = (ts) => {
   if (ts == null) return null;
 
@@ -267,7 +303,7 @@ setMarketStats({
   }, [topTraders, searchAddress]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100 trading-grid-bg">
       <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Header */}
         <div className="mb-6">
@@ -327,45 +363,49 @@ setMarketStats({
 
         {/* Alerts Panel */}
         {showAlerts && (
-          <div className="mb-6 bg-slate-900 rounded-lg border border-slate-800 p-4">
+          <div className="mb-6 bg-slate-900/80 backdrop-blur rounded-lg border border-amber-500/30 p-4 shadow-lg shadow-amber-500/10">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold flex items-center gap-2 text-sm">
-                <Bell className="w-4 h-4 text-slate-300" />
-                Whale alerts
+                <Bell className="w-4 h-4 text-amber-400 animate-pulse" />
+                <span className="text-amber-400">Whale alerts</span>
               </h3>
               <button
                 onClick={() => setAlerts([])}
-                className="text-xs text-slate-400 hover:text-slate-200"
+                className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
               >
-                Clear
+                Clear all
               </button>
             </div>
 
             {alerts.length === 0 ? (
               <p className="text-slate-400 text-sm">
-                No alerts yet. They’ll appear when large trades are detected.
+                No alerts yet. They'll appear when large trades are detected.
               </p>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {alerts.slice(0, 20).map((alert, idx) => {
                   const isMega = alert.type === 'mega_whale';
                   return (
-                    <div key={idx} className="bg-slate-950 rounded-md border border-slate-800 p-3">
+                    <div key={idx} className={`bg-slate-950 rounded-md border p-3 transition-all hover:scale-[1.02] ${
+                      isMega
+                        ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
+                        : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20'
+                    }`}>
                       <div className="flex items-center gap-2">
                         <span
-                          className={`text-[11px] font-semibold px-2 py-1 rounded-md border ${
+                          className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${
                             isMega
-                              ? 'bg-rose-500/10 text-rose-200 border-rose-500/20'
-                              : 'bg-amber-500/10 text-amber-200 border-amber-500/20'
+                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                           }`}
                         >
-                          {isMega ? 'MEGA WHALE' : 'WHALE'}
+                          {isMega ? '🐋 MEGA WHALE' : '🐋 WHALE'}
                         </span>
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs text-slate-500 font-mono">
                           {formatTimestamp(alert.created_at)}
                         </span>
                       </div>
-                      <p className="text-sm mt-2 text-slate-200">{alert.message}</p>
+                      <p className="text-sm mt-2 text-slate-200 font-medium">{alert.message}</p>
                     </div>
                   );
                 })}
@@ -433,51 +473,51 @@ setMarketStats({
         {/* Stats */}
         {marketStats && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-cyan-500/50 transition-all">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Total volume (≥ $10k, last 24h)</p>
-                  <p className="text-2xl font-semibold mt-1">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Total volume (≥ $10k, 24h)</p>
+                  <p className="text-2xl font-bold mt-1 font-mono text-cyan-400">
                     {formatCurrency(marketStats.total_volume_24h)}
                   </p>
                 </div>
-                <DollarSign className="w-8 h-8 text-slate-400" />
+                <DollarSign className="w-8 h-8 text-cyan-500/40" />
               </div>
             </div>
 
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-emerald-500/50 transition-all">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Large bets</p>
-                  <p className="text-2xl font-semibold mt-1">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Large bets</p>
+                  <p className="text-2xl font-bold mt-1 font-mono text-emerald-400">
                     {marketStats.total_trades_24h || 0}
                   </p>
                 </div>
-                <Activity className="w-8 h-8 text-slate-400" />
+                <Activity className="w-8 h-8 text-emerald-500/40" />
               </div>
             </div>
 
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-amber-500/50 transition-all">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Active markets</p>
-                  <p className="text-2xl font-semibold mt-1">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Active markets</p>
+                  <p className="text-2xl font-bold mt-1 font-mono text-amber-400">
                     {marketStats.active_markets || 0}
                   </p>
                 </div>
-                <Target className="w-8 h-8 text-slate-400" />
+                <Target className="w-8 h-8 text-amber-500/40" />
               </div>
             </div>
 
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-purple-500/50 transition-all">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Unique traders</p>
-                  <p className="text-2xl font-semibold mt-1">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Unique traders</p>
+                  <p className="text-2xl font-bold mt-1 font-mono text-purple-400">
                     {marketStats.unique_traders_24h || 0}
                   </p>
                 </div>
-                <Star className="w-8 h-8 text-slate-400" />
+                <Star className="w-8 h-8 text-purple-500/40" />
               </div>
             </div>
           </div>
@@ -510,24 +550,30 @@ setMarketStats({
                     </p>
                   </div>
                 ) : (
-                  <div className="max-h-[70vh] overflow-y-auto pr-2 space-y-3">
+                  <div className="max-h-[70vh] overflow-y-auto pr-2 space-y-2">
                     {filteredBets.map((bet, idx) => {
                       const isWatched = watchedTraders.includes(bet.trader_address);
+                      const sizeLabel = getBetSizeLabel(bet.amount);
                       return (
                         <div
                           key={idx}
-                          className={`bg-slate-950 rounded-lg border p-4 transition-colors ${
+                          className={`bg-slate-950 rounded-lg border p-3 transition-all hover:shadow-lg ${
                             isWatched
-                              ? 'border-cyan-500/30'
-                              : 'border-slate-800 hover:border-slate-700'
+                              ? 'border-cyan-500/30 shadow-cyan-500/10'
+                              : getBetBorderColor(bet.amount)
                           }`}
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="text-xs text-slate-500">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <span className="text-xs text-slate-500 font-mono">
                                   {formatTimestamp(bet.timestamp)}
                                 </span>
+                                {sizeLabel && (
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${sizeLabel.color} uppercase tracking-wide`}>
+                                    {sizeLabel.label}
+                                  </span>
+                                )}
                                 {isWatched && (
                                   <span className="inline-flex items-center gap-1 text-xs text-cyan-300">
                                     <Star className="w-3.5 h-3.5 fill-cyan-300 text-cyan-300" />
@@ -540,38 +586,46 @@ setMarketStats({
   href={bet.market_slug ? `https://polymarket.com/market/${bet.market_slug}` : undefined}
   target="_blank"
   rel="noreferrer"
-  className="font-semibold text-lg mb-1 hover:underline block"
+  className="font-semibold text-base mb-1 hover:text-cyan-400 hover:underline block transition-colors line-clamp-2"
 >
   {bet.market_title || bet.market_slug || bet.market_id}
 </a>
 
-                              <p className="text-sm text-slate-400 mt-2">
+                              <p className="text-xs text-slate-400 mt-1.5">
                                 Trader:{' '}
-                                <span className="font-mono text-slate-200">
-                                  {bet.trader_address?.slice(0, 10)}…
+                                <span className="font-mono text-slate-300 text-xs">
+                                  {bet.trader_address?.slice(0, 10)}…{bet.trader_address?.slice(-6)}
                                 </span>
                               </p>
                             </div>
 
                             <div className="text-right shrink-0">
-                              <p className="text-xl font-semibold text-slate-100">
+                              <p className={`text-xl font-bold font-mono ${getBetAmountColor(bet.amount)}`}>
                                 {formatCurrency(bet.amount)}
                               </p>
-                              <p className="text-xs text-slate-400 mt-1">
-                                Outcome: <span className="text-slate-200">{bet.outcome}</span>
+                              <p className="text-xs text-slate-500 mt-1">
+                                <span className={getOutcomeColor(bet.outcome)}>{bet.outcome}</span>
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between text-xs mt-3 pt-3 border-t border-slate-800">
+                          <div className="flex items-center justify-between text-xs mt-2.5 pt-2.5 border-t border-slate-800/50">
                             <span className="text-slate-500">
                               Price:{' '}
-                              <span className="text-slate-200 font-medium">
+                              <span className="text-slate-300 font-mono font-semibold">
                                 {Number(bet.price) ? `${(Number(bet.price) * 100).toFixed(0)}¢` : '—'}
                               </span>
                             </span>
-                            <span className="text-slate-600 font-mono">
-                              {bet.tx_hash ? `${bet.tx_hash.slice(0, 10)}…` : ''}
+                            {Number(bet.price) && (
+                              <div className="flex-1 mx-3 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-full"
+                                  style={{ width: `${(Number(bet.price) * 100)}%` }}
+                                />
+                              </div>
+                            )}
+                            <span className="text-slate-600 font-mono text-[10px]">
+                              {bet.tx_hash ? `${bet.tx_hash.slice(0, 8)}…` : ''}
                             </span>
                           </div>
                         </div>
@@ -610,29 +664,30 @@ setMarketStats({
                 {visibleTraders.length === 0 ? (
                   <p className="text-slate-400 text-sm text-center py-8">No trader data yet</p>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {visibleTraders.map((trader, index) => {
                       const isWatched = watchedTraders.includes(trader.address);
+                      const rankColor = index === 0 ? 'text-amber-400' : index === 1 ? 'text-slate-300' : index === 2 ? 'text-orange-600' : 'text-slate-500';
                       return (
                         <div
                           key={trader.address}
-                          className={`bg-slate-950 rounded-lg p-4 border cursor-pointer transition-colors ${
+                          className={`bg-slate-950 rounded-lg p-3 border cursor-pointer transition-all hover:scale-[1.02] ${
                             isWatched
-                              ? 'border-cyan-500/30'
+                              ? 'border-cyan-500/40 shadow-cyan-500/10'
                               : 'border-slate-800 hover:border-slate-700'
                           }`}
                           onClick={() => setSelectedTrader(trader)}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-sm font-semibold text-slate-300">
+                              <span className={`text-sm font-bold ${rankColor} min-w-[24px]`}>
                                 #{index + 1}
                               </span>
                               <div className="min-w-0">
                                 <p className="font-mono text-sm text-slate-100 truncate">
-                                  {trader.address?.slice(0, 12)}…
+                                  {trader.address?.slice(0, 10)}…{trader.address?.slice(-4)}
                                 </p>
-                                <p className="text-xs text-slate-500 mt-1">
+                                <p className="text-xs text-slate-500 mt-0.5 font-mono">
                                   {formatTimestamp(trader.last_activity)}
                                 </p>
                               </div>
@@ -643,29 +698,29 @@ setMarketStats({
                                 e.stopPropagation();
                                 toggleWatchTrader(trader.address);
                               }}
-                              className={`transition-colors ${
-                                isWatched ? 'text-cyan-300' : 'text-slate-600 hover:text-slate-300'
+                              className={`transition-all ${
+                                isWatched ? 'text-cyan-400 scale-110' : 'text-slate-600 hover:text-slate-300 hover:scale-110'
                               }`}
                               aria-label="Toggle watchlist"
                             >
                               <Star
-                                className={`w-5 h-5 ${
-                                  isWatched ? 'fill-cyan-300 text-cyan-300' : ''
+                                className={`w-4 h-4 ${
+                                  isWatched ? 'fill-cyan-400 text-cyan-400' : ''
                                 }`}
                               />
                             </button>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 text-sm mt-3">
+                          <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
                             <div>
-                              <p className="text-xs text-slate-500">Volume</p>
-                              <p className="font-semibold text-slate-100">
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Volume</p>
+                              <p className="font-bold text-slate-100 font-mono text-sm">
                                 {formatCurrency(trader.total_volume)}
                               </p>
                             </div>
                             <div>
-                              <p className="text-xs text-slate-500">Bets</p>
-                              <p className="font-semibold text-slate-100">{trader.total_bets}</p>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Bets</p>
+                              <p className="font-bold text-slate-100 font-mono text-sm">{trader.total_bets}</p>
                             </div>
                           </div>
                         </div>
