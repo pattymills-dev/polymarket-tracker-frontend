@@ -296,11 +296,68 @@ setMarketStats({
     return (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
   }, [largeBets, minBetSize]);
 
+  // Calculate smart money metrics from recent trades
+  const recentActiveTraders = useMemo(() => {
+    if (!largeBets || largeBets.length === 0) return [];
+
+    const now = Date.now();
+    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+
+    // Group trades by trader address
+    const traderMap = new Map();
+
+    largeBets.forEach(bet => {
+      const betTime = toMs(bet.timestamp);
+      if (!betTime || betTime < sevenDaysAgo) return; // Only last 7 days
+
+      const addr = bet.trader_address;
+      if (!addr) return;
+
+      if (!traderMap.has(addr)) {
+        traderMap.set(addr, {
+          address: addr,
+          trades: [],
+          total_volume: 0,
+          total_bets: 0,
+          avg_bet_size: 0,
+          unique_markets: new Set(),
+          last_activity: betTime
+        });
+      }
+
+      const trader = traderMap.get(addr);
+      trader.trades.push(bet);
+      trader.total_volume += Number(bet.amount || 0);
+      trader.total_bets += 1;
+      trader.unique_markets.add(bet.market_id);
+      if (betTime > trader.last_activity) {
+        trader.last_activity = betTime;
+      }
+    });
+
+    // Convert to array and calculate metrics
+    const traders = Array.from(traderMap.values()).map(trader => ({
+      address: trader.address,
+      total_volume: trader.total_volume,
+      total_bets: trader.total_bets,
+      avg_bet_size: trader.total_volume / trader.total_bets,
+      unique_markets: trader.unique_markets.size,
+      last_activity: trader.last_activity,
+      // Smart money score: combination of volume, bet size, and activity
+      smart_score: (trader.total_volume / 1000) + (trader.avg_bet_size / 100) + (trader.total_bets * 2)
+    }));
+
+    // Sort by smart money score
+    return traders.sort((a, b) => b.smart_score - a.smart_score).slice(0, 20);
+  }, [largeBets]);
+
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
-    if (!q) return topTraders || [];
-    return (topTraders || []).filter((t) => (t.address || '').toLowerCase().includes(q));
-  }, [topTraders, searchAddress]);
+    const tradersToShow = recentActiveTraders.length > 0 ? recentActiveTraders : topTraders || [];
+
+    if (!q) return tradersToShow;
+    return tradersToShow.filter((t) => (t.address || '').toLowerCase().includes(q));
+  }, [recentActiveTraders, topTraders, searchAddress]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 trading-grid-bg">
@@ -642,7 +699,7 @@ setMarketStats({
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-slate-300" />
-                    Top traders
+                    Smart money (7d)
                   </h2>
                 </div>
 
@@ -713,16 +770,30 @@ setMarketStats({
 
                           <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
                             <div>
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Volume</p>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Volume (7d)</p>
                               <p className="font-bold text-slate-100 font-mono text-sm">
                                 {formatCurrency(trader.total_volume)}
                               </p>
                             </div>
                             <div>
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Bets</p>
-                              <p className="font-bold text-slate-100 font-mono text-sm">{trader.total_bets}</p>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Avg Bet</p>
+                              <p className="font-bold text-slate-100 font-mono text-sm">
+                                {trader.avg_bet_size ? formatCurrency(trader.avg_bet_size) : formatCurrency(trader.total_volume / (trader.total_bets || 1))}
+                              </p>
                             </div>
                           </div>
+                          {trader.unique_markets !== undefined && (
+                            <div className="grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50">
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-wide">Markets</p>
+                                <p className="font-bold text-slate-100 font-mono text-sm">{trader.unique_markets}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-wide">Trades</p>
+                                <p className="font-bold text-slate-100 font-mono text-sm">{trader.total_bets}</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -730,7 +801,8 @@ setMarketStats({
                 )}
 
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500">
-                  Tip: click a trader to view their profile and add/remove from watchlist.
+                  <p>Showing most active traders from the last 7 days.</p>
+                  <p className="mt-1">Click a trader to view details and watchlist.</p>
                 </div>
               </div>
             </div>
