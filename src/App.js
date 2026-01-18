@@ -21,7 +21,7 @@ const PolymarketTracker = () => {
   const [marketStats, setMarketStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [selectedCategory, setSelectedCategory] = useState('all'); // placeholder for future
+  // const [selectedCategory, setSelectedCategory] = useState('all'); // placeholder for future
   const [minBetSize, setMinBetSize] = useState(10);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
@@ -284,7 +284,7 @@ setMarketStats({
     const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, minBetSize, selectedCategory]);
+  }, [autoRefresh, minBetSize]);
 
   const toggleWatchTrader = (address) => {
     setWatchedTraders((prev) =>
