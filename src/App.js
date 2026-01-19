@@ -665,8 +665,9 @@ setMarketStats({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-cyan-500/50 transition-all">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide">Total volume (≥ $10k, 24h)</p>
+                <div className="flex-1">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Last 24 hours</p>
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Volume ≥ $10k</p>
                   <p className="text-2xl font-bold mt-1 font-mono text-cyan-400">
                     {formatCurrency(marketStats.total_volume_24h)}
                   </p>
@@ -677,8 +678,9 @@ setMarketStats({
 
             <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-emerald-500/50 transition-all">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide">Large bets</p>
+                <div className="flex-1">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Last 24 hours</p>
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Trades ≥ $10k</p>
                   <p className="text-2xl font-bold mt-1 font-mono text-emerald-400">
                     {marketStats.total_trades_24h || 0}
                   </p>
@@ -689,7 +691,8 @@ setMarketStats({
 
             <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-amber-500/50 transition-all">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Last 24 hours</p>
                   <p className="text-xs text-slate-400 uppercase tracking-wide">Active markets</p>
                   <p className="text-2xl font-bold mt-1 font-mono text-amber-400">
                     {marketStats.active_markets || 0}
@@ -701,8 +704,9 @@ setMarketStats({
 
             <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-purple-500/50 transition-all">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide">Unique traders</p>
+                <div className="flex-1">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Last 24 hours</p>
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Traders ≥ $10k</p>
                   <p className="text-2xl font-bold mt-1 font-mono text-purple-400">
                     {marketStats.unique_traders_24h || 0}
                   </p>
