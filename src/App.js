@@ -225,6 +225,16 @@ const statsRes = await fetch(
 const statsArr = await statsRes.json();
 const stats = statsArr?.[0] ?? null;
 
+      // Get count of active (unresolved) markets with recent activity
+      const marketsRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/trades?select=market_id&timestamp=gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
+        { headers }
+      );
+      const marketsJson = await marketsRes.json();
+      const activeMarkets = marketsRes.ok && Array.isArray(marketsJson)
+        ? new Set(marketsJson.map(t => t.market_id)).size
+        : 0;
+
       const trades = Array.isArray(tradesJson) ? tradesJson : [];
       setLargeBets(trades);
 
@@ -238,8 +248,8 @@ setMarketStats({
   total_trades_24h: stats?.total_trades ?? 0,
   unique_traders_24h: stats?.unique_traders ?? 0,
 
-  // keep as placeholder unless you add a real query for it
-  active_markets: 0,
+  // Count of unique markets with trades in last 24h
+  active_markets: activeMarkets,
 });
 
       setLastUpdate(new Date());
@@ -292,7 +302,7 @@ setMarketStats({
       } else {
         setSyncResult({
           success: true,
-          markets: marketsData?.stored || 0,
+          markets: marketsData?.marketsStored || marketsData?.stored || 0,
           trades: tradesData?.stored || 0,
           resolved: marketsData?.resolved || 0
         });
