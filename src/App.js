@@ -30,6 +30,8 @@ const PolymarketTracker = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTrader, setSelectedTrader] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
 
   // Supabase Configuration
   const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
@@ -249,32 +251,64 @@ setMarketStats({
   };
 
   const syncData = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+
     try {
       const fnHeaders = {
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json'
       };
 
-      const marketsResp = await fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
-        method: 'POST',
-        headers: fnHeaders
-      });
+      const [marketsResp, tradesResp] = await Promise.all([
+        fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
+          method: 'POST',
+          headers: fnHeaders
+        }),
+        fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
+          method: 'POST',
+          headers: fnHeaders
+        })
+      ]);
 
-      const tradesResp = await fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
-        method: 'POST',
-        headers: fnHeaders
-      });
+      const marketsData = marketsResp.ok ? await marketsResp.json() : null;
+      const tradesData = tradesResp.ok ? await tradesResp.json() : null;
 
+      const errors = [];
       if (!marketsResp.ok) {
-        console.error('fetch-markets failed', marketsResp.status, await marketsResp.text());
+        console.error('fetch-markets failed', marketsResp.status);
+        errors.push('Markets sync failed');
       }
       if (!tradesResp.ok) {
-        console.error('fetch-trades failed', tradesResp.status, await tradesResp.text());
+        console.error('fetch-trades failed', tradesResp.status);
+        errors.push('Trades sync failed');
       }
 
-      setTimeout(() => fetchData(), 1500);
+      if (errors.length > 0) {
+        setSyncResult({
+          success: false,
+          message: errors.join(', ')
+        });
+      } else {
+        setSyncResult({
+          success: true,
+          markets: marketsData?.stored || 0,
+          trades: tradesData?.stored || 0,
+          resolved: marketsData?.resolved || 0
+        });
+      }
+
+      setTimeout(() => {
+        fetchData();
+        setSyncing(false);
+      }, 1500);
     } catch (error) {
       console.error('Error syncing:', error);
+      setSyncResult({
+        success: false,
+        message: 'Sync error: ' + error.message
+      });
+      setSyncing(false);
     }
   };
 
@@ -459,13 +493,28 @@ setMarketStats({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={syncData}
-                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-md transition-colors flex items-center gap-2 text-sm font-medium"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Sync
-              </button>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={syncData}
+                  disabled={syncing}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-md transition-colors flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                  {syncing ? 'Syncing...' : 'Sync Polymarket'}
+                </button>
+                {syncResult && (
+                  <div className={`text-xs px-2 py-1 rounded ${
+                    syncResult.success
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  }`}>
+                    {syncResult.success
+                      ? `✓ ${syncResult.trades} trades, ${syncResult.markets} markets${syncResult.resolved > 0 ? `, ${syncResult.resolved} resolved` : ''}`
+                      : `✗ ${syncResult.message}`
+                    }
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={() => setShowAlerts((v) => !v)}
@@ -677,7 +726,7 @@ setMarketStats({
                 {filteredBets.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-slate-400 text-sm">
-                      No trades above this threshold yet. Click “Sync” to fetch new trades.
+                      No trades above this threshold yet. Click "Sync Polymarket" to fetch new trades.
                     </p>
                   </div>
                 ) : (
@@ -950,6 +999,7 @@ setMarketStats({
                     <>
                       <p>Showing traders with resolved markets and profitability metrics.</p>
                       <p className="mt-1">Click a trader to view details and watchlist.</p>
+                      <p className="mt-2 text-amber-400/70">💡 Profitability updates when markets resolve (auto-syncs every 15 min).</p>
                     </>
                   ) : (
                     <>
@@ -1049,8 +1099,8 @@ setMarketStats({
         {/* Footer note */}
         <div className="mt-6 bg-slate-900 border border-slate-800 rounded-lg p-4">
           <p className="text-sm text-slate-300">
-            Data is pulled from your Supabase tables. If something looks stale, hit “Sync” then
-            “Refresh.”
+            Data is pulled from your Supabase tables. If something looks stale, hit "Sync Polymarket" then
+            "Refresh."
           </p>
         </div>
       </div>
