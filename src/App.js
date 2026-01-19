@@ -25,6 +25,7 @@ const PolymarketTracker = () => {
   const [minBetSize, setMinBetSize] = useState(10);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
+  const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
   const [alertThreshold, setAlertThreshold] = useState(50000);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showAlerts, setShowAlerts] = useState(false);
@@ -296,7 +297,57 @@ setMarketStats({
     return (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
   }, [largeBets, minBetSize]);
 
-  // Calculate smart money metrics from recent trades
+  // Fetch trader profitability data
+  const [profitabilityTraders, setProfitabilityTraders] = useState([]);
+
+  useEffect(() => {
+    const fetchProfitability = async () => {
+      try {
+        const headers = {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json'
+        };
+
+        const response = await fetch(
+          `${SUPABASE_URL}/rest/v1/rpc/calculate_trader_performance`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ min_resolved_markets: 1 })
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          // Map to match the existing trader card structure
+          const mappedTraders = data.map(t => ({
+            address: t.trader_address,
+            total_volume: Number(t.total_buy_cost || 0) + Number(t.total_sell_proceeds || 0),
+            total_bets: t.resolved_markets,
+            resolved_markets: t.resolved_markets,
+            wins: t.wins,
+            losses: t.losses,
+            win_rate: Number(t.win_rate || 0),
+            profit_wins: t.profit_wins,
+            profit_losses: t.profit_losses,
+            profitability_rate: Number(t.profitability_rate || 0),
+            total_pl: Number(t.total_pl || 0),
+            avg_bet_size: Number(t.total_buy_cost || 0) / (t.resolved_markets || 1),
+            unique_markets: t.resolved_markets,
+            last_activity: Date.now() // placeholder
+          }));
+          setProfitabilityTraders(mappedTraders);
+        }
+      } catch (error) {
+        console.error('Error fetching profitability:', error);
+      }
+    };
+
+    fetchProfitability();
+  }, []);
+
+  // Calculate smart money metrics from recent trades (7-day fallback)
   const recentActiveTraders = useMemo(() => {
     if (!largeBets || largeBets.length === 0) return [];
 
@@ -353,11 +404,34 @@ setMarketStats({
 
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
-    const tradersToShow = recentActiveTraders.length > 0 ? recentActiveTraders : topTraders || [];
+    // Prioritize profitability data, fallback to recent active traders, then topTraders
+    let tradersToShow = profitabilityTraders.length > 0
+      ? profitabilityTraders
+      : recentActiveTraders.length > 0
+        ? recentActiveTraders
+        : topTraders || [];
 
-    if (!q) return tradersToShow;
-    return tradersToShow.filter((t) => (t.address || '').toLowerCase().includes(q));
-  }, [recentActiveTraders, topTraders, searchAddress]);
+    // Filter by search query
+    if (q) {
+      tradersToShow = tradersToShow.filter((t) => (t.address || '').toLowerCase().includes(q));
+    }
+
+    // Apply sorting for profitability traders
+    if (profitabilityTraders.length > 0) {
+      tradersToShow = [...tradersToShow].sort((a, b) => {
+        if (traderSortBy === 'profitability') {
+          return (b.profitability_rate || 0) - (a.profitability_rate || 0);
+        } else if (traderSortBy === 'win_rate') {
+          return (b.win_rate || 0) - (a.win_rate || 0);
+        } else if (traderSortBy === 'total_pl') {
+          return (b.total_pl || 0) - (a.total_pl || 0);
+        }
+        return 0;
+      });
+    }
+
+    return tradersToShow;
+  }, [profitabilityTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 trading-grid-bg">
@@ -699,11 +773,11 @@ setMarketStats({
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-slate-300" />
-                    Smart money (7d)
+                    {profitabilityTraders.length > 0 ? 'Top Performers' : 'Smart money (7d)'}
                   </h2>
                 </div>
 
-                <div className="mb-4">
+                <div className="mb-4 space-y-3">
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -716,6 +790,41 @@ setMarketStats({
                       <Search className="w-4 h-4 text-slate-300" />
                     </button>
                   </div>
+
+                  {profitabilityTraders.length > 0 && (
+                    <div className="flex gap-1 text-xs">
+                      <button
+                        onClick={() => setTraderSortBy('profitability')}
+                        className={`px-3 py-1.5 rounded transition-colors ${
+                          traderSortBy === 'profitability'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        Profit %
+                      </button>
+                      <button
+                        onClick={() => setTraderSortBy('win_rate')}
+                        className={`px-3 py-1.5 rounded transition-colors ${
+                          traderSortBy === 'win_rate'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        Win %
+                      </button>
+                      <button
+                        onClick={() => setTraderSortBy('total_pl')}
+                        className={`px-3 py-1.5 rounded transition-colors ${
+                          traderSortBy === 'total_pl'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        Total P/L
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {visibleTraders.length === 0 ? (
@@ -768,31 +877,67 @@ setMarketStats({
                             </button>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
-                            <div>
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Volume (7d)</p>
-                              <p className="font-bold text-slate-100 font-mono text-sm">
-                                {formatCurrency(trader.total_volume)}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Avg Bet</p>
-                              <p className="font-bold text-slate-100 font-mono text-sm">
-                                {trader.avg_bet_size ? formatCurrency(trader.avg_bet_size) : formatCurrency(trader.total_volume / (trader.total_bets || 1))}
-                              </p>
-                            </div>
-                          </div>
-                          {trader.unique_markets !== undefined && (
-                            <div className="grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50">
-                              <div>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-wide">Markets</p>
-                                <p className="font-bold text-slate-100 font-mono text-sm">{trader.unique_markets}</p>
+                          {/* Show profitability metrics if available */}
+                          {trader.profitability_rate !== undefined ? (
+                            <>
+                              <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Profit Rate</p>
+                                  <p className={`font-bold font-mono text-sm ${trader.profitability_rate > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {(trader.profitability_rate * 100).toFixed(1)}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Win Rate</p>
+                                  <p className={`font-bold font-mono text-sm ${trader.win_rate > 0.5 ? 'text-emerald-400' : trader.win_rate > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                    {(trader.win_rate * 100).toFixed(1)}%
+                                  </p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-wide">Trades</p>
-                                <p className="font-bold text-slate-100 font-mono text-sm">{trader.total_bets}</p>
+                              <div className="grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50">
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Total P/L</p>
+                                  <p className={`font-bold font-mono text-sm ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {trader.total_pl >= 0 ? '+' : ''}{formatCurrency(trader.total_pl)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Resolved</p>
+                                  <p className="font-bold text-slate-100 font-mono text-sm">
+                                    {trader.wins || 0}W-{trader.losses || 0}L
+                                  </p>
+                                </div>
                               </div>
-                            </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Volume (7d)</p>
+                                  <p className="font-bold text-slate-100 font-mono text-sm">
+                                    {formatCurrency(trader.total_volume)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Avg Bet</p>
+                                  <p className="font-bold text-slate-100 font-mono text-sm">
+                                    {trader.avg_bet_size ? formatCurrency(trader.avg_bet_size) : formatCurrency(trader.total_volume / (trader.total_bets || 1))}
+                                  </p>
+                                </div>
+                              </div>
+                              {trader.unique_markets !== undefined && (
+                                <div className="grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50">
+                                  <div>
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Markets</p>
+                                    <p className="font-bold text-slate-100 font-mono text-sm">{trader.unique_markets}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Trades</p>
+                                    <p className="font-bold text-slate-100 font-mono text-sm">{trader.total_bets}</p>
+                                  </div>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       );
@@ -801,8 +946,17 @@ setMarketStats({
                 )}
 
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500">
-                  <p>Showing most active traders from the last 7 days.</p>
-                  <p className="mt-1">Click a trader to view details and watchlist.</p>
+                  {profitabilityTraders.length > 0 ? (
+                    <>
+                      <p>Showing traders with resolved markets and profitability metrics.</p>
+                      <p className="mt-1">Click a trader to view details and watchlist.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>Showing most active traders from the last 7 days.</p>
+                      <p className="mt-1">Click a trader to view details and watchlist.</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -829,20 +983,49 @@ setMarketStats({
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
-                  <p className="text-xs text-slate-500">Total volume</p>
-                  <p className="text-xl font-semibold text-slate-100 mt-1">
-                    {formatCurrency(selectedTrader.total_volume)}
-                  </p>
+              {selectedTrader.profitability_rate !== undefined ? (
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                    <p className="text-xs text-slate-500">Profitability Rate</p>
+                    <p className={`text-xl font-semibold mt-1 ${selectedTrader.profitability_rate > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {(selectedTrader.profitability_rate * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                    <p className="text-xs text-slate-500">Win Rate</p>
+                    <p className={`text-xl font-semibold mt-1 ${selectedTrader.win_rate > 0.5 ? 'text-emerald-400' : selectedTrader.win_rate > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                      {(selectedTrader.win_rate * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                    <p className="text-xs text-slate-500">Total P/L</p>
+                    <p className={`text-xl font-semibold mt-1 ${selectedTrader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {selectedTrader.total_pl >= 0 ? '+' : ''}{formatCurrency(selectedTrader.total_pl)}
+                    </p>
+                  </div>
+                  <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                    <p className="text-xs text-slate-500">Record</p>
+                    <p className="text-xl font-semibold text-slate-100 mt-1">
+                      {selectedTrader.wins || 0}W-{selectedTrader.losses || 0}L
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
-                  <p className="text-xs text-slate-500">Total bets</p>
-                  <p className="text-xl font-semibold text-slate-100 mt-1">
-                    {selectedTrader.total_bets}
-                  </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                    <p className="text-xs text-slate-500">Total volume</p>
+                    <p className="text-xl font-semibold text-slate-100 mt-1">
+                      {formatCurrency(selectedTrader.total_volume)}
+                    </p>
+                  </div>
+                  <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                    <p className="text-xs text-slate-500">Total bets</p>
+                    <p className="text-xl font-semibold text-slate-100 mt-1">
+                      {selectedTrader.total_bets}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button
                 onClick={() => {
