@@ -467,8 +467,8 @@ setMarketStats({
 
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
-    // Prioritize profitability data, fallback to recent active traders, then topTraders
-    let tradersToShow = profitabilityTraders.length > 0
+    // Prioritize profitability data (if we have at least 5), fallback to recent active traders, then topTraders
+    let tradersToShow = profitabilityTraders.length >= 5
       ? profitabilityTraders
       : recentActiveTraders.length > 0
         ? recentActiveTraders
@@ -480,7 +480,7 @@ setMarketStats({
     }
 
     // Apply sorting for profitability traders
-    if (profitabilityTraders.length > 0) {
+    if (profitabilityTraders.length >= 5) {
       tradersToShow = [...tradersToShow].sort((a, b) => {
         if (traderSortBy === 'profitability') {
           return (b.profitability_rate || 0) - (a.profitability_rate || 0);
@@ -855,7 +855,7 @@ setMarketStats({
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-slate-300" />
-                    {profitabilityTraders.length > 0 ? 'Top Performers' : 'Smart money (7d)'}
+                    {profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)'}
                   </h2>
                 </div>
 
@@ -873,7 +873,7 @@ setMarketStats({
                     </button>
                   </div>
 
-                  {profitabilityTraders.length > 0 && (
+                  {profitabilityTraders.length >= 5 && (
                     <div className="flex gap-1 text-xs">
                       <button
                         onClick={() => setTraderSortBy('profitability')}
@@ -1031,7 +1031,7 @@ setMarketStats({
                 )}
 
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500">
-                  {profitabilityTraders.length > 0 ? (
+                  {profitabilityTraders.length >= 5 ? (
                     <>
                       <p>Showing traders with resolved markets and profitability metrics.</p>
                       <p className="mt-1">Click a trader to view details and watchlist.</p>
