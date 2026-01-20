@@ -22,7 +22,7 @@ const PolymarketTracker = () => {
   const [loading, setLoading] = useState(true);
 
   // const [selectedCategory, setSelectedCategory] = useState('all'); // placeholder for future
-  const [minBetSize, setMinBetSize] = useState(10);
+  const [minBetSize, setMinBetSize] = useState(5000); // UI filter (DB already filters to $5k+)
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
@@ -192,9 +192,10 @@ const formatTimestamp = (ts) => {
       setLoading(true);
 
      const FEED_LIMIT = 500;
+     const MIN_TRADE_AMOUNT = 5000; // Only fetch trades >= $5k
 
 const tradesRes = await fetch(
-  `${SUPABASE_URL}/rest/v1/trades?amount=gte.${minBetSize}&order=timestamp.desc&limit=${FEED_LIMIT}`,
+  `${SUPABASE_URL}/rest/v1/trades?amount=gte.${MIN_TRADE_AMOUNT}&order=timestamp.desc&limit=${FEED_LIMIT}`,
   { headers }
 );
       const tradesJson = await tradesRes.json();
@@ -661,14 +662,18 @@ setMarketStats({
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-2">Min bet size (USD)</label>
+              <label className="block text-xs text-slate-400 mb-2">Additional filter (USD)</label>
               <input
                 type="number"
                 value={minBetSize}
                 onChange={(e) => setMinBetSize(Number(e.target.value))}
                 className="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600/40"
-                step="10"
+                step="1000"
+                min="5000"
               />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Filter trades above this amount (base: $5k)
+              </p>
             </div>
 
             <div>
@@ -817,7 +822,7 @@ setMarketStats({
                       </button>
                     </div>
                     <div className="text-xs text-slate-500">
-                      {filteredBets.length} trades (≥ {formatCurrency(minBetSize)})
+                      {filteredBets.length} trades (≥ $5,000)
                     </div>
                   </div>
                 </div>
@@ -825,7 +830,7 @@ setMarketStats({
                 {filteredBets.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-slate-400 text-sm">
-                      No trades above this threshold yet. Click "Sync Polymarket" to fetch new trades.
+                      No trades above $5,000 yet. Click "Sync Polymarket" to fetch new trades.
                     </p>
                   </div>
                 ) : (
