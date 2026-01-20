@@ -17,6 +17,13 @@ jobs:
             -H "Content-Type: application/json" \
             https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/fetch-trades
 
+      - name: Populate markets from trades
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/populate-markets-from-trades
+
       - name: Sync market resolutions
         run: |
           curl -X POST \
