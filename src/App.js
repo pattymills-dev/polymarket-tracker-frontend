@@ -291,7 +291,7 @@ setMarketStats({
         'Content-Type': 'application/json'
       };
 
-      const [marketsResp, tradesResp] = await Promise.all([
+      const [marketsResp, tradesResp, resolutionsResp] = await Promise.all([
         fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
           method: 'POST',
           headers: fnHeaders
@@ -299,11 +299,16 @@ setMarketStats({
         fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
           method: 'POST',
           headers: fnHeaders
+        }),
+        fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=250`, {
+          method: 'POST',
+          headers: fnHeaders
         })
       ]);
 
       const marketsData = marketsResp.ok ? await marketsResp.json() : null;
       const tradesData = tradesResp.ok ? await tradesResp.json() : null;
+      const resolutionsData = resolutionsResp.ok ? await resolutionsResp.json() : null;
 
       const errors = [];
       if (!marketsResp.ok) {
@@ -313,6 +318,10 @@ setMarketStats({
       if (!tradesResp.ok) {
         console.error('fetch-trades failed', tradesResp.status);
         errors.push('Trades sync failed');
+      }
+      if (!resolutionsResp.ok) {
+        console.error('sync-market-resolutions failed', resolutionsResp.status);
+        errors.push('Resolutions sync failed');
       }
 
       if (errors.length > 0) {
@@ -325,7 +334,7 @@ setMarketStats({
           success: true,
           markets: marketsData?.marketsStored || marketsData?.stored || 0,
           trades: tradesData?.stored || 0,
-          resolved: marketsData?.resolved || 0
+          resolved: resolutionsData?.updated || 0
         });
       }
 
