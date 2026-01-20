@@ -410,8 +410,10 @@ setMarketStats({
           }
         );
 
+        const data = await response.json();
+        console.log('Profitability API response:', { status: response.status, ok: response.ok, data });
+
         if (response.ok) {
-          const data = await response.json();
           // Map to match the existing trader card structure
           const mappedTraders = data.map(t => ({
             address: t.trader_address,
@@ -429,7 +431,10 @@ setMarketStats({
             unique_markets: t.resolved_markets,
             last_activity: Date.now() // placeholder
           }));
+          console.log('Mapped profitability traders:', mappedTraders.length, mappedTraders);
           setProfitabilityTraders(mappedTraders);
+        } else {
+          console.error('Profitability API error:', data);
         }
       } catch (error) {
         console.error('Error fetching profitability:', error);
