@@ -21,7 +21,7 @@ const PolymarketTracker = () => {
   const [marketStats, setMarketStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [selectedCategory, setSelectedCategory] = useState('all'); // placeholder for future
+  const [selectedCategory] = useState('all'); // placeholder for future
   const [minBetSize, setMinBetSize] = useState(10);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
