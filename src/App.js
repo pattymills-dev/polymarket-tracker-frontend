@@ -27,7 +27,7 @@ const PolymarketTracker = () => {
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
   const [alertThreshold, setAlertThreshold] = useState(50000);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTrader, setSelectedTrader] = useState(null);
   const [traderTrades, setTraderTrades] = useState([]);
@@ -657,7 +657,7 @@ setMarketStats({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-2">Auto refresh</label>
+              <label className="block text-xs text-slate-400 mb-2">Auto refresh UI</label>
               <button
                 onClick={() => setAutoRefresh((v) => !v)}
                 className={`w-full px-3 py-2 rounded-md text-sm font-medium border transition-colors ${
@@ -666,8 +666,11 @@ setMarketStats({
                     : 'bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-200'
                 }`}
               >
-                {autoRefresh ? 'Enabled' : 'Disabled'}
+                {autoRefresh ? 'Enabled (1 min)' : 'Disabled'}
               </button>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Refreshes display from DB. Data syncs auto every 15 min.
+              </p>
             </div>
 
             <div>
