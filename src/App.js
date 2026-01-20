@@ -26,7 +26,6 @@ const PolymarketTracker = () => {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
-  const [alertThreshold, setAlertThreshold] = useState(50000);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
   const [sideFilter, setSideFilter] = useState('all'); // 'all', 'BUY', 'SELL'
@@ -660,7 +659,7 @@ setMarketStats({
             <h3 className="font-semibold text-sm">Filters</h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs text-slate-400 mb-2">Additional filter (USD)</label>
               <input
@@ -673,20 +672,6 @@ setMarketStats({
               />
               <p className="text-[11px] text-slate-500 mt-1">
                 Filter trades above this amount (base: $5k)
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-2">Alert threshold (USD)</label>
-              <input
-                type="number"
-                value={alertThreshold}
-                onChange={(e) => setAlertThreshold(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600/40"
-                step="10000"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">
-                (Used by backend alerting logic, if configured.)
               </p>
             </div>
 
@@ -732,42 +717,42 @@ setMarketStats({
               </div>
             </div>
 
-            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-emerald-500/50 transition-all">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-cyan-500/50 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Last 24 hours</p>
                   <p className="text-xs text-slate-400 uppercase tracking-wide">Trades ≥ $10k</p>
-                  <p className="text-2xl font-bold mt-1 font-mono text-emerald-400">
+                  <p className="text-2xl font-bold mt-1 font-mono text-cyan-400">
                     {marketStats.total_trades_24h || 0}
                   </p>
                 </div>
-                <Activity className="w-8 h-8 text-emerald-500/40" />
+                <Activity className="w-8 h-8 text-cyan-500/40" />
               </div>
             </div>
 
-            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-amber-500/50 transition-all">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-cyan-500/50 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Last 24 hours</p>
                   <p className="text-xs text-slate-400 uppercase tracking-wide">Active markets</p>
-                  <p className="text-2xl font-bold mt-1 font-mono text-amber-400">
+                  <p className="text-2xl font-bold mt-1 font-mono text-cyan-400">
                     {marketStats.active_markets || 0}
                   </p>
                 </div>
-                <Target className="w-8 h-8 text-amber-500/40" />
+                <Target className="w-8 h-8 text-cyan-500/40" />
               </div>
             </div>
 
-            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-purple-500/50 transition-all">
+            <div className="bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700 p-4 hover:border-cyan-500/50 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Last 24 hours</p>
                   <p className="text-xs text-slate-400 uppercase tracking-wide">Traders ≥ $10k</p>
-                  <p className="text-2xl font-bold mt-1 font-mono text-purple-400">
+                  <p className="text-2xl font-bold mt-1 font-mono text-cyan-400">
                     {marketStats.unique_traders_24h || 0}
                   </p>
                 </div>
-                <Star className="w-8 h-8 text-purple-500/40" />
+                <Star className="w-8 h-8 text-cyan-500/40" />
               </div>
             </div>
           </div>
