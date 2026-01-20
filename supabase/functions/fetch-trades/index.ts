@@ -31,9 +31,10 @@ serve(async (req) => {
 
     console.log("Fetching trades from Polymarket Data API...");
 
-    // Fetch ~10,000 trades per run to capture more whale activity
+    // Fetch ~150,000 trades per run (~4-5 min of data) to capture whale activity
+    // With ~1 whale trade per 2 min, this ensures we catch all whales in 15-min interval
     const PAGE_SIZE = 500;
-    const MAX_PAGES = 20;
+    const MAX_PAGES = 300;
 
     // Only store trades >= $5k to save database space
     const MIN_TRADE_SIZE = 5_000;
