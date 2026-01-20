@@ -1,0 +1,25 @@
+name: Sync Polymarket Trades
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync trades from Polymarket
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/fetch-trades
+
+      - name: Sync market resolutions
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions

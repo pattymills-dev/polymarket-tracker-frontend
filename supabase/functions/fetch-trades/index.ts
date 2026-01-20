@@ -31,10 +31,12 @@ serve(async (req) => {
 
     console.log("Fetching trades from Polymarket Data API...");
 
-    // We'll pull the most recent ~1500 trades per run (3 pages of 500).
+    // Fetch ~10,000 trades per run to capture more whale activity
     const PAGE_SIZE = 500;
-    const MAX_PAGES = 3;
+    const MAX_PAGES = 20;
 
+    // Only store trades >= $5k to save database space
+    const MIN_TRADE_SIZE = 5_000;
     const WHALE_THRESHOLD = 10_000;
     const MEGA_WHALE_THRESHOLD = 50_000;
 
@@ -83,9 +85,10 @@ serve(async (req) => {
         };
       });
 
-      // 2) Filter out invalid rows
+      // 2) Filter out invalid rows AND trades below $5k threshold
       const rowsFiltered = rowsRaw.filter((r: any) =>
-        r.tx_hash && r.market_id && r.trader_address && r.timestamp
+        r.tx_hash && r.market_id && r.trader_address && r.timestamp &&
+        typeof r.amount === "number" && r.amount >= MIN_TRADE_SIZE
       );
 
       // 3) Dedupe by tx_hash within this batch to avoid:
@@ -99,7 +102,7 @@ serve(async (req) => {
       }
 
       console.log(
-        `Page ${page + 1}/${MAX_PAGES} offset=${offset}: raw=${rowsRaw.length} filtered=${rowsFiltered.length} deduped=${rows.length}`,
+        `Page ${page + 1}/${MAX_PAGES} offset=${offset}: raw=${rowsRaw.length} filtered_$5k+=${rowsFiltered.length} deduped=${rows.length}`,
       );
 
       if (rows.length === 0) {
@@ -149,6 +152,14 @@ serve(async (req) => {
       console.log(
         `Page ${page + 1}/${MAX_PAGES}: fetched=${trades.length}, stored=${rows.length}`,
       );
+    }
+
+    // Recalculate trader stats after storing all trades
+    const { error: statsError } = await supabase.rpc('recalculate_trader_stats');
+    if (statsError) {
+      console.error("Error recalculating trader stats:", statsError);
+    } else {
+      console.log("Trader stats recalculated successfully");
     }
 
     return new Response(
