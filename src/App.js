@@ -29,6 +29,7 @@ const PolymarketTracker = () => {
   const [alertThreshold, setAlertThreshold] = useState(50000);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [sideFilter, setSideFilter] = useState('all'); // 'all', 'BUY', 'SELL'
   const [selectedTrader, setSelectedTrader] = useState(null);
   const [traderTrades, setTraderTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
@@ -91,6 +92,24 @@ const PolymarketTracker = () => {
     if (num >= 25000) return { label: 'LARGE', color: 'bg-amber-500/20 text-amber-300 border-amber-500/50' };
     if (num >= 10000) return { label: 'NOTABLE', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50' };
     return null;
+  };
+
+  const getSideLabel = (side) => {
+    const normalizedSide = (side || 'BUY').toUpperCase();
+    if (normalizedSide === 'SELL') {
+      return {
+        label: 'SELL',
+        color: 'bg-amber-500/20 text-amber-300 border-amber-500/50',
+        textColor: 'text-amber-400',
+        verb: 'Sold'
+      };
+    }
+    return {
+      label: 'BUY',
+      color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50',
+      textColor: 'text-cyan-400',
+      verb: 'Bought'
+    };
   };
 
   const toMs = (ts) => {
@@ -357,8 +376,18 @@ setMarketStats({
   };
 
   const filteredBets = useMemo(() => {
-    return (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
-  }, [largeBets, minBetSize]);
+    let filtered = (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
+
+    // Apply side filter
+    if (sideFilter !== 'all') {
+      filtered = filtered.filter((bet) => {
+        const side = (bet.side || 'BUY').toUpperCase();
+        return side === sideFilter;
+      });
+    }
+
+    return filtered;
+  }, [largeBets, minBetSize, sideFilter]);
 
   // Fetch trader profitability data
   const [profitabilityTraders, setProfitabilityTraders] = useState([]);
@@ -754,8 +783,42 @@ setMarketStats({
                     <AlertCircle className="w-5 h-5 text-slate-300" />
                     Large bets
                   </h2>
-                  <div className="text-xs text-slate-500">
-                    Showing {filteredBets.length} trades (≥ {formatCurrency(minBetSize)})
+                  <div className="flex items-center gap-3">
+                    <div className="flex gap-1 text-xs">
+                      <button
+                        onClick={() => setSideFilter('all')}
+                        className={`px-2.5 py-1 rounded transition-colors ${
+                          sideFilter === 'all'
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setSideFilter('BUY')}
+                        className={`px-2.5 py-1 rounded transition-colors ${
+                          sideFilter === 'BUY'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        Buys
+                      </button>
+                      <button
+                        onClick={() => setSideFilter('SELL')}
+                        className={`px-2.5 py-1 rounded transition-colors ${
+                          sideFilter === 'SELL'
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        Sells
+                      </button>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {filteredBets.length} trades (≥ {formatCurrency(minBetSize)})
+                    </div>
                   </div>
                 </div>
 
@@ -770,6 +833,7 @@ setMarketStats({
                     {filteredBets.map((bet, idx) => {
                       const isWatched = watchedTraders.includes(bet.trader_address);
                       const sizeLabel = getBetSizeLabel(bet.amount);
+                      const sideInfo = getSideLabel(bet.side);
                       return (
                         <div
                           key={idx}
@@ -784,6 +848,9 @@ setMarketStats({
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <span className="text-xs text-slate-500 font-mono">
                                   {formatTimestamp(bet.timestamp)}
+                                </span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${sideInfo.color} uppercase tracking-wide`}>
+                                  {sideInfo.label}
                                 </span>
                                 {sizeLabel && (
                                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${sizeLabel.color} uppercase tracking-wide`}>
@@ -807,6 +874,12 @@ setMarketStats({
   {bet.market_title || bet.market_slug || bet.market_id}
 </a>
 
+                              <p className="text-xs mt-1">
+                                <span className={sideInfo.textColor}>{sideInfo.verb} {formatCurrency(bet.amount)}</span>
+                                <span className="text-slate-400"> of </span>
+                                <span className={getOutcomeColor(bet.outcome)}>{bet.outcome}</span>
+                              </p>
+
                               <p className="text-xs text-slate-400 mt-1.5">
                                 Trader:{' '}
                                 <span className="font-mono text-slate-300 text-xs">
@@ -819,9 +892,11 @@ setMarketStats({
                               <p className={`text-xl font-bold font-mono ${getBetAmountColor(bet.amount)}`}>
                                 {formatCurrency(bet.amount)}
                               </p>
-                              <p className="text-xs text-slate-500 mt-1">
-                                <span className={getOutcomeColor(bet.outcome)}>{bet.outcome}</span>
-                              </p>
+                              {bet.shares && (
+                                <p className="text-xs text-slate-500 mt-1">
+                                  {Number(bet.shares).toFixed(2)} shares
+                                </p>
+                              )}
                             </div>
                           </div>
 
@@ -1038,7 +1113,8 @@ setMarketStats({
                     <>
                       <p>Showing traders with resolved markets and profitability metrics.</p>
                       <p className="mt-1">Click a trader to view details and watchlist.</p>
-                      <p className="mt-2 text-amber-400/70">💡 Profitability updates when markets resolve (auto-syncs every 15 min).</p>
+                      <p className="mt-2 text-amber-400/70">💡 Profitability includes both realized P/L from sells and settlement P/L from remaining shares held to resolution.</p>
+                      <p className="mt-1 text-amber-400/70">Data auto-syncs every 15 min.</p>
                     </>
                   ) : (
                     <>
@@ -1136,7 +1212,9 @@ setMarketStats({
                   <p className="text-slate-400 text-sm text-center py-6">No trades found</p>
                 ) : (
                   <div className="max-h-96 overflow-y-auto pr-2 space-y-2">
-                    {traderTrades.map((trade, idx) => (
+                    {traderTrades.map((trade, idx) => {
+                      const tradeSideInfo = getSideLabel(trade.side);
+                      return (
                       <div key={idx} className="bg-slate-950 rounded-md border border-slate-800 p-3">
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="min-w-0 flex-1">
@@ -1157,13 +1235,9 @@ setMarketStats({
                               {formatCurrency(trade.amount)}
                             </p>
                             <span
-                              className={`text-xs font-semibold px-2 py-0.5 rounded mt-1 inline-block ${
-                                trade.side === 'BUY'
-                                  ? 'bg-emerald-500/20 text-emerald-300'
-                                  : 'bg-rose-500/20 text-rose-300'
-                              }`}
+                              className={`text-xs font-semibold px-2 py-0.5 rounded mt-1 inline-block border ${tradeSideInfo.color}`}
                             >
-                              {trade.side || 'BUY'}
+                              {tradeSideInfo.label}
                             </span>
                           </div>
                         </div>
@@ -1176,9 +1250,17 @@ setMarketStats({
                               {Number(trade.price) ? `${(Number(trade.price) * 100).toFixed(0)}¢` : '—'}
                             </span>
                           </span>
+                          {trade.shares && (
+                            <span className="text-slate-500">
+                              Shares: <span className="text-slate-300">
+                                {Number(trade.shares).toFixed(2)}
+                              </span>
+                            </span>
+                          )}
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 )}
               </div>
@@ -1207,6 +1289,10 @@ setMarketStats({
           <p className="text-sm text-slate-300">
             Data is pulled from your Supabase tables. If something looks stale, hit "Sync Polymarket" then
             "Refresh."
+          </p>
+          <p className="text-sm text-slate-400 mt-2">
+            <span className="font-semibold text-cyan-400">BUY</span> and <span className="font-semibold text-amber-400">SELL</span> trades are tracked separately.
+            Trader profitability accounts for both realized P/L from sells and settlement P/L from remaining shares.
           </p>
         </div>
       </div>
