@@ -29,6 +29,8 @@ const PolymarketTracker = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTrader, setSelectedTrader] = useState(null);
+  const [traderTrades, setTraderTrades] = useState([]);
+  const [loadingTrades, setLoadingTrades] = useState(false);
 
   // Supabase Configuration
   const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
@@ -156,7 +158,16 @@ const tradesRes = await fetch(
         console.error('Traders error:', tradersJson);
         setTopTraders([]);
       } else {
-        setTopTraders(Array.isArray(tradersJson) ? tradersJson : []);
+        const traders = Array.isArray(tradersJson) ? tradersJson : [];
+
+        // Debug: Log traders data
+        console.log('Total traders fetched:', traders.length);
+        if (traders.length > 0) {
+          console.log('Sample trader data fields:', Object.keys(traders[0]));
+          console.log('Sample trader:', traders[0]);
+        }
+
+        setTopTraders(traders);
       }
 
       const alertsRes = await fetch(
@@ -187,6 +198,18 @@ const statsArr = await statsRes.json();
 const stats = statsArr?.[0] ?? null;
 
       const trades = Array.isArray(tradesJson) ? tradesJson : [];
+
+      // Debug: Log first trade to see all available fields
+      if (trades.length > 0) {
+        console.log('Sample trade data fields:', Object.keys(trades[0]));
+        console.log('Sample trade:', trades[0]);
+
+        // Count buy vs sell trades
+        const buys = trades.filter(t => t.side === 'BUY').length;
+        const sells = trades.filter(t => t.side === 'SELL').length;
+        console.log(`Trade distribution: ${buys} BUYs, ${sells} SELLs (${trades.length} total)`);
+      }
+
       setLargeBets(trades);
 
       if (!statsRes.ok) {
@@ -254,6 +277,23 @@ setMarketStats({
     setWatchedTraders((prev) =>
       prev.includes(address) ? prev.filter((a) => a !== address) : [...prev, address]
     );
+  };
+
+  const fetchTraderTrades = async (address) => {
+    setLoadingTrades(true);
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/trades?trader_address=eq.${address}&order=timestamp.desc&limit=100`,
+        { headers }
+      );
+      const trades = await response.json();
+      setTraderTrades(Array.isArray(trades) ? trades : []);
+    } catch (error) {
+      console.error('Error fetching trader trades:', error);
+      setTraderTrades([]);
+    } finally {
+      setLoadingTrades(false);
+    }
   };
 
   const filteredBets = useMemo(() => {
@@ -557,9 +597,20 @@ setMarketStats({
                               <p className="text-xl font-semibold text-slate-100">
                                 {formatCurrency(bet.amount)}
                               </p>
-                              <p className="text-xs text-slate-400 mt-1">
-                                Outcome: <span className="text-slate-200">{bet.outcome}</span>
-                              </p>
+                              <div className="flex items-center justify-end gap-2 mt-1">
+                                <span
+                                  className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                    bet.side === 'BUY'
+                                      ? 'bg-emerald-500/20 text-emerald-300'
+                                      : 'bg-rose-500/20 text-rose-300'
+                                  }`}
+                                >
+                                  {bet.side || 'BUY'}
+                                </span>
+                                <p className="text-xs text-slate-400">
+                                  <span className="text-slate-200">{bet.outcome}</span>
+                                </p>
+                              </div>
                             </div>
                           </div>
 
@@ -621,7 +672,10 @@ setMarketStats({
                               ? 'border-cyan-500/30'
                               : 'border-slate-800 hover:border-slate-700'
                           }`}
-                          onClick={() => setSelectedTrader(trader)}
+                          onClick={() => {
+                            setSelectedTrader(trader);
+                            fetchTraderTrades(trader.address);
+                          }}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-center gap-2 min-w-0">
@@ -668,6 +722,35 @@ setMarketStats({
                               <p className="font-semibold text-slate-100">{trader.total_bets}</p>
                             </div>
                           </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-sm mt-2">
+                            <div>
+                              <p className="text-xs text-slate-500">P/L</p>
+                              <p className={`font-semibold ${
+                                Number(trader.profit_loss) > 0
+                                  ? 'text-emerald-400'
+                                  : Number(trader.profit_loss) < 0
+                                  ? 'text-rose-400'
+                                  : 'text-slate-100'
+                              }`}>
+                                {formatCurrency(trader.profit_loss)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500">Profit Rate</p>
+                              <p className={`font-semibold ${
+                                Number(trader.profit_loss) > 0
+                                  ? 'text-emerald-400'
+                                  : Number(trader.profit_loss) < 0
+                                  ? 'text-rose-400'
+                                  : 'text-slate-100'
+                              }`}>
+                                {trader.total_volume > 0
+                                  ? `${((Number(trader.profit_loss) / Number(trader.total_volume)) * 100).toFixed(1)}%`
+                                  : '—'}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -694,7 +777,10 @@ setMarketStats({
                   <p className="text-sm text-slate-400 mt-1">Trader profile</p>
                 </div>
                 <button
-                  onClick={() => setSelectedTrader(null)}
+                  onClick={() => {
+                    setSelectedTrader(null);
+                    setTraderTrades([]);
+                  }}
                   className="text-slate-400 hover:text-slate-200 text-2xl leading-none"
                   aria-label="Close"
                 >
@@ -715,6 +801,95 @@ setMarketStats({
                     {selectedTrader.total_bets}
                   </p>
                 </div>
+                <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                  <p className="text-xs text-slate-500">Profit/Loss</p>
+                  <p className={`text-xl font-semibold mt-1 ${
+                    Number(selectedTrader.profit_loss) > 0
+                      ? 'text-emerald-400'
+                      : Number(selectedTrader.profit_loss) < 0
+                      ? 'text-rose-400'
+                      : 'text-slate-100'
+                  }`}>
+                    {formatCurrency(selectedTrader.profit_loss)}
+                  </p>
+                </div>
+                <div className="bg-slate-950 rounded-md p-3 border border-slate-800">
+                  <p className="text-xs text-slate-500">Profit Rate</p>
+                  <p className={`text-xl font-semibold mt-1 ${
+                    Number(selectedTrader.profit_loss) > 0
+                      ? 'text-emerald-400'
+                      : Number(selectedTrader.profit_loss) < 0
+                      ? 'text-rose-400'
+                      : 'text-slate-100'
+                  }`}>
+                    {selectedTrader.total_volume > 0
+                      ? `${((Number(selectedTrader.profit_loss) / Number(selectedTrader.total_volume)) * 100).toFixed(1)}%`
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Trade History */}
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  Recent trades (last 100)
+                </h4>
+
+                {loadingTrades ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-600 mx-auto" />
+                    <p className="mt-3 text-slate-400 text-sm">Loading trades...</p>
+                  </div>
+                ) : traderTrades.length === 0 ? (
+                  <p className="text-slate-400 text-sm text-center py-6">No trades found</p>
+                ) : (
+                  <div className="max-h-96 overflow-y-auto pr-2 space-y-2">
+                    {traderTrades.map((trade, idx) => (
+                      <div key={idx} className="bg-slate-950 rounded-md border border-slate-800 p-3">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <a
+                              href={trade.market_slug ? `https://polymarket.com/market/${trade.market_slug}` : undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sm font-medium text-slate-200 hover:underline block truncate"
+                            >
+                              {trade.market_title || trade.market_slug || trade.market_id}
+                            </a>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {formatTimestamp(trade.timestamp)}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-semibold text-slate-100">
+                              {formatCurrency(trade.amount)}
+                            </p>
+                            <span
+                              className={`text-xs font-semibold px-2 py-0.5 rounded mt-1 inline-block ${
+                                trade.side === 'BUY'
+                                  ? 'bg-emerald-500/20 text-emerald-300'
+                                  : 'bg-rose-500/20 text-rose-300'
+                              }`}
+                            >
+                              {trade.side || 'BUY'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">
+                            Outcome: <span className="text-slate-300">{trade.outcome}</span>
+                          </span>
+                          <span className="text-slate-500">
+                            Price: <span className="text-slate-300">
+                              {Number(trade.price) ? `${(Number(trade.price) * 100).toFixed(0)}¢` : '—'}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <button
