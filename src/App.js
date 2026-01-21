@@ -291,7 +291,8 @@ setMarketStats({
         'Content-Type': 'application/json'
       };
 
-      const [marketsResp, tradesResp, resolutionsResp] = await Promise.all([
+      // Step 1: Fetch new markets and trades
+      const [marketsResp, tradesResp] = await Promise.all([
         fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
           method: 'POST',
           headers: fnHeaders
@@ -299,15 +300,24 @@ setMarketStats({
         fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
           method: 'POST',
           headers: fnHeaders
-        }),
-        fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=250`, {
-          method: 'POST',
-          headers: fnHeaders
         })
       ]);
 
+      // Step 2: Populate markets table from trades (fills in missing markets)
+      const populateResp = await fetch(`${SUPABASE_URL}/functions/v1/populate-markets-from-trades`, {
+        method: 'POST',
+        headers: fnHeaders
+      });
+
+      // Step 3: Sync resolutions for all markets
+      const resolutionsResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=250`, {
+        method: 'POST',
+        headers: fnHeaders
+      });
+
       const marketsData = marketsResp.ok ? await marketsResp.json() : null;
       const tradesData = tradesResp.ok ? await tradesResp.json() : null;
+      const populateData = populateResp.ok ? await populateResp.json() : null;
       const resolutionsData = resolutionsResp.ok ? await resolutionsResp.json() : null;
 
       const errors = [];
@@ -319,10 +329,16 @@ setMarketStats({
         console.error('fetch-trades failed', tradesResp.status);
         errors.push('Trades sync failed');
       }
+      if (!populateResp.ok) {
+        console.error('populate-markets-from-trades failed', populateResp.status);
+        errors.push('Populate markets failed');
+      }
       if (!resolutionsResp.ok) {
         console.error('sync-market-resolutions failed', resolutionsResp.status);
         errors.push('Resolutions sync failed');
       }
+
+      console.log('Sync results:', { marketsData, tradesData, populateData, resolutionsData });
 
       if (errors.length > 0) {
         setSyncResult({
