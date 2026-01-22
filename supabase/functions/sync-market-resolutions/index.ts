@@ -1,12 +1,25 @@
 // Deno Edge Function to sync Polymarket market resolutions
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
-console.log('sync-market-resolutions v1 starting')
+console.log('sync-market-resolutions v2 starting')
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
 
 Deno.serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   try {
     const url = new URL(req.url)
-    const batchSize = parseInt(url.searchParams.get('batch') || '50', 10)
+    // Limit batch size to 20 to avoid 414 URL Too Large error
+    // Each market ID is ~66 chars, so 20 IDs = ~1320 chars which is safe
+    const requestedBatch = parseInt(url.searchParams.get('batch') || '20', 10)
+    const batchSize = Math.min(requestedBatch, 20)
 
     console.log(`Processing batch of ${batchSize} markets`)
 
@@ -27,7 +40,7 @@ Deno.serve(async (req) => {
       console.error('Error fetching markets:', fetchError)
       return new Response(JSON.stringify({ error: fetchError.message }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -35,7 +48,7 @@ Deno.serve(async (req) => {
       console.log('No unresolved markets found')
       return new Response(JSON.stringify({ ok: true, processed: 0, updated: 0 }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -61,7 +74,7 @@ Deno.serve(async (req) => {
         details: errorText
       }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -103,7 +116,7 @@ Deno.serve(async (req) => {
       updated: updatedCount
     }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
 
   } catch (error) {
@@ -112,7 +125,7 @@ Deno.serve(async (req) => {
       error: error.message || 'Unknown error'
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
 })
