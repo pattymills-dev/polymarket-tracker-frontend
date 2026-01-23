@@ -29,20 +29,52 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Fetch unresolved markets
-    const { data: markets, error: fetchError } = await supabase
-      .from('markets')
-      .select('id, question')
-      .eq('resolved', false)
-      .limit(batchSize)
+    // Fetch unresolved markets that have slugs in trades
+    // Join with trades to ensure we only get markets with slugs
+    const { data: marketsWithSlugs, error: fetchError } = await supabase
+      .from('trades')
+      .select('market_id, market_slug')
+      .not('market_slug', 'is', null)
+      .limit(batchSize * 10) // Get more to account for duplicates
 
     if (fetchError) {
-      console.error('Error fetching markets:', fetchError)
+      console.error('Error fetching trades:', fetchError)
       return new Response(JSON.stringify({ error: fetchError.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
+
+    // Get unique market IDs with their slugs
+    const uniqueMarkets = new Map()
+    marketsWithSlugs?.forEach(t => {
+      if (!uniqueMarkets.has(t.market_id)) {
+        uniqueMarkets.set(t.market_id, t.market_slug)
+      }
+    })
+
+    const marketIdsToCheck = Array.from(uniqueMarkets.keys()).slice(0, batchSize)
+
+    // Fetch market details and filter for unresolved
+    const { data: marketsRaw, error: marketsError } = await supabase
+      .from('markets')
+      .select('id, question')
+      .in('id', marketIdsToCheck)
+      .eq('resolved', false)
+
+    if (marketsError) {
+      console.error('Error fetching markets:', marketsError)
+      return new Response(JSON.stringify({ error: marketsError.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Add slugs to markets
+    const markets = marketsRaw?.map(m => ({
+      ...m,
+      slug: uniqueMarkets.get(m.id)
+    })).filter(m => m.slug) || []
 
     if (!markets || markets.length === 0) {
       console.log('No unresolved markets found')
@@ -52,68 +84,67 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log(`Found ${markets.length} unresolved markets to check`)
-
-    // Fetch resolution data from Gamma API
-    const conditionIds = markets.map(m => m.id)
-    const gammaUrl = 'https://gamma-api.polymarket.com/markets'
-    const gammaParams = new URLSearchParams()
-    conditionIds.forEach(id => gammaParams.append('condition_ids', id))
-
-    console.log(`Gamma request: ${gammaUrl}?${gammaParams.toString().substring(0, 200)}...`)
-
-    const gammaResponse = await fetch(`${gammaUrl}?${gammaParams.toString()}`, {
-      headers: { 'Accept': 'application/json' }
-    })
-
-    if (!gammaResponse.ok) {
-      const errorText = await gammaResponse.text()
-      console.error(`Gamma API error: ${gammaResponse.status} - ${errorText}`)
-      return new Response(JSON.stringify({
-        error: `Gamma API returned ${gammaResponse.status}`,
-        details: errorText
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const gammaMarkets = await gammaResponse.json()
-    console.log(`Gamma returned ${gammaMarkets.length} market records`)
+    console.log(`Found ${markets.length} unresolved markets with slugs to check`)
 
     let updatedCount = 0
+    let checkedCount = 0
 
-    // Process each market
-    for (const gammaMarket of gammaMarkets) {
-      if (gammaMarket.closed && gammaMarket.outcome !== null && gammaMarket.outcome !== undefined) {
-        const conditionId = gammaMarket.condition_id
+    // Query each market by slug individually
+    for (const market of markets) {
+      try {
+        const gammaUrl = `https://gamma-api.polymarket.com/markets/slug/${market.slug}`
+        console.log(`Checking market slug: ${market.slug}`)
 
-        // Update market as resolved
-        const { error: updateError } = await supabase
-          .from('markets')
-          .update({
-            resolved: true,
-            resolved_at: new Date().toISOString(),
-            winning_outcome: gammaMarket.outcome,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', conditionId)
+        const gammaResponse = await fetch(gammaUrl, {
+          headers: { 'Accept': 'application/json' }
+        })
 
-        if (updateError) {
-          console.error(`Error updating market ${conditionId}:`, updateError)
-        } else {
-          updatedCount++
-          console.log(`✓ Resolved market ${conditionId}: outcome = ${gammaMarket.outcome}`)
+        if (!gammaResponse.ok) {
+          console.log(`Market ${market.slug} not found in Gamma API (${gammaResponse.status})`)
+          continue
         }
+
+        const gammaMarket = await gammaResponse.json()
+        checkedCount++
+
+        // Check if market is resolved
+        if (gammaMarket.closed && gammaMarket.outcomePrices) {
+          // Find winning outcome (highest price)
+          const maxPrice = Math.max(...gammaMarket.outcomePrices)
+          const winningIndex = gammaMarket.outcomePrices.indexOf(maxPrice)
+          const winningOutcome = gammaMarket.outcomes[winningIndex]
+
+          console.log(`Market ${market.slug} resolved: winner = ${winningOutcome}`)
+
+          // Update market as resolved
+          const { error: updateError } = await supabase
+            .from('markets')
+            .update({
+              resolved: true,
+              resolved_at: gammaMarket.closed_time || new Date().toISOString(),
+              winning_outcome: winningOutcome,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', market.id)
+
+          if (updateError) {
+            console.error(`Error updating market ${market.id}:`, updateError)
+          } else {
+            updatedCount++
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing market ${market.slug}:`, error)
       }
     }
 
-    console.log(`Sync complete: processed ${markets.length}, updated ${updatedCount}`)
+    console.log(`Checked ${checkedCount} markets, resolved ${updatedCount}`)
 
     return new Response(JSON.stringify({
       ok: true,
-      processed: markets.length,
-      updated: updatedCount
+      processed: checkedCount,
+      updated: updatedCount,
+      total_queried: markets.length
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
