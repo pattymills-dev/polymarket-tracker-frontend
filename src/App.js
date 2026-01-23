@@ -849,7 +849,7 @@ setMarketStats({
                     </p>
                   </div>
                 ) : (
-                  <div className="max-h-[800px] overflow-y-auto pr-2 space-y-2">
+                  <div className="max-h-[1000px] overflow-y-auto pr-2 space-y-2">
                     {filteredBets.map((bet, idx) => {
                       const isWatched = watchedTraders.includes(bet.trader_address);
                       const sizeLabel = getBetSizeLabel(bet.amount);
@@ -1010,7 +1010,7 @@ setMarketStats({
                 {visibleTraders.length === 0 ? (
                   <p className="text-slate-400 text-sm text-center py-8">No trader data yet</p>
                 ) : (
-                  <div className="max-h-[800px] overflow-y-auto pr-2 space-y-2">
+                  <div className="max-h-[1000px] overflow-y-auto pr-2 space-y-2">
                     {visibleTraders.map((trader, index) => {
                       const isWatched = watchedTraders.includes(trader.address);
                       const rankColor = index === 0 ? 'text-amber-400' : index === 1 ? 'text-slate-300' : index === 2 ? 'text-orange-600' : 'text-slate-500';
