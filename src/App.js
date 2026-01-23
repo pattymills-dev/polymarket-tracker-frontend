@@ -797,7 +797,7 @@ setMarketStats({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Large Bets Feed */}
             <div className="lg:col-span-2">
-              <div className="bg-slate-900 rounded-lg border border-slate-800 p-6">
+              <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 flex flex-col h-[1200px]">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-slate-300" />
@@ -849,7 +849,7 @@ setMarketStats({
                     </p>
                   </div>
                 ) : (
-                  <div className="h-[1000px] overflow-y-auto pr-2 space-y-2">
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-2">
                     {filteredBets.map((bet, idx) => {
                       const isWatched = watchedTraders.includes(bet.trader_address);
                       const sizeLabel = getBetSizeLabel(bet.amount);
@@ -949,7 +949,7 @@ setMarketStats({
 
             {/* Top Traders */}
             <div className="lg:col-span-1">
-              <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 sticky top-6">
+              <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 sticky top-6 flex flex-col h-[1200px]">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-slate-300" />
@@ -1010,7 +1010,7 @@ setMarketStats({
                 {visibleTraders.length === 0 ? (
                   <p className="text-slate-400 text-sm text-center py-8">No trader data yet</p>
                 ) : (
-                  <div className="h-[1000px] overflow-y-auto pr-2 space-y-2">
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-2">
                     {visibleTraders.map((trader, index) => {
                       const isWatched = watchedTraders.includes(trader.address);
                       const rankColor = index === 0 ? 'text-amber-400' : index === 1 ? 'text-slate-300' : index === 2 ? 'text-orange-600' : 'text-slate-500';
