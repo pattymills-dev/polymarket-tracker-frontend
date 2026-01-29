@@ -55,12 +55,12 @@ Deno.serve(async (req) => {
 
     const marketIdsToCheck = Array.from(uniqueMarkets.keys()).slice(0, batchSize)
 
-    // Fetch market details and filter for unresolved
+    // Fetch market details - get both unresolved markets AND resolved markets missing winning_outcome
     const { data: marketsRaw, error: marketsError } = await supabase
       .from('markets')
-      .select('id, question')
+      .select('id, question, resolved, winning_outcome')
       .in('id', marketIdsToCheck)
-      .eq('resolved', false)
+      .or('resolved.eq.false,winning_outcome.is.null')
 
     if (marketsError) {
       console.error('Error fetching markets:', marketsError)
@@ -77,14 +77,14 @@ Deno.serve(async (req) => {
     })).filter(m => m.slug) || []
 
     if (!markets || markets.length === 0) {
-      console.log('No unresolved markets found')
+      console.log('No markets needing resolution updates found')
       return new Response(JSON.stringify({ ok: true, processed: 0, updated: 0 }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    console.log(`Found ${markets.length} unresolved markets with slugs to check`)
+    console.log(`Found ${markets.length} markets to check (unresolved or missing winning_outcome)`)
 
     let updatedCount = 0
     let checkedCount = 0
