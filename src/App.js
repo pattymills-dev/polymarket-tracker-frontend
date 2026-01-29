@@ -458,7 +458,10 @@ setMarketStats({
         status: response.status,
         ok: response.ok,
         dataLength: Array.isArray(data) ? data.length : 'not array',
-        data: Array.isArray(data) ? data.slice(0, 3) : data
+        sampleData: Array.isArray(data) ? data.slice(0, 3) : data,
+        firstTraderWins: data[0]?.wins,
+        firstTraderLosses: data[0]?.losses,
+        firstTraderWinRate: data[0]?.win_rate
       });
 
       if (response.ok && Array.isArray(data)) {
