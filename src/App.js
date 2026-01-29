@@ -296,11 +296,11 @@ setMarketStats({
         fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
           method: 'POST',
           headers: fnHeaders
-        }),
+        }).catch(err => ({ ok: false, error: err.message })),
         fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
           method: 'POST',
           headers: fnHeaders
-        })
+        }).catch(err => ({ ok: false, error: err.message }))
       ]);
 
       // Step 2: Populate markets table from trades (fills in missing markets)
@@ -322,12 +322,12 @@ setMarketStats({
 
       const errors = [];
       if (!marketsResp.ok) {
-        console.error('fetch-markets failed', marketsResp.status);
-        errors.push('Markets sync failed');
+        console.error('fetch-markets failed', marketsResp.status, marketsResp.error);
+        errors.push(`Markets: ${marketsResp.error || marketsResp.status}`);
       }
       if (!tradesResp.ok) {
-        console.error('fetch-trades failed', tradesResp.status);
-        errors.push('Trades sync failed');
+        console.error('fetch-trades failed', tradesResp.status, tradesResp.error);
+        errors.push(`Trades: ${tradesResp.error || tradesResp.status}`);
       }
       if (!populateResp.ok) {
         console.error('populate-markets-from-trades failed', populateResp.status);
@@ -436,9 +436,14 @@ setMarketStats({
         );
 
         const data = await response.json();
-        console.log('Profitability API response:', { status: response.status, ok: response.ok, data });
+        console.log('Profitability API response:', {
+          status: response.status,
+          ok: response.ok,
+          dataLength: Array.isArray(data) ? data.length : 'not array',
+          data: Array.isArray(data) ? data.slice(0, 3) : data
+        });
 
-        if (response.ok) {
+        if (response.ok && Array.isArray(data)) {
           // Map to match the existing trader card structure
           const mappedTraders = data.map(t => ({
             address: t.trader_address,
