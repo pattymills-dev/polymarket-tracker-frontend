@@ -356,6 +356,7 @@ setMarketStats({
 
       setTimeout(() => {
         fetchData();
+        fetchProfitability();
         setSyncing(false);
       }, 1500);
     } catch (error) {
@@ -417,61 +418,62 @@ setMarketStats({
   // Fetch trader profitability data
   const [profitabilityTraders, setProfitabilityTraders] = useState([]);
 
-  useEffect(() => {
-    const fetchProfitability = async () => {
-      try {
-        const headers = {
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'apikey': SUPABASE_ANON_KEY,
-          'Content-Type': 'application/json'
-        };
+  const fetchProfitability = async () => {
+    try {
+      const headers = {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      };
 
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/rpc/calculate_trader_performance`,
-          {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ min_resolved_markets: 1 })
-          }
-        );
-
-        const data = await response.json();
-        console.log('Profitability API response:', {
-          status: response.status,
-          ok: response.ok,
-          dataLength: Array.isArray(data) ? data.length : 'not array',
-          data: Array.isArray(data) ? data.slice(0, 3) : data
-        });
-
-        if (response.ok && Array.isArray(data)) {
-          // Map to match the existing trader card structure
-          const mappedTraders = data.map(t => ({
-            address: t.trader_address,
-            total_volume: Number(t.total_buy_cost || 0) + Number(t.total_sell_proceeds || 0),
-            total_bets: t.resolved_markets,
-            resolved_markets: t.resolved_markets,
-            wins: t.wins,
-            losses: t.losses,
-            win_rate: Number(t.win_rate || 0),
-            profit_wins: t.profit_wins,
-            profit_losses: t.profit_losses,
-            profitability_rate: Number(t.profitability_rate || 0),
-            total_pl: Number(t.total_pl || 0),
-            avg_bet_size: Number(t.total_buy_cost || 0) / (t.resolved_markets || 1),
-            unique_markets: t.resolved_markets,
-            last_activity: Date.now() // placeholder
-          }));
-          console.log('Mapped profitability traders:', mappedTraders.length, mappedTraders);
-          setProfitabilityTraders(mappedTraders);
-        } else {
-          console.error('Profitability API error:', data);
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/rpc/calculate_trader_performance`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ min_resolved_markets: 1 })
         }
-      } catch (error) {
-        console.error('Error fetching profitability:', error);
-      }
-    };
+      );
 
+      const data = await response.json();
+      console.log('Profitability API response:', {
+        status: response.status,
+        ok: response.ok,
+        dataLength: Array.isArray(data) ? data.length : 'not array',
+        data: Array.isArray(data) ? data.slice(0, 3) : data
+      });
+
+      if (response.ok && Array.isArray(data)) {
+        // Map to match the existing trader card structure
+        const mappedTraders = data.map(t => ({
+          address: t.trader_address,
+          total_volume: Number(t.total_buy_cost || 0) + Number(t.total_sell_proceeds || 0),
+          total_bets: t.resolved_markets,
+          resolved_markets: t.resolved_markets,
+          wins: t.wins,
+          losses: t.losses,
+          win_rate: Number(t.win_rate || 0),
+          profit_wins: t.profit_wins,
+          profit_losses: t.profit_losses,
+          profitability_rate: Number(t.profitability_rate || 0),
+          total_pl: Number(t.total_pl || 0),
+          avg_bet_size: Number(t.total_buy_cost || 0) / (t.resolved_markets || 1),
+          unique_markets: t.resolved_markets,
+          last_activity: Date.now() // placeholder
+        }));
+        console.log('Mapped profitability traders:', mappedTraders.length, mappedTraders);
+        setProfitabilityTraders(mappedTraders);
+      } else {
+        console.error('Profitability API error:', data);
+      }
+    } catch (error) {
+      console.error('Error fetching profitability:', error);
+    }
+  };
+
+  useEffect(() => {
     fetchProfitability();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Calculate smart money metrics from recent trades (7-day fallback)
