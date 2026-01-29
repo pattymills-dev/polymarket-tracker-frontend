@@ -309,16 +309,34 @@ setMarketStats({
         headers: fnHeaders
       });
 
-      // Step 3: Sync resolutions for all markets
-      const resolutionsResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=250`, {
-        method: 'POST',
-        headers: fnHeaders
-      });
+      // Step 3: Sync resolutions for all markets (run multiple batches)
+      const batchPromises = [];
+      for (let i = 0; i < 10; i++) {
+        batchPromises.push(
+          fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=20`, {
+            method: 'POST',
+            headers: fnHeaders
+          })
+        );
+      }
+      const resolutionResponses = await Promise.all(batchPromises);
+      const resolutionsResp = resolutionResponses[0]; // Use first response for status
+
+      // Aggregate results from all batches
+      let totalUpdated = 0;
+      let totalProcessed = 0;
+      for (const resp of resolutionResponses) {
+        if (resp.ok) {
+          const data = await resp.json();
+          totalUpdated += data.updated || 0;
+          totalProcessed += data.processed || 0;
+        }
+      }
 
       const marketsData = marketsResp.ok ? await marketsResp.json() : null;
       const tradesData = tradesResp.ok ? await tradesResp.json() : null;
       const populateData = populateResp.ok ? await populateResp.json() : null;
-      const resolutionsData = resolutionsResp.ok ? await resolutionsResp.json() : null;
+      const resolutionsData = { updated: totalUpdated, processed: totalProcessed };
 
       const errors = [];
       if (!marketsResp.ok) {
@@ -1138,10 +1156,10 @@ setMarketStats({
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500">
                   {profitabilityTraders.length > 0 ? (
                     <>
-                      <p>Showing traders with resolved markets and profitability metrics.</p>
+                      <p>Showing {profitabilityTraders.length} traders with resolved markets.</p>
                       <p className="mt-1">Click a trader to view details and watchlist.</p>
-                      <p className="mt-2 text-amber-400/70">💡 Profitability includes both realized P/L from sells and settlement P/L from remaining shares held to resolution.</p>
-                      <p className="mt-1 text-amber-400/70">Data auto-syncs every 15 min.</p>
+                      <p className="mt-2 text-amber-400/70">💡 Win rate shows 0% if markets lack winning_outcome data. Run sync to update.</p>
+                      <p className="mt-1 text-amber-400/70">Profitability = realized P/L + settlement P/L.</p>
                     </>
                   ) : (
                     <>
