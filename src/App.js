@@ -309,11 +309,14 @@ setMarketStats({
         headers: fnHeaders
       });
 
-      // Step 3: Sync resolutions for all markets (run multiple batches)
+      // Step 3: Sync resolutions for all markets (run multiple batches with different offsets)
       const batchPromises = [];
-      for (let i = 0; i < 10; i++) {
+      const batchSize = 20;
+      const numBatches = 10;
+      for (let i = 0; i < numBatches; i++) {
+        const offset = i * batchSize; // Each batch gets a different offset
         batchPromises.push(
-          fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=20`, {
+          fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=${batchSize}&offset=${offset}`, {
             method: 'POST',
             headers: fnHeaders
           })

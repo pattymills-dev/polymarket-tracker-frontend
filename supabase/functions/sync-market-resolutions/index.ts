@@ -20,8 +20,9 @@ Deno.serve(async (req) => {
     // Each market ID is ~66 chars, so 20 IDs = ~1320 chars which is safe
     const requestedBatch = parseInt(url.searchParams.get('batch') || '20', 10)
     const batchSize = Math.min(requestedBatch, 20)
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10)
 
-    console.log(`Processing batch of ${batchSize} markets`)
+    console.log(`Processing batch of ${batchSize} markets with offset ${offset}`)
 
     // Initialize Supabase client with service role
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -29,13 +30,13 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Fetch unresolved markets that have slugs in trades
-    // Join with trades to ensure we only get markets with slugs
+    // Fetch markets that have slugs in trades
+    // Get a large pool to work from - much more than just batchSize
     const { data: marketsWithSlugs, error: fetchError } = await supabase
       .from('trades')
       .select('market_id, market_slug')
       .not('market_slug', 'is', null)
-      .limit(batchSize * 10) // Get more to account for duplicates
+      .limit(batchSize * 50) // Get 50x more markets to ensure we have enough unique ones
 
     if (fetchError) {
       console.error('Error fetching trades:', fetchError)
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
       }
     })
 
-    const marketIdsToCheck = Array.from(uniqueMarkets.keys()).slice(0, batchSize)
+    const marketIdsToCheck = Array.from(uniqueMarkets.keys()).slice(offset, offset + batchSize)
 
     // Fetch market details - get both unresolved markets AND resolved markets missing winning_outcome
     // First, get all markets in the list
