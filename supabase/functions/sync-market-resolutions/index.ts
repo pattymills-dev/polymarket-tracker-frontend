@@ -56,11 +56,11 @@ Deno.serve(async (req) => {
     const marketIdsToCheck = Array.from(uniqueMarkets.keys()).slice(0, batchSize)
 
     // Fetch market details - get both unresolved markets AND resolved markets missing winning_outcome
-    const { data: marketsRaw, error: marketsError } = await supabase
+    // First, get all markets in the list
+    const { data: allMarkets, error: marketsError } = await supabase
       .from('markets')
       .select('id, question, resolved, winning_outcome')
       .in('id', marketIdsToCheck)
-      .or('resolved.eq.false,winning_outcome.is.null')
 
     if (marketsError) {
       console.error('Error fetching markets:', marketsError)
@@ -69,6 +69,13 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
+
+    // Filter to only include markets that need updates
+    const marketsRaw = allMarkets?.filter(m =>
+      m.resolved === false || m.winning_outcome === null || m.winning_outcome === ''
+    ) || []
+
+    console.log(`Fetched ${allMarkets?.length || 0} markets, ${marketsRaw.length} need updates`)
 
     // Add slugs to markets
     const markets = marketsRaw?.map(m => ({
