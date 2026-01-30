@@ -26,7 +26,6 @@ const PolymarketTracker = () => {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
-  const [autoRefresh, setAutoRefresh] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
   const [sideFilter, setSideFilter] = useState('all'); // 'all', 'BUY', 'SELL'
   const [selectedTrader, setSelectedTrader] = useState(null);
@@ -310,9 +309,10 @@ setMarketStats({
       });
 
       // Step 3: Sync resolutions for all markets (run multiple batches with different offsets)
+      // Manual sync checks 50 batches (1000 markets) - cron jobs handle regular automatic syncing
       const batchPromises = [];
       const batchSize = 20;
-      const numBatches = 10;
+      const numBatches = 50;
       for (let i = 0; i < numBatches; i++) {
         const offset = i * batchSize; // Each batch gets a different offset
         batchPromises.push(
@@ -392,12 +392,15 @@ setMarketStats({
 
   useEffect(() => {
     fetchData();
-    if (!autoRefresh) return undefined;
 
-    const interval = setInterval(fetchData, 60000);
+    // Auto-refresh every 60 seconds (always enabled)
+    const interval = setInterval(() => {
+      fetchData();
+      fetchProfitability();
+    }, 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, minBetSize]);
+  }, [minBetSize]);
 
   const toggleWatchTrader = (address) => {
     setWatchedTraders((prev) =>
@@ -733,23 +736,6 @@ setMarketStats({
               />
               <p className="text-[11px] text-slate-500 mt-1">
                 Filter trades above this amount (base: $5k)
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-2">Auto refresh UI</label>
-              <button
-                onClick={() => setAutoRefresh((v) => !v)}
-                className={`w-full px-3 py-2 rounded-md text-sm font-medium border transition-colors ${
-                  autoRefresh
-                    ? 'bg-cyan-600 hover:bg-cyan-700 border-cyan-500/30 text-slate-950'
-                    : 'bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-200'
-                }`}
-              >
-                {autoRefresh ? 'Enabled (1 min)' : 'Disabled'}
-              </button>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Refreshes display from DB. Data syncs auto every 15 min.
               </p>
             </div>
 
