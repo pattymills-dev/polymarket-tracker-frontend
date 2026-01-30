@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 
 const RetroApp = () => {
   const [largeBets, setLargeBets] = useState([]);
@@ -48,7 +48,7 @@ const RetroApp = () => {
   }, []);
 
   // Fetch data
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const response = await fetch(
         `${SUPABASE_URL}/rest/v1/trades?select=*&order=timestamp.desc&limit=50`,
@@ -61,9 +61,9 @@ const RetroApp = () => {
       console.error('Error fetching trades:', error);
       setLoading(false);
     }
-  };
+  }, [headers]);
 
-  const fetchProfitability = async () => {
+  const fetchProfitability = useCallback(async () => {
     try {
       const response = await fetch(
         `${SUPABASE_URL}/rest/v1/rpc/calculate_trader_performance`,
@@ -90,7 +90,7 @@ const RetroApp = () => {
     } catch (error) {
       console.error('Error fetching profitability:', error);
     }
-  };
+  }, [headers]);
 
   useEffect(() => {
     if (bootComplete) {
@@ -104,7 +104,7 @@ const RetroApp = () => {
 
       return () => clearInterval(interval);
     }
-  }, [bootComplete]);
+  }, [bootComplete, fetchData, fetchProfitability]);
 
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('en-US', {
