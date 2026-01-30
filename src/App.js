@@ -650,15 +650,6 @@ setMarketStats({
                   </span>
                 )}
               </button>
-
-              <button
-                onClick={fetchData}
-                disabled={loading}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border border-slate-800 disabled:opacity-50"
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
             </div>
           </div>
         </div>
@@ -715,38 +706,6 @@ setMarketStats({
             )}
           </div>
         )}
-
-        {/* Filters */}
-        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Filter className="w-4 h-4 text-slate-300" />
-            <h3 className="font-semibold text-sm">Filters</h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs text-slate-400 mb-2">Additional filter (USD)</label>
-              <input
-                type="number"
-                value={minBetSize}
-                onChange={(e) => setMinBetSize(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600/40"
-                step="1000"
-                min="5000"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Filter trades above this amount (base: $5k)
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-2">Watched traders</label>
-              <div className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-md text-center font-semibold text-slate-100">
-                {watchedTraders.length}
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Stats */}
         {marketStats && (
