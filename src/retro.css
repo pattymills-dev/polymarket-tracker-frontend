@@ -1,0 +1,205 @@
+/* 80s Terminal Retro Theme */
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+:root {
+  --terminal-green: #00ff41;
+  --gameboy-dark: #0f380f;
+  --gameboy-medium: #306230;
+  --gameboy-light: #8bac0f;
+  --gameboy-lightest: #9bbc0f;
+  --whale-yellow: #ffd700;
+  --screen-bg: #0a0a0a;
+  --glow-color: #00ff4180;
+}
+
+/* CRT Screen Effect */
+.crt-screen {
+  position: relative;
+  background: var(--screen-bg);
+  font-family: 'VT323', monospace;
+  color: var(--terminal-green);
+  text-shadow: 0 0 5px var(--glow-color);
+  overflow: hidden;
+}
+
+/* Scanlines */
+.crt-screen::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    transparent 50%,
+    rgba(0, 0, 0, 0.3) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 1000;
+  animation: scanlines 8s linear infinite;
+}
+
+@keyframes scanlines {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(4px); }
+}
+
+/* Screen curvature */
+.crt-screen::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 0%,
+    transparent 60%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Phosphor glow */
+.terminal-glow {
+  text-shadow:
+    0 0 5px var(--terminal-green),
+    0 0 10px var(--terminal-green),
+    0 0 20px var(--glow-color);
+}
+
+/* Blinking cursor */
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ASCII borders */
+.terminal-border {
+  border: 2px solid var(--terminal-green);
+  box-shadow:
+    0 0 10px var(--glow-color),
+    inset 0 0 10px var(--glow-color);
+}
+
+/* Whale highlight */
+.whale-alert {
+  color: var(--whale-yellow);
+  text-shadow:
+    0 0 5px var(--whale-yellow),
+    0 0 10px var(--whale-yellow),
+    0 0 20px rgba(255, 215, 0, 0.5);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Terminal text */
+.terminal-text {
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  letter-spacing: 1px;
+  line-height: 1.4;
+}
+
+/* Gameboy button style */
+.gameboy-button {
+  background: var(--gameboy-medium);
+  color: var(--gameboy-dark);
+  border: 3px solid var(--gameboy-dark);
+  box-shadow:
+    inset -2px -2px 0 var(--gameboy-dark),
+    inset 2px 2px 0 var(--gameboy-light);
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.gameboy-button:hover {
+  background: var(--gameboy-light);
+  transform: scale(1.05);
+}
+
+.gameboy-button:active {
+  box-shadow:
+    inset 2px 2px 0 var(--gameboy-dark),
+    inset -2px -2px 0 var(--gameboy-light);
+  transform: scale(0.98);
+}
+
+/* Screen flicker */
+@keyframes flicker {
+  0% { opacity: 1; }
+  2% { opacity: 0.8; }
+  4% { opacity: 1; }
+  8% { opacity: 0.9; }
+  10% { opacity: 1; }
+}
+
+.screen-flicker {
+  animation: flicker 0.15s infinite;
+}
+
+/* Retro scrollbar */
+.retro-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.retro-scroll::-webkit-scrollbar-track {
+  background: var(--gameboy-dark);
+  border: 2px solid var(--terminal-green);
+}
+
+.retro-scroll::-webkit-scrollbar-thumb {
+  background: var(--terminal-green);
+  border: 2px solid var(--gameboy-dark);
+  box-shadow: 0 0 5px var(--glow-color);
+}
+
+.retro-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--gameboy-light);
+}
+
+/* ASCII art style */
+.ascii-art {
+  font-family: 'VT323', monospace;
+  white-space: pre;
+  line-height: 1;
+  color: var(--terminal-green);
+  text-shadow: 0 0 5px var(--glow-color);
+}
+
+/* Boot sequence */
+@keyframes boot-text {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.boot-line {
+  animation: boot-text 0.1s ease-in;
+}
+
+/* Matrix-style data stream */
+@keyframes matrix-fall {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+.matrix-char {
+  animation: matrix-fall 3s linear infinite;
+}
