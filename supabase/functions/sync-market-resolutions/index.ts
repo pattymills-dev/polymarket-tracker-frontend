@@ -31,11 +31,12 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // Query unresolved markets directly from the markets table
-    // This ensures we check ALL markets that need resolution, not just recent trades
+    // Only get markets that have slugs (required for Gamma API lookup)
     const { data: unresolvedMarkets, error: marketsError } = await supabase
       .from('markets')
       .select('id, question, slug, resolved, winning_outcome')
       .or('resolved.eq.false,winning_outcome.is.null')
+      .not('slug', 'is', null)
       .order('updated_at', { ascending: true, nullsFirst: true }) // Oldest first
       .range(offset, offset + batchSize - 1)
 
@@ -47,37 +48,11 @@ Deno.serve(async (req) => {
       })
     }
 
-    // If markets table doesn't have slugs, fall back to getting them from trades
-    let marketsRaw = unresolvedMarkets || []
+    const markets = unresolvedMarkets || []
 
-    // For markets missing slugs, try to get them from trades
-    const marketsNeedingSlugs = marketsRaw.filter(m => !m.slug)
-    if (marketsNeedingSlugs.length > 0) {
-      const { data: tradesWithSlugs } = await supabase
-        .from('trades')
-        .select('market_id, market_slug')
-        .in('market_id', marketsNeedingSlugs.map(m => m.id))
-        .not('market_slug', 'is', null)
+    console.log(`Fetched ${markets.length} markets needing resolution updates`)
 
-      const slugMap = new Map()
-      tradesWithSlugs?.forEach(t => {
-        if (!slugMap.has(t.market_id)) {
-          slugMap.set(t.market_id, t.market_slug)
-        }
-      })
-
-      marketsRaw = marketsRaw.map(m => ({
-        ...m,
-        slug: m.slug || slugMap.get(m.id)
-      }))
-    }
-
-    console.log(`Fetched ${marketsRaw.length} markets needing resolution updates`)
-
-    // Filter to only markets with slugs
-    const markets = marketsRaw.filter(m => m.slug) || []
-
-    if (!markets || markets.length === 0) {
+    if (markets.length === 0) {
       console.log('No markets needing resolution updates found')
       return new Response(JSON.stringify({ ok: true, processed: 0, updated: 0 }), {
         status: 200,

@@ -56,21 +56,38 @@ serve(async (req) => {
     const markets = Array.from(marketMap.values());
     console.log(`Found ${markets.length} unique markets from trades`);
 
-    // Upsert markets (will skip if already exists)
+    // Upsert markets - insert new ones
     const { error: upsertError } = await supabase
       .from("markets")
-      .upsert(markets, { onConflict: "id" });
+      .upsert(markets, { onConflict: "id", ignoreDuplicates: true });
 
     if (upsertError) {
       throw new Error(`Failed to upsert markets: ${upsertError.message}`);
     }
 
-    console.log(`Successfully upserted ${markets.length} markets`);
+    // Update slugs for existing markets that are missing them
+    let slugsUpdated = 0;
+    for (const market of markets) {
+      if (market.slug) {
+        const { error: updateError } = await supabase
+          .from("markets")
+          .update({ slug: market.slug })
+          .eq("id", market.id)
+          .or("slug.is.null,slug.eq.");
+
+        if (!updateError) {
+          slugsUpdated++;
+        }
+      }
+    }
+
+    console.log(`Successfully upserted ${markets.length} markets, updated ${slugsUpdated} slugs`);
 
     return new Response(
       JSON.stringify({
         success: true,
         inserted: markets.length,
+        slugsUpdated: slugsUpdated,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
