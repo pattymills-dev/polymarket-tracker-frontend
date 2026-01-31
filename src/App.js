@@ -6,7 +6,6 @@ import {
   AlertCircle,
   Trophy,
   Bell,
-  RefreshCw,
   Search,
   Star,
   Activity
@@ -26,12 +25,9 @@ const PolymarketTracker = () => {
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
   const [showAlerts, setShowAlerts] = useState(false);
-  const [sideFilter, setSideFilter] = useState('all'); // 'all', 'BUY', 'SELL'
   const [selectedTrader, setSelectedTrader] = useState(null);
   const [traderTrades, setTraderTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState(null);
 
   // Supabase Configuration
   const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
@@ -279,116 +275,6 @@ setMarketStats({
     }
   };
 
-  const syncData = async () => {
-    setSyncing(true);
-    setSyncResult(null);
-
-    try {
-      const fnHeaders = {
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      };
-
-      // Step 1: Fetch new markets and trades
-      const [marketsResp, tradesResp] = await Promise.all([
-        fetch(`${SUPABASE_URL}/functions/v1/fetch-markets`, {
-          method: 'POST',
-          headers: fnHeaders
-        }).catch(err => ({ ok: false, error: err.message })),
-        fetch(`${SUPABASE_URL}/functions/v1/fetch-trades`, {
-          method: 'POST',
-          headers: fnHeaders
-        }).catch(err => ({ ok: false, error: err.message }))
-      ]);
-
-      // Step 2: Populate markets table from trades (fills in missing markets)
-      const populateResp = await fetch(`${SUPABASE_URL}/functions/v1/populate-markets-from-trades`, {
-        method: 'POST',
-        headers: fnHeaders
-      });
-
-      // Step 3: Sync resolutions for all markets (run multiple batches with different offsets)
-      // Manual sync checks 50 batches (1000 markets) - cron jobs handle regular automatic syncing
-      const batchPromises = [];
-      const batchSize = 20;
-      const numBatches = 50;
-      for (let i = 0; i < numBatches; i++) {
-        const offset = i * batchSize; // Each batch gets a different offset
-        batchPromises.push(
-          fetch(`${SUPABASE_URL}/functions/v1/sync-market-resolutions?batch=${batchSize}&offset=${offset}`, {
-            method: 'POST',
-            headers: fnHeaders
-          })
-        );
-      }
-      const resolutionResponses = await Promise.all(batchPromises);
-      const resolutionsResp = resolutionResponses[0]; // Use first response for status
-
-      // Aggregate results from all batches
-      let totalUpdated = 0;
-      let totalProcessed = 0;
-      for (const resp of resolutionResponses) {
-        if (resp.ok) {
-          const data = await resp.json();
-          totalUpdated += data.updated || 0;
-          totalProcessed += data.processed || 0;
-        }
-      }
-
-      const marketsData = marketsResp.ok ? await marketsResp.json() : null;
-      const tradesData = tradesResp.ok ? await tradesResp.json() : null;
-      const populateData = populateResp.ok ? await populateResp.json() : null;
-      const resolutionsData = { updated: totalUpdated, processed: totalProcessed };
-
-      const errors = [];
-      if (!marketsResp.ok) {
-        console.error('fetch-markets failed', marketsResp.status, marketsResp.error);
-        errors.push(`Markets: ${marketsResp.error || marketsResp.status}`);
-      }
-      if (!tradesResp.ok) {
-        console.error('fetch-trades failed', tradesResp.status, tradesResp.error);
-        errors.push(`Trades: ${tradesResp.error || tradesResp.status}`);
-      }
-      if (!populateResp.ok) {
-        console.error('populate-markets-from-trades failed', populateResp.status);
-        errors.push('Populate markets failed');
-      }
-      if (!resolutionsResp.ok) {
-        console.error('sync-market-resolutions failed', resolutionsResp.status);
-        errors.push('Resolutions sync failed');
-      }
-
-      console.log('Sync results:', { marketsData, tradesData, populateData, resolutionsData });
-
-      if (errors.length > 0) {
-        setSyncResult({
-          success: false,
-          message: errors.join(', ')
-        });
-      } else {
-        setSyncResult({
-          success: true,
-          markets: marketsData?.marketsStored || marketsData?.stored || 0,
-          trades: tradesData?.stored || 0,
-          resolved: resolutionsData?.updated || 0
-        });
-      }
-
-      setTimeout(() => {
-        fetchData();
-        fetchProfitability();
-        setSyncing(false);
-      }, 1500);
-    } catch (error) {
-      console.error('Error syncing:', error);
-      setSyncResult({
-        success: false,
-        message: 'Sync error: ' + error.message
-      });
-      setSyncing(false);
-    }
-  };
-
   useEffect(() => {
     fetchData();
 
@@ -425,18 +311,8 @@ setMarketStats({
   };
 
   const filteredBets = useMemo(() => {
-    let filtered = (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
-
-    // Apply side filter
-    if (sideFilter !== 'all') {
-      filtered = filtered.filter((bet) => {
-        const side = (bet.side || 'BUY').toUpperCase();
-        return side === sideFilter;
-      });
-    }
-
-    return filtered;
-  }, [largeBets, minBetSize, sideFilter]);
+    return (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
+  }, [largeBets, minBetSize]);
 
   // Fetch trader profitability data
   const [profitabilityTraders, setProfitabilityTraders] = useState([]);
@@ -614,29 +490,6 @@ setMarketStats({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <div className="flex flex-col gap-1">
-                <button
-                  onClick={syncData}
-                  disabled={syncing}
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-md transition-colors flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-                  {syncing ? 'Syncing...' : 'Sync Polymarket'}
-                </button>
-                {syncResult && (
-                  <div className={`text-xs px-2 py-1 rounded ${
-                    syncResult.success
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                  }`}>
-                    {syncResult.success
-                      ? `✓ ${syncResult.trades} trades, ${syncResult.markets} markets${syncResult.resolved > 0 ? `, ${syncResult.resolved} resolved` : ''}`
-                      : `✗ ${syncResult.message}`
-                    }
-                  </div>
-                )}
-              </div>
-
               <button
                 onClick={() => setShowAlerts((v) => !v)}
                 className="relative px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border border-slate-800"
@@ -778,49 +631,15 @@ setMarketStats({
                     <AlertCircle className="w-5 h-5 text-slate-300" />
                     Large bets
                   </h2>
-                  <div className="flex items-center gap-3">
-                    <div className="flex gap-1 text-xs">
-                      <button
-                        onClick={() => setSideFilter('all')}
-                        className={`px-2.5 py-1 rounded transition-colors ${
-                          sideFilter === 'all'
-                            ? 'bg-slate-700 text-white'
-                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        }`}
-                      >
-                        All
-                      </button>
-                      <button
-                        onClick={() => setSideFilter('BUY')}
-                        className={`px-2.5 py-1 rounded transition-colors ${
-                          sideFilter === 'BUY'
-                            ? 'bg-cyan-600 text-white'
-                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        }`}
-                      >
-                        Buys
-                      </button>
-                      <button
-                        onClick={() => setSideFilter('SELL')}
-                        className={`px-2.5 py-1 rounded transition-colors ${
-                          sideFilter === 'SELL'
-                            ? 'bg-amber-600 text-white'
-                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        }`}
-                      >
-                        Sells
-                      </button>
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {filteredBets.length} trades (≥ $5,000)
-                    </div>
+                  <div className="text-xs text-slate-500">
+                    {filteredBets.length} trades (≥ $5,000)
                   </div>
                 </div>
 
                 {filteredBets.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-slate-400 text-sm">
-                      No trades above $5,000 yet. Click "Sync Polymarket" to fetch new trades.
+                      No trades above $5,000 yet. Data syncs automatically every few minutes.
                     </p>
                   </div>
                 ) : (
