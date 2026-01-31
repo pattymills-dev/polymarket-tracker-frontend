@@ -23,7 +23,7 @@ const PolymarketTracker = () => {
   const [minBetSize] = useState(5000); // UI filter (DB already filters to $5k+)
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
-  const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
+  const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'profitability', 'win_rate', 'total_pl' - default to P/L for meaningful rankings
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTrader, setSelectedTrader] = useState(null);
   const [traderTrades, setTraderTrades] = useState([]);
@@ -330,7 +330,7 @@ setMarketStats({
         {
           method: 'POST',
           headers,
-          body: JSON.stringify({ min_resolved_markets: 1 })
+          body: JSON.stringify({ min_resolved_markets: 3 })  // Require at least 3 resolved markets for meaningful stats
         }
       );
 

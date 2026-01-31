@@ -23,71 +23,76 @@ serve(async (req) => {
 
     console.log("Populating markets table from existing trades...");
 
-    // Get unique market IDs from trades
-    const { data: trades, error: tradesError } = await supabase
-      .from("trades")
-      .select("market_id, market_title, market_slug")
-      .not("market_id", "is", null);
+    // Paginate through all trades to get unique markets
+    const marketMap = new Map();
+    const pageSize = 1000;
+    let offset = 0;
+    let hasMore = true;
+    let pagesProcessed = 0;
+    const maxPages = 50; // Safety limit - covers up to 50k trades
 
-    if (tradesError) {
-      throw new Error(`Failed to fetch trades: ${tradesError.message}`);
+    while (hasMore && pagesProcessed < maxPages) {
+      const { data: trades, error: tradesError } = await supabase
+        .from("trades")
+        .select("market_id, market_title, market_slug")
+        .not("market_id", "is", null)
+        .range(offset, offset + pageSize - 1);
+
+      if (tradesError) {
+        throw new Error(`Failed to fetch trades: ${tradesError.message}`);
+      }
+
+      if (!trades || trades.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      for (const trade of trades) {
+        if (!marketMap.has(trade.market_id)) {
+          marketMap.set(trade.market_id, {
+            id: trade.market_id,
+            question: trade.market_title || trade.market_slug || trade.market_id,
+            slug: trade.market_slug,
+            resolved: false,
+          });
+        }
+      }
+
+      pagesProcessed++;
+      console.log(`Page ${pagesProcessed}: ${trades.length} trades, ${marketMap.size} unique markets`);
+
+      if (trades.length < pageSize) {
+        hasMore = false;
+      } else {
+        offset += pageSize;
+      }
     }
 
-    if (!trades || trades.length === 0) {
+    if (marketMap.size === 0) {
       return new Response(
         JSON.stringify({ success: true, message: "No trades found", inserted: 0 }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Group by market_id to get unique markets
-    const marketMap = new Map();
-    for (const trade of trades) {
-      if (!marketMap.has(trade.market_id)) {
-        marketMap.set(trade.market_id, {
-          id: trade.market_id,
-          question: trade.market_title || trade.market_slug || trade.market_id,
-          slug: trade.market_slug,
-          resolved: false,
-        });
-      }
-    }
-
     const markets = Array.from(marketMap.values());
-    console.log(`Found ${markets.length} unique markets from trades`);
+    console.log(`Found ${markets.length} unique markets from ${pagesProcessed} pages`);
 
-    // Upsert markets - insert new ones
+    // Upsert markets
     const { error: upsertError } = await supabase
       .from("markets")
-      .upsert(markets, { onConflict: "id", ignoreDuplicates: true });
+      .upsert(markets, { onConflict: "id" });
 
     if (upsertError) {
       throw new Error(`Failed to upsert markets: ${upsertError.message}`);
     }
 
-    // Update slugs for existing markets that are missing them
-    let slugsUpdated = 0;
-    for (const market of markets) {
-      if (market.slug) {
-        const { error: updateError } = await supabase
-          .from("markets")
-          .update({ slug: market.slug })
-          .eq("id", market.id)
-          .or("slug.is.null,slug.eq.");
-
-        if (!updateError) {
-          slugsUpdated++;
-        }
-      }
-    }
-
-    console.log(`Successfully upserted ${markets.length} markets, updated ${slugsUpdated} slugs`);
-
     return new Response(
       JSON.stringify({
         success: true,
         inserted: markets.length,
-        slugsUpdated: slugsUpdated,
+        slugsUpdated: markets.filter(m => m.slug).length,
+        pagesProcessed,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
