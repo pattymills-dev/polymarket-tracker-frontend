@@ -5,7 +5,6 @@ import {
   Target,
   AlertCircle,
   Trophy,
-  Filter,
   Bell,
   RefreshCw,
   Search,
@@ -22,7 +21,7 @@ const PolymarketTracker = () => {
   const [loading, setLoading] = useState(true);
 
   // const [selectedCategory, setSelectedCategory] = useState('all'); // placeholder for future
-  const [minBetSize, setMinBetSize] = useState(5000); // UI filter (DB already filters to $5k+)
+  const [minBetSize] = useState(5000); // UI filter (DB already filters to $5k+)
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('profitability'); // 'profitability', 'win_rate', 'total_pl'
