@@ -123,27 +123,80 @@ serve(async (req) => {
 
       upsertedTrades += rows.length;
 
-      // Alerts (optional): create alerts for whale trades
-      const alertRows = rows
-        .filter((r: any) =>
-          typeof r.amount === "number" && r.amount >= WHALE_THRESHOLD
-        )
-        .map((r: any) => ({
-          type: r.amount >= MEGA_WHALE_THRESHOLD ? "mega_whale" : "whale",
-          trader_address: r.trader_address,
-          market_id: r.market_id,
-          amount: r.amount,
-          message:
-            `${r.amount >= MEGA_WHALE_THRESHOLD ? "MEGA " : ""}WHALE: $${Math.round(r.amount)} trade on ${r.market_id}`,
-          sent: false,
-        }));
+      // Fetch top traders and watchlist for smart alerts
+      const { data: topTraders } = await supabase
+        .from("top_traders")
+        .select("trader_address, rank, total_pl");
+
+      const { data: watchlist } = await supabase
+        .from("watchlist")
+        .select("trader_address");
+
+      const topTraderAddresses = new Set((topTraders || []).map((t: any) => t.trader_address?.toLowerCase()));
+      const watchlistAddresses = new Set((watchlist || []).map((t: any) => t.trader_address?.toLowerCase()));
+      const topTraderMap = new Map((topTraders || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
+
+      // Create alerts for:
+      // 1. Top trader trades >= $5k
+      // 2. Watchlist trades >= $5k
+      // 3. Regular whale trades >= $10k (existing behavior)
+      const alertRows: any[] = [];
+
+      for (const r of rows) {
+        if (typeof r.amount !== "number") continue;
+
+        const traderLower = r.trader_address?.toLowerCase();
+        const isTopTrader = topTraderAddresses.has(traderLower);
+        const isWatchlist = watchlistAddresses.has(traderLower);
+        const topTraderInfo = topTraderMap.get(traderLower);
+
+        // Top trader alert (>= $5k)
+        if (isTopTrader && r.amount >= MIN_TRADE_SIZE) {
+          alertRows.push({
+            type: "top_trader",
+            alert_source: "top_trader",
+            trader_address: r.trader_address,
+            market_id: r.market_id,
+            market_title: r.market_title,
+            amount: r.amount,
+            message: `🏆 TOP TRADER #${topTraderInfo?.rank || '?'} ($${Math.round(topTraderInfo?.total_pl || 0).toLocaleString()} P/L): $${Math.round(r.amount).toLocaleString()} on ${r.market_title || r.market_id}`,
+            sent: false,
+          });
+        }
+        // Watchlist alert (>= $5k)
+        else if (isWatchlist && r.amount >= MIN_TRADE_SIZE) {
+          alertRows.push({
+            type: "watchlist",
+            alert_source: "watchlist",
+            trader_address: r.trader_address,
+            market_id: r.market_id,
+            market_title: r.market_title,
+            amount: r.amount,
+            message: `👀 WATCHLIST: $${Math.round(r.amount).toLocaleString()} trade on ${r.market_title || r.market_id}`,
+            sent: false,
+          });
+        }
+        // Regular whale alert (>= $10k, but not already alerted as top trader/watchlist)
+        else if (r.amount >= WHALE_THRESHOLD) {
+          alertRows.push({
+            type: r.amount >= MEGA_WHALE_THRESHOLD ? "mega_whale" : "whale",
+            alert_source: "whale",
+            trader_address: r.trader_address,
+            market_id: r.market_id,
+            market_title: r.market_title,
+            amount: r.amount,
+            message: `${r.amount >= MEGA_WHALE_THRESHOLD ? "🐋 MEGA " : "🐋 "}WHALE: $${Math.round(r.amount).toLocaleString()} on ${r.market_title || r.market_id}`,
+            sent: false,
+          });
+        }
+      }
 
       if (alertRows.length) {
         const { error: alertError } = await supabase.from("alerts").insert(
           alertRows,
         );
         if (alertError) {
-          // Don’t fail the whole sync if alerts fail
+          // Don't fail the whole sync if alerts fail
           console.error("Alert insert error:", alertError);
         } else {
           insertedAlerts += alertRows.length;

@@ -275,6 +275,26 @@ setMarketStats({
     }
   };
 
+  // Load watchlist from database on startup
+  useEffect(() => {
+    const loadWatchlist = async () => {
+      try {
+        const response = await fetch(
+          `${SUPABASE_URL}/rest/v1/watchlist?select=trader_address`,
+          { headers }
+        );
+        const data = await response.json();
+        if (response.ok && Array.isArray(data)) {
+          setWatchedTraders(data.map(w => w.trader_address));
+        }
+      } catch (error) {
+        console.error('Error loading watchlist:', error);
+      }
+    };
+    loadWatchlist();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     fetchData();
 
@@ -287,10 +307,40 @@ setMarketStats({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minBetSize]);
 
-  const toggleWatchTrader = (address) => {
+  const toggleWatchTrader = async (address) => {
+    const isCurrentlyWatched = watchedTraders.includes(address);
+
+    // Optimistically update UI
     setWatchedTraders((prev) =>
-      prev.includes(address) ? prev.filter((a) => a !== address) : [...prev, address]
+      isCurrentlyWatched ? prev.filter((a) => a !== address) : [...prev, address]
     );
+
+    // Sync to database for alert matching
+    try {
+      if (isCurrentlyWatched) {
+        // Remove from watchlist
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/watchlist?trader_address=eq.${address}`,
+          { method: 'DELETE', headers }
+        );
+      } else {
+        // Add to watchlist
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/watchlist`,
+          {
+            method: 'POST',
+            headers: { ...headers, 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ trader_address: address })
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error syncing watchlist:', error);
+      // Revert on error
+      setWatchedTraders((prev) =>
+        isCurrentlyWatched ? [...prev, address] : prev.filter((a) => a !== address)
+      );
+    }
   };
 
   const fetchTraderTrades = async (address) => {
@@ -531,27 +581,45 @@ setMarketStats({
 
             {alerts.length === 0 ? (
               <p className="text-slate-400 text-sm">
-                No alerts yet. They'll appear when large trades are detected.
+                No alerts yet. They'll appear when top traders, watchlist traders, or whales make trades.
               </p>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {alerts.slice(0, 20).map((alert, idx) => {
+                  const isTopTrader = alert.type === 'top_trader';
+                  const isWatchlist = alert.type === 'watchlist';
                   const isMega = alert.type === 'mega_whale';
-                  return (
-                    <div key={idx} className={`bg-slate-950 rounded-md border p-3 transition-all hover:scale-[1.02] ${
-                      isMega
+
+                  // Dynamic styling based on alert type
+                  const borderClass = isTopTrader
+                    ? 'border-emerald-500/40 bg-emerald-500/5 shadow-emerald-500/20'
+                    : isWatchlist
+                      ? 'border-cyan-500/40 bg-cyan-500/5 shadow-cyan-500/20'
+                      : isMega
                         ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
-                        : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20'
-                    }`}>
+                        : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20';
+
+                  const badgeClass = isTopTrader
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                    : isWatchlist
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                      : isMega
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/50';
+
+                  const badgeText = isTopTrader
+                    ? '🏆 TOP TRADER'
+                    : isWatchlist
+                      ? '👀 WATCHLIST'
+                      : isMega
+                        ? '🐋 MEGA WHALE'
+                        : '🐋 WHALE';
+
+                  return (
+                    <div key={idx} className={`bg-slate-950 rounded-md border p-3 transition-all hover:scale-[1.02] ${borderClass}`}>
                       <div className="flex items-center gap-2">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${
-                            isMega
-                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                              : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                          }`}
-                        >
-                          {isMega ? '🐋 MEGA WHALE' : '🐋 WHALE'}
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${badgeClass}`}>
+                          {badgeText}
                         </span>
                         <span className="text-xs text-slate-500 font-mono">
                           {formatTimestamp(alert.created_at)}
