@@ -637,8 +637,12 @@ setMarketStats({
                         : '🐋 WHALE';
 
                   // Build Polymarket URL from slug
-                  const polymarketUrl = alert.market_slug
-                    ? `https://polymarket.com/event/${alert.market_slug}`
+                  // Strip condition suffix if present (e.g., "bun-hsv-bay-2026-01-31-bay" -> "bun-hsv-bay-2026-01-31")
+                  const cleanSlug = alert.market_slug
+                    ? alert.market_slug.replace(/(-\d{4}-\d{2}-\d{2})-[a-z]+$/i, '$1')
+                    : null;
+                  const polymarketUrl = cleanSlug
+                    ? `https://polymarket.com/event/${cleanSlug}`
                     : null;
 
                   // Determine bet direction styling
