@@ -346,18 +346,39 @@ setMarketStats({
   const fetchTraderTrades = async (address) => {
     setLoadingTrades(true);
     try {
-      // Fetch trades with market resolution data joined
+      // Fetch trades first
       const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/trades?trader_address=eq.${address}&order=timestamp.desc&limit=100&select=*,markets(resolved,winning_outcome)`,
+        `${SUPABASE_URL}/rest/v1/trades?trader_address=eq.${address}&order=timestamp.desc&limit=100`,
         { headers }
       );
       const trades = await response.json();
-      // Flatten the market data into each trade
-      const tradesWithResolution = (Array.isArray(trades) ? trades : []).map(trade => ({
-        ...trade,
-        market_resolved: trade.markets?.resolved || false,
-        winning_outcome: trade.markets?.winning_outcome || null
-      }));
+
+      if (!Array.isArray(trades) || trades.length === 0) {
+        setTraderTrades([]);
+        return;
+      }
+
+      // Get unique market IDs from trades
+      const marketIds = [...new Set(trades.map(t => t.market_id).filter(Boolean))];
+
+      // Fetch market resolution data separately
+      const marketsResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/markets?id=in.(${marketIds.join(',')})&select=id,resolved,winning_outcome`,
+        { headers }
+      );
+      const markets = await marketsResponse.json();
+      const marketMap = new Map((Array.isArray(markets) ? markets : []).map(m => [m.id, m]));
+
+      // Merge market resolution data into trades
+      const tradesWithResolution = trades.map(trade => {
+        const market = marketMap.get(trade.market_id);
+        return {
+          ...trade,
+          market_resolved: market?.resolved || false,
+          winning_outcome: market?.winning_outcome || null
+        };
+      });
+
       setTraderTrades(tradesWithResolution);
     } catch (error) {
       console.error('Error fetching trader trades:', error);
