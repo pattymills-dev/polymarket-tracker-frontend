@@ -30,38 +30,14 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Fetch markets that have slugs in trades
-    // Get a large pool to work from - much more than just batchSize
-    const { data: marketsWithSlugs, error: fetchError } = await supabase
-      .from('trades')
-      .select('market_id, market_slug')
-      .not('market_slug', 'is', null)
-      .limit(batchSize * 50) // Get 50x more markets to ensure we have enough unique ones
-
-    if (fetchError) {
-      console.error('Error fetching trades:', fetchError)
-      return new Response(JSON.stringify({ error: fetchError.message }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Get unique market IDs with their slugs
-    const uniqueMarkets = new Map()
-    marketsWithSlugs?.forEach(t => {
-      if (!uniqueMarkets.has(t.market_id)) {
-        uniqueMarkets.set(t.market_id, t.market_slug)
-      }
-    })
-
-    const marketIdsToCheck = Array.from(uniqueMarkets.keys()).slice(offset, offset + batchSize)
-
-    // Fetch market details - get both unresolved markets AND resolved markets missing winning_outcome
-    // First, get all markets in the list
-    const { data: allMarkets, error: marketsError } = await supabase
+    // Query unresolved markets directly from the markets table
+    // This ensures we check ALL markets that need resolution, not just recent trades
+    const { data: unresolvedMarkets, error: marketsError } = await supabase
       .from('markets')
-      .select('id, question, resolved, winning_outcome')
-      .in('id', marketIdsToCheck)
+      .select('id, question, slug, resolved, winning_outcome')
+      .or('resolved.eq.false,winning_outcome.is.null')
+      .order('updated_at', { ascending: true, nullsFirst: true }) // Oldest first
+      .range(offset, offset + batchSize - 1)
 
     if (marketsError) {
       console.error('Error fetching markets:', marketsError)
@@ -71,18 +47,35 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Filter to only include markets that need updates
-    const marketsRaw = allMarkets?.filter(m =>
-      m.resolved === false || m.winning_outcome === null || m.winning_outcome === ''
-    ) || []
+    // If markets table doesn't have slugs, fall back to getting them from trades
+    let marketsRaw = unresolvedMarkets || []
 
-    console.log(`Fetched ${allMarkets?.length || 0} markets, ${marketsRaw.length} need updates`)
+    // For markets missing slugs, try to get them from trades
+    const marketsNeedingSlugs = marketsRaw.filter(m => !m.slug)
+    if (marketsNeedingSlugs.length > 0) {
+      const { data: tradesWithSlugs } = await supabase
+        .from('trades')
+        .select('market_id, market_slug')
+        .in('market_id', marketsNeedingSlugs.map(m => m.id))
+        .not('market_slug', 'is', null)
 
-    // Add slugs to markets
-    const markets = marketsRaw?.map(m => ({
-      ...m,
-      slug: uniqueMarkets.get(m.id)
-    })).filter(m => m.slug) || []
+      const slugMap = new Map()
+      tradesWithSlugs?.forEach(t => {
+        if (!slugMap.has(t.market_id)) {
+          slugMap.set(t.market_id, t.market_slug)
+        }
+      })
+
+      marketsRaw = marketsRaw.map(m => ({
+        ...m,
+        slug: m.slug || slugMap.get(m.id)
+      }))
+    }
+
+    console.log(`Fetched ${marketsRaw.length} markets needing resolution updates`)
+
+    // Filter to only markets with slugs
+    const markets = marketsRaw.filter(m => m.slug) || []
 
     if (!markets || markets.length === 0) {
       console.log('No markets needing resolution updates found')

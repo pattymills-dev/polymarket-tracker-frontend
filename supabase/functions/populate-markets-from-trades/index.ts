@@ -47,6 +47,7 @@ serve(async (req) => {
         marketMap.set(trade.market_id, {
           id: trade.market_id,
           question: trade.market_title || trade.market_slug || trade.market_id,
+          slug: trade.market_slug,
           resolved: false,
         });
       }
