@@ -636,17 +636,42 @@ setMarketStats({
                         ? '🐋 MEGA WHALE'
                         : '🐋 WHALE';
 
+                  // Build Polymarket URL from slug
+                  const polymarketUrl = alert.market_slug
+                    ? `https://polymarket.com/event/${alert.market_slug}`
+                    : null;
+
+                  // Determine bet direction styling
+                  const isBuy = !alert.side || alert.side === 'BUY';
+                  const betBadgeClass = isBuy
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                    : 'bg-rose-500/20 text-rose-300 border-rose-500/50';
+
                   return (
-                    <div key={idx} className={`bg-slate-950 rounded-md border p-3 transition-all hover:scale-[1.02] ${borderClass}`}>
-                      <div className="flex items-center gap-2">
+                    <div
+                      key={idx}
+                      className={`bg-slate-950 rounded-md border p-3 transition-all hover:scale-[1.02] ${borderClass} ${polymarketUrl ? 'cursor-pointer' : ''}`}
+                      onClick={() => polymarketUrl && window.open(polymarketUrl, '_blank')}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${badgeClass}`}>
                           {badgeText}
                         </span>
+                        {alert.outcome && (
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${betBadgeClass}`}>
+                            {isBuy ? '📈' : '📉'} {alert.side || 'BUY'} {alert.outcome}{alert.price ? ` @ ${Math.round(alert.price * 100)}¢` : ''}
+                          </span>
+                        )}
                         <span className="text-xs text-slate-500 font-mono">
                           {formatTimestamp(alert.created_at)}
                         </span>
+                        {polymarketUrl && (
+                          <span className="text-xs text-cyan-400 ml-auto">↗</span>
+                        )}
                       </div>
-                      <p className="text-sm mt-2 text-slate-200 font-medium">{alert.message}</p>
+                      <p className="text-sm mt-2 text-slate-200 font-medium">
+                        ${alert.amount ? Math.round(alert.amount).toLocaleString() : '?'} on {alert.market_title || 'Unknown market'}
+                      </p>
                     </div>
                   );
                 })}
