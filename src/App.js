@@ -296,12 +296,19 @@ setMarketStats({
   const fetchTraderTrades = async (address) => {
     setLoadingTrades(true);
     try {
+      // Fetch trades with market resolution data joined
       const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/trades?trader_address=eq.${address}&order=timestamp.desc&limit=100`,
+        `${SUPABASE_URL}/rest/v1/trades?trader_address=eq.${address}&order=timestamp.desc&limit=100&select=*,markets(resolved,winning_outcome)`,
         { headers }
       );
       const trades = await response.json();
-      setTraderTrades(Array.isArray(trades) ? trades : []);
+      // Flatten the market data into each trade
+      const tradesWithResolution = (Array.isArray(trades) ? trades : []).map(trade => ({
+        ...trade,
+        market_resolved: trade.markets?.resolved || false,
+        winning_outcome: trade.markets?.winning_outcome || null
+      }));
+      setTraderTrades(tradesWithResolution);
     } catch (error) {
       console.error('Error fetching trader trades:', error);
       setTraderTrades([]);
@@ -1028,8 +1035,20 @@ setMarketStats({
                   <div className="max-h-96 overflow-y-auto pr-2 space-y-2">
                     {traderTrades.map((trade, idx) => {
                       const tradeSideInfo = getSideLabel(trade.side);
+                      // Determine if this trade was a win or loss based on market resolution
+                      const isResolved = trade.market_resolved;
+                      const isWin = isResolved && trade.winning_outcome === trade.outcome;
+                      const isLoss = isResolved && trade.winning_outcome && trade.winning_outcome !== trade.outcome;
+
+                      // Dynamic styling based on win/loss
+                      const cardBorderClass = isWin
+                        ? 'border-emerald-500/40 bg-emerald-500/5'
+                        : isLoss
+                          ? 'border-rose-500/40 bg-rose-500/5'
+                          : 'border-slate-800';
+
                       return (
-                      <div key={idx} className="bg-slate-950 rounded-md border border-slate-800 p-3">
+                      <div key={idx} className={`bg-slate-950 rounded-md border p-3 ${cardBorderClass}`}>
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="min-w-0 flex-1">
                             <a
@@ -1057,7 +1076,10 @@ setMarketStats({
                         </div>
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-slate-500">
-                            Outcome: <span className="text-slate-300">{trade.outcome}</span>
+                            Outcome: <span className={isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-300'}>{trade.outcome}</span>
+                            {isWin && <span className="ml-2 text-emerald-400 font-semibold">✓ WIN</span>}
+                            {isLoss && <span className="ml-2 text-rose-400 font-semibold">✗ LOSS</span>}
+                            {!isResolved && <span className="ml-2 text-slate-500">(Pending)</span>}
                           </span>
                           <span className="text-slate-500">
                             Price: <span className="text-slate-300">
