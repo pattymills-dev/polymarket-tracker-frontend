@@ -54,19 +54,17 @@ const PolymarketTracker = () => {
   // Heat map color coding for bet amounts
   const getBetAmountColor = (amount) => {
     const num = Number(amount || 0);
-    if (num >= 100000) return 'text-rose-400 font-bold';
-    if (num >= 50000) return 'text-orange-400 font-semibold';
-    if (num >= 25000) return 'text-amber-400 font-semibold';
-    if (num >= 10000) return 'text-yellow-400 font-medium';
+    if (num >= 100000) return 'text-rose-400 font-bold';      // Mega Whale
+    if (num >= 50000) return 'text-orange-400 font-semibold'; // Whale
+    if (num >= 10000) return 'text-amber-400 font-medium';    // Large
     return 'text-slate-100';
   };
 
   const getBetBorderColor = (amount) => {
     const num = Number(amount || 0);
-    if (num >= 100000) return 'border-rose-500/40 bg-rose-500/5';
-    if (num >= 50000) return 'border-orange-500/40 bg-orange-500/5';
-    if (num >= 25000) return 'border-amber-500/30 bg-amber-500/5';
-    if (num >= 10000) return 'border-yellow-500/30 bg-yellow-500/5';
+    if (num >= 100000) return 'border-rose-500/40 bg-rose-500/5';   // Mega Whale
+    if (num >= 50000) return 'border-orange-500/40 bg-orange-500/5'; // Whale
+    if (num >= 10000) return 'border-amber-500/30 bg-amber-500/5';   // Large
     return 'border-slate-800 hover:border-slate-700';
   };
 
@@ -80,11 +78,10 @@ const PolymarketTracker = () => {
 
   const getBetSizeLabel = (amount) => {
     const num = Number(amount || 0);
-    if (num >= 100000) return { label: 'MEGA WHALE', color: 'bg-rose-500/20 text-rose-300 border-rose-500/50' };
-    if (num >= 50000) return { label: 'WHALE', color: 'bg-orange-500/20 text-orange-300 border-orange-500/50' };
-    if (num >= 25000) return { label: 'LARGE', color: 'bg-amber-500/20 text-amber-300 border-amber-500/50' };
-    if (num >= 10000) return { label: 'NOTABLE', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50' };
-    return null;
+    if (num >= 100000) return { label: '🐋 MEGA WHALE', color: 'bg-rose-500/20 text-rose-300 border-rose-500/50' };
+    if (num >= 50000) return { label: '🐋 WHALE', color: 'bg-orange-500/20 text-orange-300 border-orange-500/50' };
+    if (num >= 10000) return { label: 'LARGE', color: 'bg-amber-500/20 text-amber-300 border-amber-500/50' };
+    return null; // No label for trades under $10k
   };
 
   const getSideLabel = (side) => {
