@@ -85,10 +85,18 @@ Deno.serve(async (req) => {
 
         // Check if market is resolved
         if (gammaMarket.closed && gammaMarket.outcomePrices) {
+          // Parse outcomes and prices - they come as JSON strings from the API
+          const outcomes = typeof gammaMarket.outcomes === 'string'
+            ? JSON.parse(gammaMarket.outcomes)
+            : gammaMarket.outcomes
+          const outcomePrices = typeof gammaMarket.outcomePrices === 'string'
+            ? JSON.parse(gammaMarket.outcomePrices).map(Number)
+            : gammaMarket.outcomePrices.map(Number)
+
           // Find winning outcome (highest price)
-          const maxPrice = Math.max(...gammaMarket.outcomePrices)
-          const winningIndex = gammaMarket.outcomePrices.indexOf(maxPrice)
-          const winningOutcome = gammaMarket.outcomes[winningIndex]
+          const maxPrice = Math.max(...outcomePrices)
+          const winningIndex = outcomePrices.indexOf(maxPrice)
+          const winningOutcome = outcomes[winningIndex]
 
           console.log(`Market ${market.slug} resolved: winner = ${winningOutcome}`)
 
