@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   TrendingUp,
   DollarSign,
@@ -8,7 +8,11 @@ import {
   Bell,
   Search,
   Star,
-  Activity
+  Activity,
+  Heart,
+  Copy,
+  Check,
+  ExternalLink
 } from 'lucide-react';
 
 const PolymarketTracker = () => {
@@ -25,6 +29,9 @@ const PolymarketTracker = () => {
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'profitability', 'win_rate', 'total_pl' - default to P/L for meaningful rankings
   const [showAlerts, setShowAlerts] = useState(false);
+  const [showTipJar, setShowTipJar] = useState(false);
+  const [copiedWallet, setCopiedWallet] = useState(false);
+  const tipJarRef = useRef(null);
   const [selectedTrader, setSelectedTrader] = useState(null);
   const [traderTrades, setTraderTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
@@ -453,6 +460,23 @@ setMarketStats({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Close tip jar dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (tipJarRef.current && !tipJarRef.current.contains(event.target)) {
+        setShowTipJar(false);
+      }
+    };
+
+    if (showTipJar) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showTipJar]);
+
   // Calculate smart money metrics from recent trades (7-day fallback)
   const recentActiveTraders = useMemo(() => {
     if (!largeBets || largeBets.length === 0) return [];
@@ -578,6 +602,77 @@ setMarketStats({
                   </span>
                 )}
               </button>
+
+              {/* Tip Jar Button */}
+              <div className="relative" ref={tipJarRef}>
+                <button
+                  onClick={() => setShowTipJar((v) => !v)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border border-slate-800"
+                >
+                  <Heart className="w-4 h-4 text-rose-400" />
+                  Tip the Operator
+                </button>
+
+                {showTipJar && (
+                  <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 p-4">
+                    <div className="text-sm text-slate-300 mb-3">Support the project:</div>
+
+                    {/* Ko-fi Link */}
+                    <a
+                      href="https://ko-fi.com/pattymills"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors mb-3"
+                    >
+                      <div className="w-8 h-8 bg-[#FF5E5B] rounded-lg flex items-center justify-center">
+                        <span className="text-white text-lg">☕</span>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-100">Ko-fi</div>
+                        <div className="text-xs text-slate-400">Buy me a coffee</div>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-slate-500" />
+                    </a>
+
+                    {/* Crypto Wallet */}
+                    <div className="p-3 bg-slate-800 rounded-lg">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                          <span className="text-white text-sm font-bold">Ξ</span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-slate-100">ETH / ERC-20</div>
+                          <div className="text-xs text-slate-400">Send crypto directly</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <code className="flex-1 text-xs bg-slate-900 px-2 py-1.5 rounded text-slate-300 truncate">
+                          0xF30BCb8d980dD3674dE9B64875E63260765a9472
+                        </code>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText('0xF30BCb8d980dD3674dE9B64875E63260765a9472');
+                            setCopiedWallet(true);
+                            setTimeout(() => setCopiedWallet(false), 2000);
+                          }}
+                          className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+                          title="Copy address"
+                        >
+                          {copiedWallet ? (
+                            <Check className="w-4 h-4 text-green-400" />
+                          ) : (
+                            <Copy className="w-4 h-4 text-slate-400" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-slate-500 mt-3 text-center">
+                      Thank you for your support! 🙏
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
