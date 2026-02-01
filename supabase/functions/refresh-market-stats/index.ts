@@ -29,11 +29,12 @@ serve(async (req) => {
     console.log("Refreshing market stats from Polymarket Gamma API...");
 
     // Get all market IDs from our database that need stats
-    // Focus on markets with recent activity (last 7 days) to avoid stale markets
+    // Focus on markets with hex conditionId format (0x...) - these are valid Polymarket IDs
     const { data: markets, error: marketsError } = await supabase
       .from("markets")
       .select("id, slug")
       .eq("resolved", false)  // Only active markets
+      .like("id", "0x%")      // Only hex format IDs (valid conditionIds)
       .limit(500);  // Process in batches
 
     if (marketsError) {
@@ -49,43 +50,58 @@ serve(async (req) => {
 
     console.log(`Found ${markets.length} active markets to update`);
 
-    // Fetch market data from Gamma API in batches
-    // The Gamma API supports fetching by condition ID
-    const BATCH_SIZE = 50;
+    // Fetch all active markets from Gamma API in one go, then match to our DB
+    // This is more efficient than querying one-by-one
     let updated = 0;
     let errors = 0;
 
-    for (let i = 0; i < markets.length; i += BATCH_SIZE) {
-      const batch = markets.slice(i, i + BATCH_SIZE);
-      const conditionIds = batch.map(m => m.id).filter(Boolean);
+    try {
+      // Fetch active markets from Gamma API (it returns up to 100 by default)
+      // We'll need to paginate for more
+      const allGammaMarkets: any[] = [];
+      let offset = 0;
+      const limit = 100;
+      let hasMore = true;
 
-      if (conditionIds.length === 0) continue;
-
-      try {
-        // Fetch market data from Gamma API
-        // The API accepts comma-separated condition IDs
-        const gammaUrl = `https://gamma-api.polymarket.com/markets?` +
-          conditionIds.map(id => `id=${id}`).join('&');
-
+      while (hasMore && offset < 1000) {  // Cap at 1000 markets
+        const gammaUrl = `https://gamma-api.polymarket.com/markets?closed=false&limit=${limit}&offset=${offset}`;
         const response = await fetch(gammaUrl);
 
         if (!response.ok) {
           console.error(`Gamma API error: ${response.status}`);
-          errors++;
-          continue;
+          break;
         }
 
         const gammaMarkets = await response.json();
 
-        if (!Array.isArray(gammaMarkets)) {
-          console.error("Gamma API returned non-array response");
-          continue;
-        }
+        if (!Array.isArray(gammaMarkets) || gammaMarkets.length === 0) {
+          hasMore = false;
+        } else {
+          allGammaMarkets.push(...gammaMarkets);
+          offset += limit;
 
-        // Update each market's stats
-        for (const gm of gammaMarkets) {
-          const volume24h = parseFloat(gm.volume24hr) || 0;
-          const liquidity = parseFloat(gm.liquidityNum) || parseFloat(gm.liquidity) || 0;
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+
+      console.log(`Fetched ${allGammaMarkets.length} markets from Gamma API`);
+
+      // Build a map of conditionId -> market data for fast lookup
+      const gammaMap = new Map();
+      for (const gm of allGammaMarkets) {
+        if (gm.conditionId) {
+          gammaMap.set(gm.conditionId, gm);
+        }
+      }
+
+      // Update our markets with the Gamma data
+      for (const market of markets) {
+        const gammaData = gammaMap.get(market.id);
+
+        if (gammaData) {
+          const volume24h = parseFloat(gammaData.volume24hr) || 0;
+          const liquidity = parseFloat(gammaData.liquidityNum) || parseFloat(gammaData.liquidity) || 0;
 
           const { error: updateError } = await supabase
             .from("markets")
@@ -94,25 +110,20 @@ serve(async (req) => {
               liquidity: liquidity,
               stats_updated_at: new Date().toISOString(),
             })
-            .eq("id", gm.conditionId);
+            .eq("id", market.id);
 
           if (updateError) {
-            console.error(`Failed to update market ${gm.conditionId}:`, updateError);
+            console.error(`Failed to update market ${market.id}:`, updateError);
             errors++;
           } else {
             updated++;
           }
         }
-
-        console.log(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: Updated ${gammaMarkets.length} markets`);
-
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-      } catch (batchError) {
-        console.error(`Batch error:`, batchError);
-        errors++;
       }
+
+    } catch (fetchError) {
+      console.error(`Error fetching from Gamma API:`, fetchError);
+      errors++;
     }
 
     // Also compute trade_count_24h from our trades table
