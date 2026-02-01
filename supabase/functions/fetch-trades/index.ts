@@ -181,24 +181,32 @@ serve(async (req) => {
 
       upsertedTrades += rows.length;
 
-      // Fetch top 20 traders and watchlist for smart alerts
+      // Fetch top 20 traders (by P/L) and hot streaks (by win rate) for smart alerts
       const { data: topTraders } = await supabase
         .from("top_traders")
-        .select("trader_address, rank, total_pl, wins, losses, resolved_markets")
-        .lte("rank", 20);  // Only alert for top 20 traders
+        .select("trader_address, rank, total_pl, wins, losses, resolved_markets, win_rate")
+        .lte("rank", 20);  // Only alert for top 20 by P/L
+
+      const { data: hotStreaks } = await supabase
+        .from("hot_streaks")
+        .select("trader_address, rank, total_pl, wins, losses, resolved_markets, win_rate")
+        .lte("rank", 20);  // Only alert for top 20 by win rate
 
       const { data: watchlist } = await supabase
         .from("watchlist")
         .select("trader_address");
 
       const topTraderAddresses = new Set((topTraders || []).map((t: any) => t.trader_address?.toLowerCase()));
+      const hotStreakAddresses = new Set((hotStreaks || []).map((t: any) => t.trader_address?.toLowerCase()));
       const watchlistAddresses = new Set((watchlist || []).map((t: any) => t.trader_address?.toLowerCase()));
       const topTraderMap = new Map((topTraders || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
+      const hotStreakMap = new Map((hotStreaks || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
 
       // Create alerts for:
-      // 1. Top trader trades >= $5k
-      // 2. Watchlist trades >= $5k
-      // 3. Regular whale trades >= $10k (existing behavior)
+      // 1. Top trader trades >= $5k (by P/L)
+      // 2. Hot streak trades >= $5k (by win rate, if not already top trader)
+      // 3. Watchlist trades >= $5k
+      // 4. Regular whale trades >= $10k (existing behavior)
       const alertRows: any[] = [];
 
       for (const r of rows) {
@@ -206,8 +214,10 @@ serve(async (req) => {
 
         const traderLower = r.trader_address?.toLowerCase();
         const isTopTrader = topTraderAddresses.has(traderLower);
+        const isHotStreak = hotStreakAddresses.has(traderLower);
         const isWatchlist = watchlistAddresses.has(traderLower);
         const topTraderInfo = topTraderMap.get(traderLower);
+        const hotStreakInfo = hotStreakMap.get(traderLower);
 
         // Format bet direction for display (e.g., "BUY Yes @ 65¢" or "SELL No @ 35¢")
         const betDirection = r.outcome ? `${r.side || 'BUY'} ${r.outcome}${r.price ? ` @ ${Math.round(r.price * 100)}¢` : ''}` : '';
@@ -220,7 +230,7 @@ serve(async (req) => {
           return ` [${wins}-${losses}]`;
         };
 
-        // Top trader alert (>= $5k) - only top 20
+        // Top trader alert (>= $5k) - only top 20 by P/L
         if (isTopTrader && r.amount >= MIN_TRADE_SIZE) {
           const record = formatRecord(topTraderInfo);
           alertRows.push({
@@ -236,6 +246,26 @@ serve(async (req) => {
             price: r.price,
             amount: r.amount,
             message: `🏆 TOP TRADER #${topTraderInfo?.rank || '?'}${record} ($${Math.round(topTraderInfo?.total_pl || 0).toLocaleString()} P/L): $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
+            sent: false,
+          });
+        }
+        // Hot streak alert (>= $5k) - only top 20 by win rate (if not already a top trader)
+        else if (isHotStreak && !isTopTrader && r.amount >= MIN_TRADE_SIZE) {
+          const record = formatRecord(hotStreakInfo);
+          const winRate = Math.round(hotStreakInfo?.win_rate || 0);
+          alertRows.push({
+            type: "hot_streak",
+            alert_source: "hot_streak",
+            trade_hash: r.tx_hash,
+            trader_address: r.trader_address,
+            market_id: r.market_id,
+            market_title: r.market_title,
+            market_slug: r.market_slug,
+            outcome: r.outcome,
+            side: r.side || 'BUY',
+            price: r.price,
+            amount: r.amount,
+            message: `🔥 HOT STREAK #${hotStreakInfo?.rank || '?'}${record} (${winRate}% win rate): $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
             sent: false,
           });
         }
@@ -299,7 +329,7 @@ serve(async (req) => {
             // Send Telegram only for high-priority alerts that were actually inserted
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'top_trader' || alert.type === 'watchlist' || alert.type === 'mega_whale')) {
+                  (alert.type === 'top_trader' || alert.type === 'hot_streak' || alert.type === 'watchlist' || alert.type === 'mega_whale')) {
                 await sendTelegramAlert(alert);
               }
             }
