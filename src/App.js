@@ -569,17 +569,19 @@ setMarketStats({
     return tradersToShow;
   }, [profitabilityTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy]);
 
-  // Refined color palette for Below Deck theme
+  // Unified console palette - no blue, green-biased darks
   const retroColors = {
-    bg: '#050806',
-    primary: '#4a9b6b',      // Muted operational green
-    bright: '#7CFF9B',       // Reserved for emphasis/alerts
-    dim: '#2d5a42',          // Secondary text
-    accent: '#d4a84b',       // Amber for warnings/whales
-    danger: '#c45c5c',       // Muted red
-    cardBg: '#080c09',
-    border: '#152118',
-    borderHover: '#1f3528',
+    bg: '#060908',                        // Near-black, green cast
+    surface: '#0b100d',                   // Recessed panels
+    surfaceAlt: '#0e1410',                // Slightly raised
+    border: 'rgba(90, 200, 140, 0.12)',   // Subtle green border
+    borderHover: 'rgba(90, 200, 140, 0.25)',
+    primary: '#5a8a6a',                   // Muted operational green
+    bright: '#6ddb8a',                    // Phosphor green - emphasis only
+    dim: '#3a5a48',                       // Secondary text
+    accent: '#c9a84b',                    // Warm amber for warnings
+    danger: '#b85c5c',                    // Muted red
+    glow: 'rgba(109, 219, 138, 0.15)',    // Subtle glow
   };
 
   return (
@@ -692,7 +694,7 @@ setMarketStats({
                   <div className={`absolute right-0 mt-2 w-72 rounded-lg shadow-xl z-50 p-4 ${
                     isRetro ? '' : 'bg-slate-900 border border-slate-700'
                   }`}
-                  style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}>
+                  style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}` } : {}}>
                     <div className={`text-sm mb-3 ${isRetro ? '' : 'text-slate-300'}`}
                          style={isRetro ? { color: retroColors.dim } : {}}>
                       {isRetro ? '> TIP YOUR OPERATOR:' : 'Tip your operator:'}
@@ -706,7 +708,7 @@ setMarketStats({
                       className={`flex items-center gap-3 p-3 rounded-lg transition-colors mb-3 ${
                         isRetro ? '' : 'bg-slate-800 hover:bg-slate-700'
                       }`}
-                      style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}
+                      style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}` } : {}}
                     >
                       <div className="w-8 h-8 bg-[#FF5E5B] rounded-lg flex items-center justify-center">
                         <span className="text-white text-lg">☕</span>
@@ -724,7 +726,7 @@ setMarketStats({
                     <div className={`p-3 rounded-lg ${
                       isRetro ? '' : 'bg-slate-800'
                     }`}
-                    style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}>
+                    style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}` } : {}}>
                       <div className="flex items-center gap-3 mb-2">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                           isRetro ? '' : 'bg-gradient-to-br from-blue-500 to-purple-600'
@@ -817,7 +819,7 @@ setMarketStats({
               ? ''
               : 'bg-slate-900/80 border border-amber-500/30 shadow-amber-500/10'
           }`}
-          style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}>
+          style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}` } : {}}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold flex items-center gap-2 text-sm">
                 <Bell className="w-4 h-4" style={isRetro ? { color: retroColors.accent } : {}} />

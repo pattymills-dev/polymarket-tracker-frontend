@@ -62,12 +62,12 @@ const SonarInterstitial = ({ onComplete }) => {
     return null;
   }
 
-  // Sonar colors - using the refined palette
+  // Sonar colors - unified console palette
   const colors = {
-    bg: '#050806',
-    primary: '#4a9b6b',
-    bright: '#7CFF9B',
-    dim: '#2d5a42',
+    bg: '#060908',
+    primary: '#5a8a6a',
+    bright: '#6ddb8a',
+    dim: '#3a5a48',
   };
 
   return (

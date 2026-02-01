@@ -7,12 +7,12 @@ import SonarInterstitial from './SonarInterstitial';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import reportWebVitals from './reportWebVitals';
 
-// Refined color palette
+// Unified console palette - no blue, green-biased darks
 const colors = {
-  bg: '#050806',
-  primary: '#4a9b6b',
-  bright: '#7CFF9B',
-  dim: '#2d5a42',
+  bg: '#060908',
+  primary: '#5a8a6a',
+  bright: '#6ddb8a',
+  dim: '#3a5a48',
 };
 
 // Boot sequence for Below Deck mode - Refined, minimal styling

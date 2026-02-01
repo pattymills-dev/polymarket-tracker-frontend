@@ -1,35 +1,39 @@
 /* ============================================
    REFINED SURVEILLANCE CONSOLE THEME
-   "Below Deck" - Operational Terminal Aesthetic
+   "Below Deck" - Cold War Sonar Console Aesthetic
    ============================================ */
 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 
 /* ============================================
-   REFINED PALETTE
-   - bg: #050806 (deep dark green-black)
-   - primary: #4a9b6b (muted operational green)
-   - bright: #7CFF9B (reserved for emphasis/alerts)
-   - dim: #2d5a42 (secondary/inactive text)
-   - accent: #d4a84b (warm amber for warnings)
-   - danger: #c45c5c (muted red)
+   UNIFIED PALETTE - No blue, green-biased darks
+   - bg: #060908 (near-black, green cast)
+   - surface: #0b100d (recessed panels)
+   - surfaceAlt: #0e1410 (slightly raised)
+   - border: rgba(90, 200, 140, 0.15)
+   - primary: #5a8a6a (muted operational green)
+   - bright: #6ddb8a (phosphor green - emphasis only)
+   - dim: #3a5a48 (secondary text)
+   - accent: #c9a84b (warm amber for warnings)
+   - danger: #b85c5c (muted red)
    ============================================ */
 
 :root {
-  --retro-bg: #050806;
-  --retro-primary: #4a9b6b;
-  --retro-bright: #7CFF9B;
-  --retro-dim: #2d5a42;
-  --retro-accent: #d4a84b;
-  --retro-danger: #c45c5c;
-  --retro-card-bg: #080c09;
-  --retro-border: #152118;
-  --retro-border-hover: #1f3528;
-  --retro-glow: rgba(124, 255, 155, 0.3);
-  --retro-glow-accent: rgba(212, 168, 75, 0.3);
+  --retro-bg: #060908;
+  --retro-surface: #0b100d;
+  --retro-surface-alt: #0e1410;
+  --retro-border: rgba(90, 200, 140, 0.12);
+  --retro-border-hover: rgba(90, 200, 140, 0.25);
+  --retro-primary: #5a8a6a;
+  --retro-bright: #6ddb8a;
+  --retro-dim: #3a5a48;
+  --retro-accent: #c9a84b;
+  --retro-danger: #b85c5c;
+  --retro-glow: rgba(109, 219, 138, 0.25);
+  --retro-glow-accent: rgba(201, 168, 75, 0.25);
 }
 
 /* ============================================
-   BASE STYLES (only applied with .retro-theme)
+   BASE STYLES
    ============================================ */
 
 .retro-theme {
@@ -46,9 +50,7 @@
 }
 
 /* ============================================
-   SCANLINES & NOISE OVERLAYS
-   Applied to background ONLY, not content
-   Very subtle, not distracting
+   SCANLINES & NOISE - Background only, very subtle
    ============================================ */
 
 .retro-theme .retro-container::before {
@@ -62,14 +64,13 @@
     0deg,
     transparent,
     transparent 3px,
-    rgba(0, 0, 0, 0.08) 3px,
-    rgba(0, 0, 0, 0.08) 6px
+    rgba(0, 0, 0, 0.06) 3px,
+    rgba(0, 0, 0, 0.06) 6px
   );
   pointer-events: none;
   z-index: 0;
 }
 
-/* Subtle noise texture overlay - reduced opacity */
 .retro-theme .retro-container::after {
   content: "";
   position: fixed;
@@ -78,25 +79,20 @@
   width: 100%;
   height: 100%;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  opacity: 0.015;
+  opacity: 0.012;
   pointer-events: none;
   z-index: 0;
 }
 
-/* Ensure content is above scanlines */
 .retro-theme .retro-container > * {
   position: relative;
   z-index: 1;
 }
 
 /* ============================================
-   TYPOGRAPHY
-   - Base text: muted green (operational)
-   - Bright green: emphasis only
-   - NO glow by default
+   TYPOGRAPHY - Muted base, bright for emphasis
    ============================================ */
 
-/* Default body text - muted, no glow */
 .retro-theme,
 .retro-theme p,
 .retro-theme span,
@@ -105,7 +101,6 @@
   text-shadow: none;
 }
 
-/* Headings - slightly brighter, still no glow */
 .retro-theme h1,
 .retro-theme h2,
 .retro-theme h3,
@@ -116,100 +111,87 @@
   letter-spacing: 0.05em;
 }
 
-/* Emphasis class - use for important values */
 .retro-theme .retro-emphasis {
   color: var(--retro-bright);
   text-shadow: none;
 }
 
-/* Active/alert emphasis - ONLY time we use glow */
 .retro-theme .retro-glow-active {
   color: var(--retro-bright);
-  text-shadow: 0 0 8px var(--retro-glow);
+  text-shadow: 0 0 6px var(--retro-glow);
 }
 
-/* Dim/secondary text */
 .retro-theme .retro-dim {
   color: var(--retro-dim);
 }
 
-/* Accent text (amber) - warnings, whales */
 .retro-theme .retro-accent {
   color: var(--retro-accent);
 }
 
-/* Accent with glow - for active alerts only */
 .retro-theme .retro-accent-glow {
   color: var(--retro-accent);
-  text-shadow: 0 0 8px var(--retro-glow-accent);
+  text-shadow: 0 0 6px var(--retro-glow-accent);
 }
 
-/* Numbers - high contrast, cold, no glow */
 .retro-theme .retro-number {
   color: var(--retro-bright);
   text-shadow: none;
   font-weight: normal;
 }
 
-/* Numbers with alert state - use glow */
 .retro-theme .retro-number-alert {
   color: var(--retro-bright);
-  text-shadow: 0 0 6px var(--retro-glow);
+  text-shadow: 0 0 5px var(--retro-glow);
 }
 
 /* ============================================
-   CARDS & CONTAINERS
-   - Single low-contrast border
-   - No nested card-inside-card
-   - Spacing over outlines
+   CARDS & SURFACES - Recessed, no glow
+   Single surface color, depth from subtle difference
    ============================================ */
 
 .retro-theme .retro-card {
-  background: var(--retro-card-bg);
+  background: var(--retro-surface);
   border: 1px solid var(--retro-border);
   border-radius: 2px;
   padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
   transition: border-color 0.2s ease;
-  box-shadow: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .retro-theme .retro-card:hover {
   border-color: var(--retro-border-hover);
 }
 
-/* Card with active/selected state - glow border */
 .retro-theme .retro-card-active {
   border-color: var(--retro-primary);
-  box-shadow: 0 0 8px rgba(74, 155, 107, 0.2);
 }
 
-/* Card with alert state - subtle glow */
 .retro-theme .retro-card-alert {
   border-color: var(--retro-bright);
-  box-shadow: 0 0 10px rgba(124, 255, 155, 0.15);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 8px rgba(109, 219, 138, 0.1);
 }
 
-/* Whale card - accent border, no glow by default */
 .retro-theme .retro-card-whale {
-  background: var(--retro-card-bg);
+  background: var(--retro-surface);
   border: 1px solid var(--retro-border);
   border-left: 2px solid var(--retro-accent);
   border-radius: 2px;
   padding: 1rem 1.25rem;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* ============================================
-   PANELS & SECTIONS
-   Clean containers, minimal borders
+   PANELS - Same surface treatment
    ============================================ */
 
 .retro-theme .retro-panel {
-  background: var(--retro-card-bg);
+  background: var(--retro-surface);
   border: 1px solid var(--retro-border);
   border-radius: 2px;
   padding: 1.5rem;
-  box-shadow: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .retro-theme .retro-panel-header {
@@ -224,9 +206,7 @@
 }
 
 /* ============================================
-   BUTTONS
-   - Outline only by default
-   - Glow on hover/focus only
+   BUTTONS - Outline, glow on hover only
    ============================================ */
 
 .retro-theme .retro-button {
@@ -246,23 +226,21 @@
 .retro-theme .retro-button:focus {
   border-color: var(--retro-bright);
   color: var(--retro-bright);
-  background: rgba(74, 155, 107, 0.08);
-  box-shadow: 0 0 8px rgba(124, 255, 155, 0.2);
+  background: rgba(90, 138, 106, 0.06);
+  box-shadow: 0 0 6px rgba(109, 219, 138, 0.15);
   outline: none;
 }
 
 .retro-theme .retro-button-active {
-  background: rgba(74, 155, 107, 0.12);
+  background: rgba(90, 138, 106, 0.1);
   border-color: var(--retro-primary);
   color: var(--retro-bright);
 }
 
 /* ============================================
-   DATA DISPLAY
-   Cold, legible numbers
+   DATA DISPLAY - Cold, legible
    ============================================ */
 
-/* Labels - dim, uppercase */
 .retro-theme .retro-label {
   font-size: 0.7rem;
   color: var(--retro-dim);
@@ -271,33 +249,28 @@
   margin-bottom: 0.25rem;
 }
 
-/* Values - primary color, no glow */
 .retro-theme .retro-value {
   font-size: 1.125rem;
   color: var(--retro-primary);
   text-shadow: none;
 }
 
-/* Large values - brighter but still no glow */
 .retro-theme .retro-value-lg {
   font-size: 1.5rem;
   color: var(--retro-bright);
   text-shadow: none;
 }
 
-/* Large values with alert state */
 .retro-theme .retro-value-lg-alert {
   font-size: 1.5rem;
   color: var(--retro-bright);
-  text-shadow: 0 0 8px var(--retro-glow);
+  text-shadow: 0 0 6px var(--retro-glow);
 }
 
-/* Positive values */
 .retro-theme .retro-positive {
   color: var(--retro-bright);
 }
 
-/* Negative values */
 .retro-theme .retro-negative {
   color: var(--retro-danger);
 }
@@ -328,12 +301,11 @@
 }
 
 .retro-theme .retro-table tr:hover {
-  background: rgba(74, 155, 107, 0.03);
+  background: rgba(90, 138, 106, 0.03);
 }
 
 /* ============================================
-   BADGES & TAGS
-   Clean, no glow by default
+   BADGES - Clean, no glow except mega
    ============================================ */
 
 .retro-theme .retro-badge {
@@ -351,28 +323,24 @@
   color: var(--retro-accent);
 }
 
-/* Mega badge - only time badge gets glow */
 .retro-theme .retro-badge-mega {
   border-color: var(--retro-accent);
   color: var(--retro-accent);
-  box-shadow: 0 0 6px var(--retro-glow-accent);
+  box-shadow: 0 0 5px var(--retro-glow-accent);
 }
 
 /* ============================================
-   NEW ALERT ANIMATION
-   Rows start bright, fade to baseline
+   NEW ALERT ANIMATION - Fade from bright
    ============================================ */
 
 @keyframes alert-row-fade {
   0% {
-    background-color: rgba(124, 255, 155, 0.12);
+    background-color: rgba(109, 219, 138, 0.08);
     border-color: var(--retro-bright);
-    box-shadow: 0 0 12px rgba(124, 255, 155, 0.2);
   }
   100% {
-    background-color: var(--retro-card-bg);
+    background-color: var(--retro-surface);
     border-color: var(--retro-border);
-    box-shadow: none;
   }
 }
 
@@ -380,17 +348,14 @@
   animation: alert-row-fade 15s ease-out forwards;
 }
 
-/* Whale alert row animation */
 @keyframes alert-row-fade-whale {
   0% {
-    background-color: rgba(212, 168, 75, 0.12);
+    background-color: rgba(201, 168, 75, 0.08);
     border-color: var(--retro-accent);
-    box-shadow: 0 0 12px rgba(212, 168, 75, 0.2);
   }
   100% {
-    background-color: var(--retro-card-bg);
+    background-color: var(--retro-surface);
     border-color: var(--retro-border);
-    box-shadow: none;
   }
 }
 
@@ -421,7 +386,7 @@
 }
 
 /* ============================================
-   BLINKING CURSOR
+   CURSOR BLINK
    ============================================ */
 
 .retro-theme .retro-cursor {
@@ -434,7 +399,7 @@
 }
 
 /* ============================================
-   BOOT SEQUENCE STYLES
+   BOOT SEQUENCE
    ============================================ */
 
 .retro-theme .retro-boot-screen {
@@ -460,7 +425,7 @@
 }
 
 /* ============================================
-   ASCII ART - Minimal glow
+   ASCII ART
    ============================================ */
 
 .retro-theme .retro-ascii {
@@ -492,6 +457,21 @@
 .retro-theme .retro-mt-2 { margin-top: 1rem; }
 .retro-theme .retro-mb-1 { margin-bottom: 0.5rem; }
 .retro-theme .retro-mb-2 { margin-bottom: 1rem; }
+
+/* ============================================
+   PROGRESS BARS - Green fill only, dark track
+   ============================================ */
+
+.retro-theme .retro-progress-track {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 0;
+  height: 4px;
+}
+
+.retro-theme .retro-progress-fill {
+  background: var(--retro-bright);
+  border-radius: 0;
+}
 
 /* ============================================
    REDUCED MOTION
