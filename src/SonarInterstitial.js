@@ -2,10 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 /**
  * Sonar Interstitial
- * Full-screen intro with:
- * 1. Boot messages appearing line by line
- * 2. "follow the white whale" typed letter by letter
- * 3. Sonar pulse animation expanding behind text
+ * Minimal intro sequence - restrained, functional
  */
 const SonarInterstitial = ({ onComplete }) => {
   const [phase, setPhase] = useState('boot'); // 'boot' | 'typing' | 'sonar' | 'done'
@@ -16,14 +13,12 @@ const SonarInterstitial = ({ onComplete }) => {
   const [isVisible, setIsVisible] = useState(true);
 
   const message = 'follow the white whale';
-  const typingSpeed = 60; // ms per character
+  const typingSpeed = 50; // ms per character
 
   const bootSequence = [
     'POLYMARKET TERMINAL v2.0',
-    'INITIALIZING MARKET SCANNER...',
+    'INITIALIZING SCANNER...',
     'LOADING WHALE DETECTOR...',
-    'CALIBRATING PREDICTION MODELS...',
-    'ESTABLISHING DATABASE LINK...',
     'SYSTEM READY',
   ];
 
@@ -31,12 +26,12 @@ const SonarInterstitial = ({ onComplete }) => {
   const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // Sonar colors - unified console palette
+  // Console colors - muted, restrained
   const colors = {
-    bg: '#060908',
-    primary: '#5a8a6a',
-    bright: '#6ddb8a',
-    dim: '#3a5a48',
+    bg: '#0a0c0a',
+    text: '#708070',
+    textBright: '#8faa8f',
+    textDim: '#4a5a4a',
   };
 
   // Skip handler
@@ -46,7 +41,7 @@ const SonarInterstitial = ({ onComplete }) => {
       setTimeout(() => {
         setIsVisible(false);
         onComplete();
-      }, 300);
+      }, 200);
     }
   }, [isFading, onComplete]);
 
@@ -67,16 +62,15 @@ const SonarInterstitial = ({ onComplete }) => {
         index++;
       } else {
         clearInterval(bootInterval);
-        // Short pause then start typing
-        setTimeout(() => setPhase('typing'), 400);
+        setTimeout(() => setPhase('typing'), 300);
       }
-    }, 120);
+    }, 100);
 
     return () => clearInterval(bootInterval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, prefersReducedMotion]);
 
-  // Typewriter effect for "follow the white whale"
+  // Typewriter effect
   useEffect(() => {
     if (phase !== 'typing') return;
 
@@ -87,15 +81,14 @@ const SonarInterstitial = ({ onComplete }) => {
         charIndex++;
       } else {
         clearInterval(typeInterval);
-        // Start sonar after typing complete
-        setTimeout(() => setPhase('sonar'), 300);
+        setTimeout(() => setPhase('sonar'), 200);
       }
     }, typingSpeed);
 
     return () => clearInterval(typeInterval);
   }, [phase]);
 
-  // Sonar phase - auto complete after animation
+  // Sonar phase - quick completion
   useEffect(() => {
     if (phase !== 'sonar') return;
 
@@ -104,8 +97,8 @@ const SonarInterstitial = ({ onComplete }) => {
       setTimeout(() => {
         setIsVisible(false);
         onComplete();
-      }, 600);
-    }, 1800); // Let sonar animation play
+      }, 400);
+    }, 1200);
 
     return () => clearTimeout(timer);
   }, [phase, onComplete]);
@@ -134,7 +127,6 @@ const SonarInterstitial = ({ onComplete }) => {
     };
   }, [prefersReducedMotion, handleSkip]);
 
-  // Don't render if reduced motion or not visible
   if (!isVisible || prefersReducedMotion) {
     return null;
   }
@@ -154,18 +146,18 @@ const SonarInterstitial = ({ onComplete }) => {
         justifyContent: 'center',
         zIndex: 9999,
         opacity: isFading ? 0 : 1,
-        transition: 'opacity 0.6s ease-out',
+        transition: 'opacity 0.4s ease-out',
         overflow: 'hidden',
         fontFamily: "'VT323', monospace",
       }}
     >
-      {/* SVG Sonar Rings - Only show during sonar phase */}
+      {/* Subtle sonar ring - only during sonar phase */}
       {phase === 'sonar' && (
         <svg
           style={{
             position: 'absolute',
-            width: '200vmax',
-            height: '200vmax',
+            width: '150vmax',
+            height: '150vmax',
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
@@ -174,106 +166,48 @@ const SonarInterstitial = ({ onComplete }) => {
           viewBox="0 0 100 100"
           preserveAspectRatio="xMidYMid slice"
         >
-          {/* Ring 1 - Main pulse */}
           <circle
             cx="50"
             cy="50"
             r="2"
             fill="none"
-            stroke={colors.bright}
-            strokeWidth="0.15"
-            style={{
-              animation: 'sonar-pulse-1 1.6s ease-out forwards',
-              transformOrigin: '50% 50%',
-            }}
-          />
-          {/* Ring 2 - Staggered */}
-          <circle
-            cx="50"
-            cy="50"
-            r="2"
-            fill="none"
-            stroke={colors.primary}
+            stroke={colors.text}
             strokeWidth="0.1"
             style={{
-              animation: 'sonar-pulse-2 1.6s ease-out 0.2s forwards',
+              animation: 'sonar-pulse 1.4s ease-out forwards',
               transformOrigin: '50% 50%',
-              opacity: 0,
-            }}
-          />
-          {/* Ring 3 - Staggered */}
-          <circle
-            cx="50"
-            cy="50"
-            r="2"
-            fill="none"
-            stroke={colors.dim}
-            strokeWidth="0.08"
-            style={{
-              animation: 'sonar-pulse-3 1.6s ease-out 0.4s forwards',
-              transformOrigin: '50% 50%',
-              opacity: 0,
             }}
           />
         </svg>
       )}
 
-      {/* CSS Keyframes */}
       <style>{`
-        @keyframes sonar-pulse-1 {
+        @keyframes sonar-pulse {
           0% {
             r: 2;
-            opacity: 0.9;
-            stroke-width: 0.3;
-          }
-          100% {
-            r: 50;
-            opacity: 0;
-            stroke-width: 0.05;
-          }
-        }
-        @keyframes sonar-pulse-2 {
-          0% {
-            r: 2;
-            opacity: 0.7;
+            opacity: 0.5;
             stroke-width: 0.2;
           }
           100% {
             r: 45;
             opacity: 0;
-            stroke-width: 0.03;
-          }
-        }
-        @keyframes sonar-pulse-3 {
-          0% {
-            r: 2;
-            opacity: 0.5;
-            stroke-width: 0.15;
-          }
-          100% {
-            r: 40;
-            opacity: 0;
             stroke-width: 0.02;
           }
         }
-        @keyframes cursor-blink {
-          0%, 50% { opacity: 1; }
-          51%, 100% { opacity: 0; }
-        }
       `}</style>
 
-      {/* Boot Messages - Show during boot phase */}
+      {/* Boot Messages */}
       {phase === 'boot' && (
-        <div style={{ textAlign: 'left', minWidth: '320px', padding: '0 2rem' }}>
+        <div style={{ textAlign: 'left', minWidth: '280px', padding: '0 2rem' }}>
           {bootMessages.map((msg, i) => (
             <div
               key={i}
               style={{
                 color: i === bootMessages.length - 1 && bootMessages.length === bootSequence.length
-                  ? colors.bright
-                  : colors.primary,
-                fontSize: '1rem',
-                marginBottom: '0.25rem',
+                  ? colors.textBright
+                  : colors.text,
+                fontSize: '0.9rem',
+                marginBottom: '0.2rem',
                 letterSpacing: '0.02em',
               }}
             >
@@ -281,62 +215,37 @@ const SonarInterstitial = ({ onComplete }) => {
             </div>
           ))}
           {bootMessages.length < bootSequence.length && (
-            <span
-              style={{
-                color: colors.primary,
-                animation: 'cursor-blink 1s step-end infinite',
-              }}
-            >
-              █
-            </span>
+            <span style={{ color: colors.text, opacity: showCursor ? 1 : 0 }}>█</span>
           )}
         </div>
       )}
 
-      {/* Main Text Container - Show during typing and sonar phases */}
+      {/* Main Text */}
       {(phase === 'typing' || phase === 'sonar') && (
-        <div
-          style={{
-            position: 'relative',
-            zIndex: 10,
-            textAlign: 'center',
-          }}
-        >
-          {/* Main Text with typewriter effect */}
+        <div style={{ position: 'relative', zIndex: 10, textAlign: 'center' }}>
           <div
             style={{
-              fontSize: 'clamp(1.5rem, 5vw, 3rem)',
-              color: colors.bright,
-              letterSpacing: '0.15em',
-              textShadow: 'none',
+              fontSize: 'clamp(1.25rem, 4vw, 2.5rem)',
+              color: colors.textBright,
+              letterSpacing: '0.12em',
             }}
           >
             {displayedText}
             {phase === 'typing' && (
-              <span
-                style={{
-                  opacity: showCursor ? 1 : 0,
-                  marginLeft: '2px',
-                  color: colors.bright,
-                }}
-              >
-                _
-              </span>
+              <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
             )}
           </div>
 
-          {/* Subtext - Only show during sonar */}
           {phase === 'sonar' && (
             <div
               style={{
-                fontSize: 'clamp(0.75rem, 2vw, 1rem)',
-                color: colors.dim,
-                letterSpacing: '0.1em',
-                marginTop: '1rem',
-                opacity: 0.6,
+                fontSize: 'clamp(0.7rem, 1.5vw, 0.9rem)',
+                color: colors.textDim,
+                letterSpacing: '0.08em',
+                marginTop: '0.75rem',
               }}
             >
-              scanning for whales...
+              scanning...
             </div>
           )}
         </div>
@@ -346,11 +255,11 @@ const SonarInterstitial = ({ onComplete }) => {
       <div
         style={{
           position: 'absolute',
-          bottom: '2rem',
-          fontSize: '0.75rem',
-          color: colors.dim,
-          opacity: 0.4,
-          letterSpacing: '0.1em',
+          bottom: '1.5rem',
+          fontSize: '0.7rem',
+          color: colors.textDim,
+          opacity: 0.3,
+          letterSpacing: '0.08em',
         }}
       >
         press any key to skip

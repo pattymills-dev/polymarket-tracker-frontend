@@ -32,6 +32,48 @@ body {
   z-index: 0;
 }
 
+/* Retro/Sonar mode - scanlines very subtle, background only */
+.retro-container {
+  position: relative;
+}
+
+.retro-container::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+/* Retro mode scrollbar */
+.retro-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.retro-container::-webkit-scrollbar-track {
+  background: #0a0c0a;
+}
+
+.retro-container::-webkit-scrollbar-thumb {
+  background: #2a3a2a;
+  border-radius: 0;
+}
+
+.retro-container::-webkit-scrollbar-thumb:hover {
+  background: #3a4a3a;
+}
+
 /* Scrollbar styling for trading aesthetics */
 ::-webkit-scrollbar {
   width: 8px;
@@ -54,23 +96,23 @@ body {
 
 /* Smooth transitions for all interactive elements */
 * {
-  transition-property: color, background-color, border-color, box-shadow, transform;
+  transition-property: color, background-color, border-color, opacity;
   transition-duration: 150ms;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-timing-function: ease-out;
 }
 
-/* Pulse animation for critical alerts */
+/* Pulse animation for critical alerts only */
 @keyframes pulse-glow {
   0%, 100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.6;
+    opacity: 0.7;
   }
 }
 
 .animate-pulse {
-  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 
 /* Text truncation utility */
@@ -92,4 +134,18 @@ body {
   .backdrop-blur {
     backdrop-filter: blur(12px);
   }
+}
+
+/* Spin animation for loading states */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
 }
