@@ -181,10 +181,11 @@ serve(async (req) => {
 
       upsertedTrades += rows.length;
 
-      // Fetch top traders and watchlist for smart alerts
+      // Fetch top 20 traders and watchlist for smart alerts
       const { data: topTraders } = await supabase
         .from("top_traders")
-        .select("trader_address, rank, total_pl");
+        .select("trader_address, rank, total_pl, wins, losses, resolved_markets")
+        .lte("rank", 20);  // Only alert for top 20 traders
 
       const { data: watchlist } = await supabase
         .from("watchlist")
@@ -211,8 +212,17 @@ serve(async (req) => {
         // Format bet direction for display (e.g., "BUY Yes @ 65¢" or "SELL No @ 35¢")
         const betDirection = r.outcome ? `${r.side || 'BUY'} ${r.outcome}${r.price ? ` @ ${Math.round(r.price * 100)}¢` : ''}` : '';
 
-        // Top trader alert (>= $5k)
+        // Format resolved record (e.g., "12-3" for 12 wins, 3 losses)
+        const formatRecord = (info: any) => {
+          if (!info) return '';
+          const wins = info.wins || 0;
+          const losses = info.losses || 0;
+          return ` [${wins}-${losses}]`;
+        };
+
+        // Top trader alert (>= $5k) - only top 20
         if (isTopTrader && r.amount >= MIN_TRADE_SIZE) {
+          const record = formatRecord(topTraderInfo);
           alertRows.push({
             type: "top_trader",
             alert_source: "top_trader",
@@ -225,7 +235,7 @@ serve(async (req) => {
             side: r.side || 'BUY',
             price: r.price,
             amount: r.amount,
-            message: `🏆 TOP TRADER #${topTraderInfo?.rank || '?'} ($${Math.round(topTraderInfo?.total_pl || 0).toLocaleString()} P/L): $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
+            message: `🏆 TOP TRADER #${topTraderInfo?.rank || '?'}${record} ($${Math.round(topTraderInfo?.total_pl || 0).toLocaleString()} P/L): $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
             sent: false,
           });
         }

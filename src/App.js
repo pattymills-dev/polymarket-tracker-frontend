@@ -898,37 +898,47 @@ setMarketStats({
                   </div>
 
                   {profitabilityTraders.length >= 5 && (
-                    <div className="flex gap-1 text-xs">
-                      <button
-                        onClick={() => setTraderSortBy('profitability')}
-                        className={`px-3 py-1.5 rounded transition-colors ${
-                          traderSortBy === 'profitability'
-                            ? 'bg-cyan-600 text-white'
-                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        }`}
-                      >
-                        Profit %
-                      </button>
-                      <button
-                        onClick={() => setTraderSortBy('win_rate')}
-                        className={`px-3 py-1.5 rounded transition-colors ${
-                          traderSortBy === 'win_rate'
-                            ? 'bg-cyan-600 text-white'
-                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        }`}
-                      >
-                        Win %
-                      </button>
-                      <button
-                        onClick={() => setTraderSortBy('total_pl')}
-                        className={`px-3 py-1.5 rounded transition-colors ${
-                          traderSortBy === 'total_pl'
-                            ? 'bg-cyan-600 text-white'
-                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        }`}
-                      >
-                        Total P/L
-                      </button>
+                    <div className="space-y-2">
+                      <div className="flex gap-1 text-xs">
+                        <button
+                          onClick={() => setTraderSortBy('profitability')}
+                          className={`px-3 py-1.5 rounded transition-colors ${
+                            traderSortBy === 'profitability'
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                          }`}
+                          title="Return on investment - profit divided by total amount wagered"
+                        >
+                          Profit %
+                        </button>
+                        <button
+                          onClick={() => setTraderSortBy('win_rate')}
+                          className={`px-3 py-1.5 rounded transition-colors ${
+                            traderSortBy === 'win_rate'
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                          }`}
+                          title="Percentage of resolved bets where the trader picked the winning outcome"
+                        >
+                          Win %
+                        </button>
+                        <button
+                          onClick={() => setTraderSortBy('total_pl')}
+                          className={`px-3 py-1.5 rounded transition-colors ${
+                            traderSortBy === 'total_pl'
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                          }`}
+                          title="Total realized profit/loss in USD from resolved markets"
+                        >
+                          Total P/L
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-500 italic">
+                        {traderSortBy === 'profitability' && '📊 Profit % = Total P/L ÷ Amount Wagered (ROI)'}
+                        {traderSortBy === 'win_rate' && '🎯 Win % = Winning Bets ÷ Total Resolved Bets'}
+                        {traderSortBy === 'total_pl' && '💰 Total P/L = Sum of all realized profits and losses'}
+                      </p>
                     </div>
                   )}
                 </div>
