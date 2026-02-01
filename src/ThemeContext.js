@@ -11,12 +11,16 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children }) => {
-  // Initialize from localStorage, default to 'modern'
+  // Initialize from localStorage, default to 'belowDeck' (retro/sonar theme)
   const [theme, setTheme] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('polymarket-theme') || 'modern';
+      const stored = localStorage.getItem('polymarket-theme');
+      // Migrate old values
+      if (stored === 'retro') return 'belowDeck';
+      if (stored === 'modern') return 'bridgeView';
+      return stored || 'belowDeck';
     }
-    return 'modern';
+    return 'belowDeck';
   });
 
   // Persist theme choice
@@ -24,7 +28,7 @@ export const ThemeProvider = ({ children }) => {
     localStorage.setItem('polymarket-theme', theme);
 
     // Add/remove theme class on document
-    if (theme === 'retro') {
+    if (theme === 'belowDeck') {
       document.documentElement.classList.add('retro-theme');
     } else {
       document.documentElement.classList.remove('retro-theme');
@@ -32,13 +36,15 @@ export const ThemeProvider = ({ children }) => {
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'modern' ? 'retro' : 'modern');
+    setTheme(prev => prev === 'bridgeView' ? 'belowDeck' : 'bridgeView');
   };
 
-  const isRetro = theme === 'retro';
+  // Below Deck = retro/sonar theme, Bridge View = clean/modern
+  const isBelowDeck = theme === 'belowDeck';
+  const isRetro = isBelowDeck; // Alias for backward compatibility
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme, isRetro }}>
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme, isRetro, isBelowDeck }}>
       {children}
     </ThemeContext.Provider>
   );

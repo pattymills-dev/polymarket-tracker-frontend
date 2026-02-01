@@ -13,8 +13,9 @@ import {
   Copy,
   Check,
   ExternalLink,
-  Monitor,
-  Terminal
+  Send,
+  Anchor,
+  Navigation
 } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 
@@ -602,36 +603,7 @@ setMarketStats({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {/* Theme Toggle */}
-              <button
-                onClick={() => {
-                  // Clear session storage when switching to retro to show intro again
-                  if (!isRetro) {
-                    sessionStorage.removeItem('retro-boot-complete');
-                    sessionStorage.removeItem('whale-interstitial-shown');
-                  }
-                  toggleTheme();
-                }}
-                className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
-                  isRetro
-                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
-                    : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
-                }`}
-                style={isRetro ? { color: '#7CFF9B' } : {}}
-              >
-                {isRetro ? (
-                  <>
-                    <Monitor className="w-4 h-4" />
-                    MODERN
-                  </>
-                ) : (
-                  <>
-                    <Terminal className="w-4 h-4 text-emerald-400" />
-                    Retro
-                  </>
-                )}
-              </button>
-
+              {/* Alerts Button */}
               <button
                 onClick={() => setShowAlerts((v) => !v)}
                 className={`relative px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
@@ -652,6 +624,22 @@ setMarketStats({
                 )}
               </button>
 
+              {/* Telegram Bot Link */}
+              <a
+                href="https://t.me/sonarstack_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                  isRetro
+                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                    : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
+                }`}
+                style={isRetro ? { color: '#7CFF9B' } : {}}
+              >
+                <Send className="w-4 h-4" />
+                {isRetro ? 'TELEGRAM' : 'Telegram'}
+              </a>
+
               {/* Tip Jar Button */}
               <div className="relative" ref={tipJarRef}>
                 <button
@@ -664,7 +652,7 @@ setMarketStats({
                   style={isRetro ? { color: '#7CFF9B' } : {}}
                 >
                   <Heart className={`w-4 h-4 ${isRetro ? 'text-[#FFD36A]' : 'text-rose-400'}`} />
-                  {isRetro ? 'TIP' : 'Tip the Operator'}
+                  {isRetro ? 'TIP' : 'Tip'}
                 </button>
 
                 {showTipJar && (
@@ -751,29 +739,113 @@ setMarketStats({
                   </div>
                 )}
               </div>
+
+              {/* Theme Toggle - Far Right */}
+              <button
+                onClick={() => {
+                  // Clear session storage when switching to Below Deck to show intro again
+                  if (!isRetro) {
+                    sessionStorage.removeItem('retro-boot-complete');
+                    sessionStorage.removeItem('whale-interstitial-shown');
+                  }
+                  toggleTheme();
+                }}
+                className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                  isRetro
+                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                    : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
+                }`}
+                style={isRetro ? { color: '#7CFF9B' } : {}}
+                title={isRetro ? 'Switch to Bridge View (clean UI)' : 'Switch to Below Deck (sonar theme)'}
+              >
+                {isRetro ? (
+                  <>
+                    <Navigation className="w-4 h-4" />
+                    BRIDGE VIEW
+                  </>
+                ) : (
+                  <>
+                    <Anchor className="w-4 h-4 text-emerald-400" />
+                    Below Deck
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
 
         {/* Alerts Panel */}
         {showAlerts && (
-          <div className="mb-6 bg-slate-900/80 backdrop-blur rounded-lg border border-amber-500/30 p-4 shadow-lg shadow-amber-500/10">
+          <div className={`mb-6 backdrop-blur rounded-lg p-4 shadow-lg ${
+            isRetro
+              ? 'border border-[#3AAE66]'
+              : 'bg-slate-900/80 border border-amber-500/30 shadow-amber-500/10'
+          }`}
+          style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold flex items-center gap-2 text-sm">
-                <Bell className="w-4 h-4 text-amber-400 animate-pulse" />
-                <span className="text-amber-400">Whale alerts</span>
+              <h3 className={`font-semibold flex items-center gap-2 text-sm ${isRetro ? '' : ''}`}>
+                <Bell className={`w-4 h-4 ${isRetro ? 'text-[#FFD36A]' : 'text-amber-400'} animate-pulse`} />
+                <span className={isRetro ? 'text-[#FFD36A]' : 'text-amber-400'}>
+                  {isRetro ? '> SIGNAL INTERCEPTS' : 'Signal Alerts'}
+                </span>
               </h3>
               <button
                 onClick={() => setAlerts([])}
-                className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                className={`text-xs transition-colors ${
+                  isRetro ? 'text-[#3AAE66] hover:text-[#7CFF9B]' : 'text-slate-400 hover:text-slate-200'
+                }`}
               >
-                Clear all
+                {isRetro ? 'CLEAR' : 'Clear all'}
               </button>
             </div>
 
+            {/* Alert Categories Legend */}
+            <div className={`mb-4 p-3 rounded-lg text-xs ${
+              isRetro ? 'border border-[#1a2a1e]' : 'bg-slate-950/50'
+            }`}
+            style={isRetro ? { backgroundColor: '#050806' } : {}}>
+              <div className={`font-medium mb-2 ${isRetro ? 'text-[#3AAE66]' : 'text-slate-400'}`}>
+                {isRetro ? '> ALERT CLASSIFICATIONS:' : 'Alert Types:'}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? 'border-[#7CFF9B] text-[#7CFF9B]' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                  }`}>TOP TRADER</span>
+                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>High-performing trader activity</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? 'border-[#7CFF9B] text-[#7CFF9B]' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                  }`}>WATCHLIST</span>
+                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Traders you're tracking</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? 'border-[#FFD36A] text-[#FFD36A]' : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                  }`}>WHALE</span>
+                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Large position ($50k+)</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? 'border-[#FFD36A] text-[#FFD36A]' : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                  }`}>MEGA WHALE</span>
+                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Massive position ($100k+)</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? 'border-[#FF6B6B] text-[#FF6B6B]' : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
+                  }`}>ISOLATED CONTACT</span>
+                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Low-activity trader, outsized bet in thin market</span>
+                </div>
+              </div>
+            </div>
+
             {alerts.length === 0 ? (
-              <p className="text-slate-400 text-sm">
-                No alerts yet. They'll appear when top traders, watchlist traders, or whales make trades.
+              <p className={`text-sm ${isRetro ? 'text-[#3AAE66]' : 'text-slate-400'}`}>
+                {isRetro
+                  ? '> NO SIGNALS DETECTED. MONITORING...'
+                  : 'No alerts yet. They\'ll appear when top traders, watchlist traders, or whales make trades.'}
               </p>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -781,6 +853,7 @@ setMarketStats({
                   const isTopTrader = alert.type === 'top_trader';
                   const isWatchlist = alert.type === 'watchlist';
                   const isMega = alert.type === 'mega_whale';
+                  const isIsolatedContact = alert.type === 'isolated_contact';
 
                   // Dynamic styling based on alert type
                   const borderClass = isTopTrader
@@ -789,7 +862,9 @@ setMarketStats({
                       ? 'border-cyan-500/40 bg-cyan-500/5 shadow-cyan-500/20'
                       : isMega
                         ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
-                        : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20';
+                        : isIsolatedContact
+                          ? 'border-purple-500/40 bg-purple-500/5 shadow-purple-500/20'
+                          : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20';
 
                   const badgeClass = isTopTrader
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
@@ -797,7 +872,9 @@ setMarketStats({
                       ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
                       : isMega
                         ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                        : 'bg-amber-500/20 text-amber-300 border-amber-500/50';
+                        : isIsolatedContact
+                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 animate-pulse'
+                          : 'bg-amber-500/20 text-amber-300 border-amber-500/50';
 
                   const badgeText = isTopTrader
                     ? '🏆 TOP TRADER'
@@ -805,7 +882,9 @@ setMarketStats({
                       ? '👀 WATCHLIST'
                       : isMega
                         ? '🐋 MEGA WHALE'
-                        : '🐋 WHALE';
+                        : isIsolatedContact
+                          ? '📡 ISOLATED CONTACT'
+                          : '🐋 WHALE';
 
                   // Build Polymarket URL from slug
                   // For sports bets, link to the game page; for others, link to the event
