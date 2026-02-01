@@ -12,10 +12,14 @@ import {
   Heart,
   Copy,
   Check,
-  ExternalLink
+  ExternalLink,
+  Monitor,
+  Terminal
 } from 'lucide-react';
+import { useTheme } from './ThemeContext';
 
 const PolymarketTracker = () => {
+  const { isRetro, toggleTheme } = useTheme();
   const [largeBets, setLargeBets] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
   const [watchedTraders, setWatchedTraders] = useState([]);
@@ -565,39 +569,84 @@ setMarketStats({
   }, [profitabilityTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 trading-grid-bg">
+    <div className={`min-h-screen ${isRetro ? 'retro-container' : 'bg-slate-950 text-slate-100 trading-grid-bg'}`}
+         style={isRetro ? { backgroundColor: '#050806', color: '#7CFF9B', fontFamily: "'VT323', monospace" } : {}}>
       <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-slate-200" />
+                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${isRetro ? 'border border-[#3AAE66]' : 'bg-slate-900 border border-slate-800'}`}>
+                  {isRetro ? (
+                    <span style={{ color: '#7CFF9B', fontSize: '1.25rem' }}>▓</span>
+                  ) : (
+                    <TrendingUp className="w-5 h-5 text-slate-200" />
+                  )}
                 </div>
                 <div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-slate-100">
-                    Polymarket Tracker
+                  <h1 className={`text-3xl font-semibold tracking-tight ${isRetro ? '' : 'text-slate-100'}`}
+                      style={isRetro ? { color: '#7CFF9B', textShadow: '0 0 10px rgba(124, 255, 155, 0.4)', letterSpacing: '0.05em' } : {}}>
+                    {isRetro ? 'POLYMARKET TRACKER' : 'Polymarket Tracker'}
                   </h1>
-                  <p className="text-sm text-slate-400 mt-1">
-                    Large trade activity and trader watchlists
+                  <p className={`text-sm mt-1 ${isRetro ? '' : 'text-slate-400'}`}
+                     style={isRetro ? { color: '#3AAE66' } : {}}>
+                    {isRetro ? '> WHALE ACTIVITY MONITOR' : 'Large trade activity and trader watchlists'}
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-slate-500 mt-3">
-                Last updated: {lastUpdate.toLocaleTimeString()}
+              <p className={`text-xs mt-3 ${isRetro ? '' : 'text-slate-500'}`}
+                 style={isRetro ? { color: '#3AAE66' } : {}}>
+                {isRetro ? `> LAST UPDATE: ${lastUpdate.toLocaleTimeString()}` : `Last updated: ${lastUpdate.toLocaleTimeString()}`}
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {/* Theme Toggle */}
+              <button
+                onClick={() => {
+                  // Clear session storage when switching to retro to show intro again
+                  if (!isRetro) {
+                    sessionStorage.removeItem('retro-boot-complete');
+                    sessionStorage.removeItem('whale-interstitial-shown');
+                  }
+                  toggleTheme();
+                }}
+                className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                  isRetro
+                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                    : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
+                }`}
+                style={isRetro ? { color: '#7CFF9B' } : {}}
+              >
+                {isRetro ? (
+                  <>
+                    <Monitor className="w-4 h-4" />
+                    MODERN
+                  </>
+                ) : (
+                  <>
+                    <Terminal className="w-4 h-4 text-emerald-400" />
+                    Retro
+                  </>
+                )}
+              </button>
+
               <button
                 onClick={() => setShowAlerts((v) => !v)}
-                className="relative px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border border-slate-800"
+                className={`relative px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                  isRetro
+                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                    : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
+                }`}
+                style={isRetro ? { color: '#7CFF9B' } : {}}
               >
                 <Bell className="w-4 h-4" />
-                Alerts
+                {isRetro ? 'ALERTS' : 'Alerts'}
                 {alerts.length > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-cyan-600 text-slate-950 text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold">
+                  <span className={`absolute -top-2 -right-2 text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold ${
+                    isRetro ? 'bg-[#FFD36A] text-[#050806]' : 'bg-cyan-600 text-slate-950'
+                  }`}>
                     {alerts.length}
                   </span>
                 )}
@@ -607,46 +656,72 @@ setMarketStats({
               <div className="relative" ref={tipJarRef}>
                 <button
                   onClick={() => setShowTipJar((v) => !v)}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border border-slate-800"
+                  className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                    isRetro
+                      ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
+                  }`}
+                  style={isRetro ? { color: '#7CFF9B' } : {}}
                 >
-                  <Heart className="w-4 h-4 text-rose-400" />
-                  Tip the Operator
+                  <Heart className={`w-4 h-4 ${isRetro ? 'text-[#FFD36A]' : 'text-rose-400'}`} />
+                  {isRetro ? 'TIP' : 'Tip the Operator'}
                 </button>
 
                 {showTipJar && (
-                  <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 p-4">
-                    <div className="text-sm text-slate-300 mb-3">Support the project:</div>
+                  <div className={`absolute right-0 mt-2 w-72 rounded-lg shadow-xl z-50 p-4 ${
+                    isRetro ? 'border border-[#3AAE66]' : 'bg-slate-900 border border-slate-700'
+                  }`}
+                  style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}>
+                    <div className={`text-sm mb-3 ${isRetro ? '' : 'text-slate-300'}`}
+                         style={isRetro ? { color: '#3AAE66' } : {}}>
+                      {isRetro ? '> SUPPORT THE PROJECT:' : 'Support the project:'}
+                    </div>
 
                     {/* Ko-fi Link */}
                     <a
                       href="https://ko-fi.com/pattymills"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors mb-3"
+                      className={`flex items-center gap-3 p-3 rounded-lg transition-colors mb-3 ${
+                        isRetro ? 'border border-[#1a2a1e] hover:border-[#3AAE66]' : 'bg-slate-800 hover:bg-slate-700'
+                      }`}
+                      style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}
                     >
                       <div className="w-8 h-8 bg-[#FF5E5B] rounded-lg flex items-center justify-center">
                         <span className="text-white text-lg">☕</span>
                       </div>
                       <div className="flex-1">
-                        <div className="font-medium text-slate-100">Ko-fi</div>
-                        <div className="text-xs text-slate-400">Buy me a coffee</div>
+                        <div className={`font-medium ${isRetro ? '' : 'text-slate-100'}`}
+                             style={isRetro ? { color: '#7CFF9B' } : {}}>Ko-fi</div>
+                        <div className={`text-xs ${isRetro ? '' : 'text-slate-400'}`}
+                             style={isRetro ? { color: '#3AAE66' } : {}}>Buy me a coffee</div>
                       </div>
-                      <ExternalLink className="w-4 h-4 text-slate-500" />
+                      <ExternalLink className={`w-4 h-4 ${isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}`} />
                     </a>
 
                     {/* Crypto Wallet */}
-                    <div className="p-3 bg-slate-800 rounded-lg">
+                    <div className={`p-3 rounded-lg ${
+                      isRetro ? 'border border-[#1a2a1e]' : 'bg-slate-800'
+                    }`}
+                    style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}>
                       <div className="flex items-center gap-3 mb-2">
-                        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                          <span className="text-white text-sm font-bold">Ξ</span>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          isRetro ? 'border border-[#3AAE66]' : 'bg-gradient-to-br from-blue-500 to-purple-600'
+                        }`}>
+                          <span className={`text-sm font-bold ${isRetro ? 'text-[#7CFF9B]' : 'text-white'}`}>Ξ</span>
                         </div>
                         <div className="flex-1">
-                          <div className="font-medium text-slate-100">ETH / ERC-20</div>
-                          <div className="text-xs text-slate-400">Send crypto directly</div>
+                          <div className={`font-medium ${isRetro ? '' : 'text-slate-100'}`}
+                               style={isRetro ? { color: '#7CFF9B' } : {}}>ETH / ERC-20</div>
+                          <div className={`text-xs ${isRetro ? '' : 'text-slate-400'}`}
+                               style={isRetro ? { color: '#3AAE66' } : {}}>Send crypto directly</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
-                        <code className="flex-1 text-xs bg-slate-900 px-2 py-1.5 rounded text-slate-300 truncate">
+                        <code className={`flex-1 text-xs px-2 py-1.5 rounded truncate ${
+                          isRetro ? 'border border-[#1a2a1e]' : 'bg-slate-900 text-slate-300'
+                        }`}
+                        style={isRetro ? { backgroundColor: '#050806', color: '#7CFF9B' } : {}}>
                           0xF30BCb8d980dD3674dE9B64875E63260765a9472
                         </code>
                         <button
@@ -655,20 +730,23 @@ setMarketStats({
                             setCopiedWallet(true);
                             setTimeout(() => setCopiedWallet(false), 2000);
                           }}
-                          className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+                          className={`p-1.5 rounded transition-colors ${
+                            isRetro ? 'border border-[#3AAE66] hover:bg-[#7CFF9B]/10' : 'bg-slate-700 hover:bg-slate-600'
+                          }`}
                           title="Copy address"
                         >
                           {copiedWallet ? (
-                            <Check className="w-4 h-4 text-green-400" />
+                            <Check className={`w-4 h-4 ${isRetro ? 'text-[#7CFF9B]' : 'text-green-400'}`} />
                           ) : (
-                            <Copy className="w-4 h-4 text-slate-400" />
+                            <Copy className={`w-4 h-4 ${isRetro ? 'text-[#3AAE66]' : 'text-slate-400'}`} />
                           )}
                         </button>
                       </div>
                     </div>
 
-                    <div className="text-xs text-slate-500 mt-3 text-center">
-                      Thank you for your support! 🙏
+                    <div className={`text-xs mt-3 text-center ${isRetro ? '' : 'text-slate-500'}`}
+                         style={isRetro ? { color: '#3AAE66' } : {}}>
+                      {isRetro ? '> THANK YOU FOR YOUR SUPPORT' : 'Thank you for your support! 🙏'}
                     </div>
                   </div>
                 )}

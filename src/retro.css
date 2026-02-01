@@ -1,205 +1,404 @@
-/* 80s Terminal Retro Theme */
+/* Refined Retro Terminal Theme */
 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 
+/* ============================================
+   REFINED PALETTE
+   - bg: #050806 (deep dark green-black)
+   - primary: #7CFF9B (bright mint green)
+   - dim: #3AAE66 (muted green for secondary text)
+   - accent: #FFD36A (yellow, used sparingly)
+   ============================================ */
+
 :root {
-  --terminal-green: #00ff41;
-  --gameboy-dark: #0f380f;
-  --gameboy-medium: #306230;
-  --gameboy-light: #8bac0f;
-  --gameboy-lightest: #9bbc0f;
-  --whale-yellow: #ffd700;
-  --screen-bg: #0a0a0a;
-  --glow-color: #00ff4180;
+  --retro-bg: #050806;
+  --retro-primary: #7CFF9B;
+  --retro-dim: #3AAE66;
+  --retro-accent: #FFD36A;
+  --retro-danger: #FF6B6B;
+  --retro-card-bg: #0a0f0b;
+  --retro-border: #1a2a1e;
+  --retro-glow: rgba(124, 255, 155, 0.4);
 }
 
-/* CRT Screen Effect */
-.crt-screen {
-  position: relative;
-  background: var(--screen-bg);
+/* ============================================
+   BASE STYLES (only applied with .retro-theme)
+   ============================================ */
+
+.retro-theme {
+  background-color: var(--retro-bg);
+}
+
+.retro-theme body {
   font-family: 'VT323', monospace;
-  color: var(--terminal-green);
-  text-shadow: 0 0 5px var(--glow-color);
-  overflow: hidden;
+  background-color: var(--retro-bg);
+  color: var(--retro-primary);
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
 }
 
-/* Scanlines */
-.crt-screen::before {
+/* ============================================
+   SCANLINES & NOISE OVERLAYS
+   Low opacity, fixed position, no filters
+   ============================================ */
+
+.retro-theme .retro-container::before {
   content: "";
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    to bottom,
-    transparent 50%,
-    rgba(0, 0, 0, 0.3) 50%
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
   );
-  background-size: 100% 4px;
   pointer-events: none;
-  z-index: 1000;
-  animation: scanlines 8s linear infinite;
+  z-index: 9000;
 }
 
-@keyframes scanlines {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(4px); }
-}
-
-/* Screen curvature */
-.crt-screen::after {
+/* Subtle noise texture overlay */
+.retro-theme .retro-container::after {
   content: "";
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 0%,
-    transparent 60%,
-    rgba(0, 0, 0, 0.3) 100%
-  );
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.03;
   pointer-events: none;
-  z-index: 999;
+  z-index: 9001;
 }
 
-/* Phosphor glow */
-.terminal-glow {
-  text-shadow:
-    0 0 5px var(--terminal-green),
-    0 0 10px var(--terminal-green),
-    0 0 20px var(--glow-color);
+/* ============================================
+   TYPOGRAPHY
+   Glow only on headings and key numbers
+   Body text: clean, no heavy effects
+   ============================================ */
+
+/* Headings get subtle glow */
+.retro-theme h1,
+.retro-theme h2,
+.retro-theme h3,
+.retro-theme .retro-heading {
+  color: var(--retro-primary);
+  text-shadow: 0 0 10px var(--retro-glow);
+  font-weight: normal;
+  letter-spacing: 0.05em;
 }
 
-/* Blinking cursor */
-.blink {
-  animation: blink 1s step-end infinite;
+/* Key numbers/stats get glow */
+.retro-theme .retro-stat {
+  color: var(--retro-primary);
+  text-shadow: 0 0 8px var(--retro-glow);
 }
 
-@keyframes blink {
+/* Body text - clean, no glow */
+.retro-theme .retro-body,
+.retro-theme p,
+.retro-theme span:not(.retro-stat):not(.retro-heading):not(.retro-accent) {
+  color: var(--retro-primary);
+  text-shadow: none;
+}
+
+/* Dim/secondary text */
+.retro-theme .retro-dim {
+  color: var(--retro-dim);
+}
+
+/* Accent text (yellow) - use sparingly */
+.retro-theme .retro-accent {
+  color: var(--retro-accent);
+  text-shadow: 0 0 8px rgba(255, 211, 106, 0.4);
+}
+
+/* ============================================
+   CARDS & CONTAINERS
+   Clean typography hierarchy, more spacing
+   No thick neon frames
+   ============================================ */
+
+.retro-theme .retro-card {
+  background: var(--retro-card-bg);
+  border: 1px solid var(--retro-border);
+  border-radius: 2px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.retro-theme .retro-card:hover {
+  border-color: var(--retro-dim);
+}
+
+/* Card with subtle left accent */
+.retro-theme .retro-card-accent {
+  background: var(--retro-card-bg);
+  border: 1px solid var(--retro-border);
+  border-left: 3px solid var(--retro-primary);
+  border-radius: 2px;
+  padding: 1rem 1.25rem;
+}
+
+/* Whale card - accent yellow border */
+.retro-theme .retro-card-whale {
+  background: var(--retro-card-bg);
+  border: 1px solid var(--retro-border);
+  border-left: 3px solid var(--retro-accent);
+  border-radius: 2px;
+  padding: 1rem 1.25rem;
+}
+
+/* ============================================
+   PANELS & SECTIONS
+   ============================================ */
+
+.retro-theme .retro-panel {
+  background: rgba(10, 15, 11, 0.8);
+  border: 1px solid var(--retro-border);
+  border-radius: 4px;
+  padding: 1.5rem;
+}
+
+.retro-theme .retro-panel-header {
+  font-size: 1.25rem;
+  color: var(--retro-primary);
+  text-shadow: 0 0 10px var(--retro-glow);
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--retro-border);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+
+.retro-theme .retro-button {
+  background: transparent;
+  border: 1px solid var(--retro-dim);
+  color: var(--retro-primary);
+  padding: 0.5rem 1rem;
+  font-family: 'VT323', monospace;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.retro-theme .retro-button:hover {
+  border-color: var(--retro-primary);
+  background: rgba(124, 255, 155, 0.1);
+  text-shadow: 0 0 8px var(--retro-glow);
+}
+
+.retro-theme .retro-button-active {
+  background: rgba(124, 255, 155, 0.15);
+  border-color: var(--retro-primary);
+}
+
+/* ============================================
+   DATA DISPLAY
+   ============================================ */
+
+/* Labels */
+.retro-theme .retro-label {
+  font-size: 0.75rem;
+  color: var(--retro-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.25rem;
+}
+
+/* Values */
+.retro-theme .retro-value {
+  font-size: 1.125rem;
+  color: var(--retro-primary);
+}
+
+/* Large stats */
+.retro-theme .retro-value-lg {
+  font-size: 1.5rem;
+  color: var(--retro-primary);
+  text-shadow: 0 0 8px var(--retro-glow);
+}
+
+/* Positive values */
+.retro-theme .retro-positive {
+  color: var(--retro-primary);
+}
+
+/* Negative values */
+.retro-theme .retro-negative {
+  color: var(--retro-danger);
+}
+
+/* ============================================
+   TABLE STYLES
+   ============================================ */
+
+.retro-theme .retro-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.retro-theme .retro-table th {
+  text-align: left;
+  color: var(--retro-dim);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--retro-border);
+}
+
+.retro-theme .retro-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--retro-border);
+  color: var(--retro-primary);
+}
+
+.retro-theme .retro-table tr:hover {
+  background: rgba(124, 255, 155, 0.03);
+}
+
+/* ============================================
+   BADGES & TAGS
+   ============================================ */
+
+.retro-theme .retro-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--retro-dim);
+  color: var(--retro-primary);
+  background: transparent;
+}
+
+.retro-theme .retro-badge-whale {
+  border-color: var(--retro-accent);
+  color: var(--retro-accent);
+}
+
+.retro-theme .retro-badge-mega {
+  border-color: var(--retro-accent);
+  color: var(--retro-accent);
+  text-shadow: 0 0 6px rgba(255, 211, 106, 0.4);
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+
+.retro-theme ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.retro-theme ::-webkit-scrollbar-track {
+  background: var(--retro-bg);
+}
+
+.retro-theme ::-webkit-scrollbar-thumb {
+  background: var(--retro-dim);
+  border-radius: 0;
+}
+
+.retro-theme ::-webkit-scrollbar-thumb:hover {
+  background: var(--retro-primary);
+}
+
+/* ============================================
+   BLINKING CURSOR
+   ============================================ */
+
+.retro-theme .retro-cursor {
+  animation: retro-blink 1s step-end infinite;
+}
+
+@keyframes retro-blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
 }
 
-/* ASCII borders */
-.terminal-border {
-  border: 2px solid var(--terminal-green);
-  box-shadow:
-    0 0 10px var(--glow-color),
-    inset 0 0 10px var(--glow-color);
+/* ============================================
+   BOOT SEQUENCE
+   ============================================ */
+
+.retro-theme .retro-boot-screen {
+  background: var(--retro-bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
 }
 
-/* Whale highlight */
-.whale-alert {
-  color: var(--whale-yellow);
-  text-shadow:
-    0 0 5px var(--whale-yellow),
-    0 0 10px var(--whale-yellow),
-    0 0 20px rgba(255, 215, 0, 0.5);
-  animation: pulse-glow 2s ease-in-out infinite;
+.retro-theme .retro-boot-line {
+  color: var(--retro-primary);
+  font-size: 1.125rem;
+  margin: 0.25rem 0;
+  opacity: 0;
+  animation: retro-fade-in 0.1s ease forwards;
 }
 
-@keyframes pulse-glow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+@keyframes retro-fade-in {
+  to { opacity: 1; }
 }
 
-/* Terminal text */
-.terminal-text {
-  font-family: 'VT323', monospace;
-  font-size: 20px;
-  letter-spacing: 1px;
-  line-height: 1.4;
-}
+/* ============================================
+   ASCII ART
+   ============================================ */
 
-/* Gameboy button style */
-.gameboy-button {
-  background: var(--gameboy-medium);
-  color: var(--gameboy-dark);
-  border: 3px solid var(--gameboy-dark);
-  box-shadow:
-    inset -2px -2px 0 var(--gameboy-dark),
-    inset 2px 2px 0 var(--gameboy-light);
-  font-family: 'VT323', monospace;
-  font-size: 18px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.1s;
-}
-
-.gameboy-button:hover {
-  background: var(--gameboy-light);
-  transform: scale(1.05);
-}
-
-.gameboy-button:active {
-  box-shadow:
-    inset 2px 2px 0 var(--gameboy-dark),
-    inset -2px -2px 0 var(--gameboy-light);
-  transform: scale(0.98);
-}
-
-/* Screen flicker */
-@keyframes flicker {
-  0% { opacity: 1; }
-  2% { opacity: 0.8; }
-  4% { opacity: 1; }
-  8% { opacity: 0.9; }
-  10% { opacity: 1; }
-}
-
-.screen-flicker {
-  animation: flicker 0.15s infinite;
-}
-
-/* Retro scrollbar */
-.retro-scroll::-webkit-scrollbar {
-  width: 12px;
-}
-
-.retro-scroll::-webkit-scrollbar-track {
-  background: var(--gameboy-dark);
-  border: 2px solid var(--terminal-green);
-}
-
-.retro-scroll::-webkit-scrollbar-thumb {
-  background: var(--terminal-green);
-  border: 2px solid var(--gameboy-dark);
-  box-shadow: 0 0 5px var(--glow-color);
-}
-
-.retro-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--gameboy-light);
-}
-
-/* ASCII art style */
-.ascii-art {
+.retro-theme .retro-ascii {
   font-family: 'VT323', monospace;
   white-space: pre;
-  line-height: 1;
-  color: var(--terminal-green);
-  text-shadow: 0 0 5px var(--glow-color);
+  line-height: 1.1;
+  color: var(--retro-primary);
+  text-shadow: 0 0 10px var(--retro-glow);
 }
 
-/* Boot sequence */
-@keyframes boot-text {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.retro-theme .retro-mono {
+  font-family: 'VT323', monospace;
 }
 
-.boot-line {
-  animation: boot-text 0.1s ease-in;
+.retro-theme .retro-uppercase {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
-/* Matrix-style data stream */
-@keyframes matrix-fall {
-  0% { transform: translateY(-100%); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(100vh); opacity: 0; }
+.retro-theme .retro-border-b {
+  border-bottom: 1px solid var(--retro-border);
 }
 
-.matrix-char {
-  animation: matrix-fall 3s linear infinite;
+.retro-theme .retro-mt-1 { margin-top: 0.5rem; }
+.retro-theme .retro-mt-2 { margin-top: 1rem; }
+.retro-theme .retro-mb-1 { margin-bottom: 0.5rem; }
+.retro-theme .retro-mb-2 { margin-bottom: 1rem; }
+
+/* ============================================
+   REDUCED MOTION
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .retro-theme .retro-container::before,
+  .retro-theme .retro-container::after {
+    display: none;
+  }
+
+  .retro-theme .retro-cursor {
+    animation: none;
+    opacity: 1;
+  }
 }
