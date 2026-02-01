@@ -955,29 +955,84 @@ setMarketStats({
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
                     : 'bg-rose-500/20 text-rose-300 border-rose-500/50';
 
+                  // Retro-specific badge colors
+                  const retroBadgeBorder = isTopTrader
+                    ? retroColors.primary
+                    : isWatchlist
+                      ? retroColors.primary
+                      : isMega
+                        ? retroColors.accent
+                        : isIsolatedContact
+                          ? retroColors.danger
+                          : retroColors.accent;
+
+                  const retroBadgeColor = isTopTrader
+                    ? retroColors.primary
+                    : isWatchlist
+                      ? retroColors.primary
+                      : isMega
+                        ? retroColors.accent
+                        : isIsolatedContact
+                          ? retroColors.danger
+                          : retroColors.accent;
+
+                  // Retro badge text (no emojis)
+                  const retroBadgeText = isTopTrader
+                    ? 'TOP TRADER'
+                    : isWatchlist
+                      ? 'WATCHLIST'
+                      : isMega
+                        ? 'MEGA WHALE'
+                        : isIsolatedContact
+                          ? 'ISOLATED CONTACT'
+                          : 'WHALE';
+
                   return (
                     <div
                       key={idx}
-                      className={`bg-slate-950 rounded-md border p-3 transition-all hover:scale-[1.02] ${borderClass} ${polymarketUrl ? 'cursor-pointer' : ''}`}
+                      className={`rounded-md border p-3 transition-all hover:scale-[1.02] ${isRetro ? '' : `bg-slate-950 ${borderClass}`} ${polymarketUrl ? 'cursor-pointer' : ''}`}
+                      style={isRetro ? {
+                        backgroundColor: retroColors.surface,
+                        border: `1px solid ${retroBadgeBorder}`,
+                        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)'
+                      } : {}}
                       onClick={() => polymarketUrl && window.open(polymarketUrl, '_blank')}
                     >
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${badgeClass}`}>
-                          {badgeText}
+                        <span
+                          className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${isRetro ? '' : badgeClass}`}
+                          style={isRetro ? { border: `1px solid ${retroBadgeBorder}`, color: retroBadgeColor } : {}}
+                        >
+                          {isRetro ? retroBadgeText : badgeText}
                         </span>
                         {alert.outcome && (
-                          <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${betBadgeClass}`}>
-                            {isBuy ? '📈' : '📉'} {alert.side || 'BUY'} {alert.outcome}{alert.price ? ` @ ${Math.round(alert.price * 100)}¢` : ''}
+                          <span
+                            className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${isRetro ? '' : betBadgeClass}`}
+                            style={isRetro ? {
+                              border: `1px solid ${isBuy ? retroColors.bright : retroColors.accent}`,
+                              color: isBuy ? retroColors.bright : retroColors.accent
+                            } : {}}
+                          >
+                            {isRetro ? '' : (isBuy ? '📈' : '📉')} {alert.side || 'BUY'} {alert.outcome}{alert.price ? ` @ ${Math.round(alert.price * 100)}¢` : ''}
                           </span>
                         )}
-                        <span className="text-xs text-slate-500 font-mono">
+                        <span
+                          className="text-xs font-mono"
+                          style={isRetro ? { color: retroColors.dim } : { color: 'rgb(100, 116, 139)' }}
+                        >
                           {formatTimestamp(alert.created_at)}
                         </span>
                         {polymarketUrl && (
-                          <span className="text-xs text-cyan-400 ml-auto">↗</span>
+                          <span
+                            className="text-xs ml-auto"
+                            style={isRetro ? { color: retroColors.dim } : { color: 'rgb(34, 211, 238)' }}
+                          >↗</span>
                         )}
                       </div>
-                      <p className="text-sm mt-2 text-slate-200 font-medium">
+                      <p
+                        className="text-sm mt-2 font-medium"
+                        style={isRetro ? { color: retroColors.primary } : { color: 'rgb(226, 232, 240)' }}
+                      >
                         ${alert.amount ? Math.round(alert.amount).toLocaleString() : '?'} on {alert.market_title || 'Unknown market'}
                       </p>
                     </div>
@@ -1113,15 +1168,10 @@ setMarketStats({
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
+                              {/* Row 1: Time + Size Badge + Watching */}
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <span className="text-xs font-mono" style={isRetro ? { color: retroColors.dim } : {}}>
                                   {formatTimestamp(bet.timestamp)}
-                                </span>
-                                <span
-                                  className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${isRetro ? '' : sideInfo.color}`}
-                                  style={isRetro ? { border: `1px solid ${retroColors.primary}`, color: retroColors.primary } : {}}
-                                >
-                                  {sideInfo.label}
                                 </span>
                                 {sizeLabel && (
                                   <span
@@ -1142,36 +1192,57 @@ setMarketStats({
                                 )}
                               </div>
 
+                              {/* Market Title */}
                               <a
-  href={bet.market_slug ? `https://polymarket.com/market/${bet.market_slug}` : undefined}
-  target="_blank"
-  rel="noreferrer"
-  className={`font-semibold text-base mb-1 hover:underline block transition-colors line-clamp-2 ${isRetro ? '' : 'hover:text-cyan-400'}`}
-  style={isRetro ? { color: retroColors.primary } : {}}
->
-  {bet.market_title || bet.market_slug || bet.market_id}
-</a>
+                                href={bet.market_slug ? `https://polymarket.com/market/${bet.market_slug}` : undefined}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={`font-semibold text-base mb-2 hover:underline block transition-colors line-clamp-2 ${isRetro ? '' : 'hover:text-cyan-400'}`}
+                                style={isRetro ? { color: retroColors.primary } : {}}
+                              >
+                                {bet.market_title || bet.market_slug || bet.market_id}
+                              </a>
 
-                              <p className="text-xs mt-1">
-                                <span className={sideInfo.textColor}>{sideInfo.verb} {formatCurrency(bet.amount)}</span>
-                                <span className="text-slate-400"> of </span>
-                                <span className={getOutcomeColor(bet.outcome)}>{bet.outcome}</span>
-                              </p>
+                              {/* PROMINENT OUTCOME - Larger badge with side + outcome + price */}
+                              <div
+                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm font-bold ${isRetro ? '' : (sideInfo.label === 'BUY' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-rose-500/10 border-rose-500/40')}`}
+                                style={isRetro ? {
+                                  border: `1px solid ${sideInfo.label === 'BUY' ? retroColors.bright : retroColors.accent}`,
+                                  backgroundColor: 'rgba(0,0,0,0.2)'
+                                } : {}}
+                              >
+                                <span style={isRetro ? { color: sideInfo.label === 'BUY' ? retroColors.bright : retroColors.accent } : { color: sideInfo.label === 'BUY' ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}>
+                                  {sideInfo.label}
+                                </span>
+                                <span
+                                  className="font-bold"
+                                  style={isRetro ? { color: bet.outcome === 'Yes' ? retroColors.bright : retroColors.accent } : { color: bet.outcome === 'Yes' ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}
+                                >
+                                  {bet.outcome}
+                                </span>
+                                <span style={isRetro ? { color: retroColors.dim } : { color: 'rgb(148, 163, 184)' }}>@</span>
+                                <span className="font-mono" style={isRetro ? { color: retroColors.primary } : {}}>
+                                  {Number(bet.price) ? `${(Number(bet.price) * 100).toFixed(0)}¢` : '—'}
+                                </span>
+                              </div>
 
-                              <p className="text-xs text-slate-400 mt-1.5">
-                                Trader:{' '}
-                                <span className="font-mono text-slate-300 text-xs">
-                                  {bet.trader_address?.slice(0, 10)}…{bet.trader_address?.slice(-6)}
+                              {/* Trader address - smaller, de-emphasized */}
+                              <p className="text-[10px] mt-2" style={isRetro ? { color: retroColors.dim } : { color: 'rgb(100, 116, 139)' }}>
+                                <span className="font-mono">
+                                  {bet.trader_address?.slice(0, 6)}…{bet.trader_address?.slice(-4)}
                                 </span>
                               </p>
                             </div>
 
                             <div className="text-right shrink-0">
-                              <p className={`text-xl font-bold font-mono ${getBetAmountColor(bet.amount)}`}>
+                              <p
+                                className="text-xl font-bold font-mono"
+                                style={isRetro ? { color: retroColors.bright } : {}}
+                              >
                                 {formatCurrency(bet.amount)}
                               </p>
                               {bet.shares && (
-                                <p className="text-xs text-slate-500 mt-1">
+                                <p className="text-xs mt-1" style={isRetro ? { color: retroColors.dim } : { color: 'rgb(100, 116, 139)' }}>
                                   {Number(bet.shares).toFixed(2)} shares
                                 </p>
                               )}
