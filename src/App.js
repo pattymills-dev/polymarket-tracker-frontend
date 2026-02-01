@@ -32,7 +32,7 @@ const PolymarketTracker = () => {
   const [minBetSize] = useState(5000); // UI filter (DB already filters to $5k+)
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
-  const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'profitability', 'win_rate', 'total_pl' - default to P/L for meaningful rankings
+  const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'total_pl', 'hot_streak' - simplified sort options
   const [showAlerts, setShowAlerts] = useState(false);
   const [showTipJar, setShowTipJar] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
@@ -539,10 +539,11 @@ setMarketStats({
     // Apply sorting
     if (profitabilityTraders.length >= 5) {
       tradersToShow = [...tradersToShow].sort((a, b) => {
-        if (traderSortBy === 'profitability') {
-          return (b.profitability_rate || 0) - (a.profitability_rate || 0);
-        } else if (traderSortBy === 'win_rate') {
-          return (b.win_rate || 0) - (a.win_rate || 0);
+        if (traderSortBy === 'hot_streak') {
+          // Hot streak = combo of win streak + recent win rate + recent activity
+          const aStreak = (a.current_streak || 0) + (a.win_rate || 0) * 10 + (a.wins || 0) * 0.5;
+          const bStreak = (b.current_streak || 0) + (b.win_rate || 0) * 10 + (b.wins || 0) * 0.5;
+          return bStreak - aStreak;
         } else if (traderSortBy === 'total_pl') {
           return (b.total_pl || 0) - (a.total_pl || 0);
         }
@@ -1306,42 +1307,6 @@ setMarketStats({
                     <div className="space-y-2">
                       <div className="flex gap-1 text-xs">
                         <button
-                          onClick={() => setTraderSortBy('profitability')}
-                          className={`px-3 py-1.5 rounded transition-colors ${
-                            isRetro
-                              ? ''
-                              : (traderSortBy === 'profitability'
-                                ? 'bg-cyan-600 text-white'
-                                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
-                          }`}
-                          style={isRetro ? {
-                            backgroundColor: traderSortBy === 'profitability' ? retroColors.bright : retroColors.bg,
-                            color: traderSortBy === 'profitability' ? retroColors.bg : retroColors.dim,
-                            border: `1px solid ${traderSortBy === 'profitability' ? retroColors.bright : retroColors.border}`
-                          } : {}}
-                          title="Return on investment - profit divided by total amount wagered"
-                        >
-                          Profit %
-                        </button>
-                        <button
-                          onClick={() => setTraderSortBy('win_rate')}
-                          className={`px-3 py-1.5 rounded transition-colors ${
-                            isRetro
-                              ? ''
-                              : (traderSortBy === 'win_rate'
-                                ? 'bg-cyan-600 text-white'
-                                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
-                          }`}
-                          style={isRetro ? {
-                            backgroundColor: traderSortBy === 'win_rate' ? retroColors.bright : retroColors.bg,
-                            color: traderSortBy === 'win_rate' ? retroColors.bg : retroColors.dim,
-                            border: `1px solid ${traderSortBy === 'win_rate' ? retroColors.bright : retroColors.border}`
-                          } : {}}
-                          title="Percentage of resolved bets where the trader picked the winning outcome"
-                        >
-                          Win %
-                        </button>
-                        <button
                           onClick={() => setTraderSortBy('total_pl')}
                           className={`px-3 py-1.5 rounded transition-colors ${
                             isRetro
@@ -1357,13 +1322,30 @@ setMarketStats({
                           } : {}}
                           title="Total realized profit/loss in USD from resolved markets"
                         >
-                          Total P/L
+                          {isRetro ? 'P/L' : 'Total P/L'}
+                        </button>
+                        <button
+                          onClick={() => setTraderSortBy('hot_streak')}
+                          className={`px-3 py-1.5 rounded transition-colors ${
+                            isRetro
+                              ? ''
+                              : (traderSortBy === 'hot_streak'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
+                          }`}
+                          style={isRetro ? {
+                            backgroundColor: traderSortBy === 'hot_streak' ? retroColors.accent : retroColors.bg,
+                            color: traderSortBy === 'hot_streak' ? retroColors.bg : retroColors.dim,
+                            border: `1px solid ${traderSortBy === 'hot_streak' ? retroColors.accent : retroColors.border}`
+                          } : {}}
+                          title="Traders on a hot streak - high recent win rate and consecutive wins"
+                        >
+                          {isRetro ? '🔥 HOT' : '🔥 Hot Streak'}
                         </button>
                       </div>
                       <p className="text-[10px] italic" style={isRetro ? { color: retroColors.dim } : {}}>
-                        {traderSortBy === 'profitability' && (isRetro ? '> PROFIT % = TOTAL P/L / AMOUNT WAGERED' : '📊 Profit % = Total P/L ÷ Amount Wagered (ROI)')}
-                        {traderSortBy === 'win_rate' && (isRetro ? '> WIN % = WINNING BETS / TOTAL RESOLVED' : '🎯 Win % = Winning Bets ÷ Total Resolved Bets')}
-                        {traderSortBy === 'total_pl' && (isRetro ? '> TOTAL P/L = SUM OF ALL REALIZED P/L' : '💰 Total P/L = Sum of all realized profits and losses')}
+                        {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
+                        {traderSortBy === 'hot_streak' && (isRetro ? '> RANKED BY WIN STREAK + ACCURACY' : '🔥 Ranked by winning streak + recent accuracy')}
                       </p>
                     </div>
                   )}
@@ -1436,20 +1418,36 @@ setMarketStats({
                           {/* Show profitability metrics if available */}
                           {trader.profitability_rate !== undefined ? (
                             <>
-                              <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
+                              <div
+                                className={isRetro ? 'grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5' : 'grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50'}
+                                style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : {}}
+                              >
                                 <div>
-                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Total P/L</p>
-                                  <p className={`font-bold font-mono text-sm ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  <p
+                                    className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                    style={isRetro ? { fontSize: '0.625rem', color: retroColors.dim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                  >
+                                    Total P/L
+                                  </p>
+                                  <p
+                                    className={isRetro ? 'font-mono text-sm' : `font-bold font-mono text-sm ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
+                                    style={isRetro ? { color: trader.total_pl >= 0 ? retroColors.bright : retroColors.danger } : {}}
+                                  >
                                     {trader.total_pl >= 0 ? '+' : ''}{formatCurrency(trader.total_pl)}
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Record</p>
-                                  <p className="font-bold text-slate-100 font-mono text-sm">
+                                  <p
+                                    className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                    style={isRetro ? { fontSize: '0.625rem', color: retroColors.dim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                  >
+                                    Record
+                                  </p>
+                                  <p
+                                    className={isRetro ? 'font-mono text-sm' : 'font-bold text-slate-100 font-mono text-sm'}
+                                    style={isRetro ? { color: retroColors.primary } : {}}
+                                  >
                                     {trader.wins || 0}W-{trader.losses || 0}L
-                                    <span className={`ml-1 text-xs ${trader.win_rate > 0.5 ? 'text-emerald-400' : trader.win_rate > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-                                      ({(trader.win_rate * 100).toFixed(0)}%)
-                                    </span>
                                   </p>
                                 </div>
                               </div>
@@ -1556,48 +1554,6 @@ setMarketStats({
 
               {selectedTrader.profitability_rate !== undefined ? (
                 <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div
-                    className={isRetro ? '' : 'bg-slate-950 rounded-md p-3 border border-slate-800'}
-                    style={isRetro ? {
-                      backgroundColor: retroColors.bg,
-                      border: `1px solid ${retroColors.border}`,
-                      borderRadius: '2px',
-                      padding: '0.75rem',
-                    } : {}}
-                  >
-                    <p style={isRetro ? { color: retroColors.dim, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.1em' } : {}} className={isRetro ? '' : 'text-xs text-slate-500'}>Profitability Rate</p>
-                    <p
-                      className={isRetro ? '' : `text-xl font-semibold mt-1 ${selectedTrader.profitability_rate > 0 ? 'text-emerald-400' : 'text-rose-400'}`}
-                      style={isRetro ? {
-                        color: selectedTrader.profitability_rate > 0 ? retroColors.bright : retroColors.danger,
-                        fontSize: '1.25rem',
-                        marginTop: '0.25rem',
-                      } : {}}
-                    >
-                      {(selectedTrader.profitability_rate * 100).toFixed(1)}%
-                    </p>
-                  </div>
-                  <div
-                    className={isRetro ? '' : 'bg-slate-950 rounded-md p-3 border border-slate-800'}
-                    style={isRetro ? {
-                      backgroundColor: retroColors.bg,
-                      border: `1px solid ${retroColors.border}`,
-                      borderRadius: '2px',
-                      padding: '0.75rem',
-                    } : {}}
-                  >
-                    <p style={isRetro ? { color: retroColors.dim, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.1em' } : {}} className={isRetro ? '' : 'text-xs text-slate-500'}>Win Rate</p>
-                    <p
-                      className={isRetro ? '' : `text-xl font-semibold mt-1 ${selectedTrader.win_rate > 0.5 ? 'text-emerald-400' : selectedTrader.win_rate > 0 ? 'text-amber-400' : 'text-rose-400'}`}
-                      style={isRetro ? {
-                        color: selectedTrader.win_rate > 0.5 ? retroColors.bright : selectedTrader.win_rate > 0 ? retroColors.accent : retroColors.danger,
-                        fontSize: '1.25rem',
-                        marginTop: '0.25rem',
-                      } : {}}
-                    >
-                      {(selectedTrader.win_rate * 100).toFixed(1)}%
-                    </p>
-                  </div>
                   <div
                     className={isRetro ? '' : 'bg-slate-950 rounded-md p-3 border border-slate-800'}
                     style={isRetro ? {
