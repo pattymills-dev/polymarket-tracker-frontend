@@ -1098,29 +1098,18 @@ setMarketStats({
                             <>
                               <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
                                 <div>
-                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Profit Rate</p>
-                                  <p className={`font-bold font-mono text-sm ${trader.profitability_rate > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    {(trader.profitability_rate * 100).toFixed(1)}%
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Win Rate</p>
-                                  <p className={`font-bold font-mono text-sm ${trader.win_rate > 0.5 ? 'text-emerald-400' : trader.win_rate > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-                                    {(trader.win_rate * 100).toFixed(1)}%
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50">
-                                <div>
                                   <p className="text-[10px] text-slate-500 uppercase tracking-wide">Total P/L</p>
                                   <p className={`font-bold font-mono text-sm ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                     {trader.total_pl >= 0 ? '+' : ''}{formatCurrency(trader.total_pl)}
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Resolved</p>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Record</p>
                                   <p className="font-bold text-slate-100 font-mono text-sm">
                                     {trader.wins || 0}W-{trader.losses || 0}L
+                                    <span className={`ml-1 text-xs ${trader.win_rate > 0.5 ? 'text-emerald-400' : trader.win_rate > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                      ({(trader.win_rate * 100).toFixed(0)}%)
+                                    </span>
                                   </p>
                                 </div>
                               </div>
