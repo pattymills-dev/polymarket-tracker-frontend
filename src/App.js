@@ -418,21 +418,23 @@ setMarketStats({
 
       if (response.ok && Array.isArray(data)) {
         // Map to match the existing trader card structure
+        // Note: SQL function returns 'address' directly now, not 'trader_address'
         const mappedTraders = data.map(t => ({
-          address: t.trader_address,
-          total_volume: Number(t.total_buy_cost || 0) + Number(t.total_sell_proceeds || 0),
-          total_bets: t.resolved_markets,
+          address: t.address || t.trader_address,
+          total_volume: Number(t.total_volume || t.total_buy_cost || 0),
+          total_bets: Number(t.total_bets || t.resolved_markets || 0),
           resolved_markets: t.resolved_markets,
-          wins: t.wins,
-          losses: t.losses,
+          wins: Number(t.wins || 0),
+          losses: Number(t.losses || 0),
           win_rate: Number(t.win_rate || 0),
           profit_wins: t.profit_wins,
           profit_losses: t.profit_losses,
           profitability_rate: Number(t.profitability_rate || 0),
           total_pl: Number(t.total_pl || 0),
-          avg_bet_size: Number(t.total_buy_cost || 0) / (t.resolved_markets || 1),
+          avg_bet_size: Number(t.total_volume || 0) / (t.total_bets || 1),
           unique_markets: t.resolved_markets,
-          last_activity: Date.now() // placeholder
+          last_activity: t.last_activity || Date.now(),
+          current_streak: t.current_streak || 0
         }));
         console.log('Mapped profitability traders:', mappedTraders.length, mappedTraders);
         setProfitabilityTraders(mappedTraders);
