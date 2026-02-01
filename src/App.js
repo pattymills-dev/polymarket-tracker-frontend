@@ -9,7 +9,7 @@ import {
   Search,
   Star,
   Activity,
-  Heart,
+  Coins,
   Copy,
   Check,
   ExternalLink,
@@ -664,7 +664,7 @@ setMarketStats({
                 onMouseLeave={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.dim, e.currentTarget.style.color = retroColors.primary, e.currentTarget.style.boxShadow = 'none')}
               >
                 <Send className="w-4 h-4" />
-                {isRetro ? 'TELEGRAM' : 'Telegram'}
+                {isRetro ? 'TELEGRAM BOT' : 'Telegram Bot'}
               </a>
 
               {/* Tip Jar Button */}
@@ -684,7 +684,7 @@ setMarketStats({
                   onMouseEnter={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.bright, e.currentTarget.style.color = retroColors.bright, e.currentTarget.style.boxShadow = `0 0 8px rgba(124, 255, 155, 0.2)`)}
                   onMouseLeave={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.dim, e.currentTarget.style.color = retroColors.primary, e.currentTarget.style.boxShadow = 'none')}
                 >
-                  <Heart className="w-4 h-4" style={isRetro ? { color: retroColors.accent } : {}} />
+                  <Coins className="w-4 h-4" style={isRetro ? { color: retroColors.accent } : {}} />
                   {isRetro ? 'TIP' : 'Tip'}
                 </button>
 
@@ -695,7 +695,7 @@ setMarketStats({
                   style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}>
                     <div className={`text-sm mb-3 ${isRetro ? '' : 'text-slate-300'}`}
                          style={isRetro ? { color: retroColors.dim } : {}}>
-                      {isRetro ? '> SUPPORT THE PROJECT:' : 'Support the project:'}
+                      {isRetro ? '> TIP YOUR OPERATOR:' : 'Tip your operator:'}
                     </div>
 
                     {/* Ko-fi Link */}
@@ -765,11 +765,6 @@ setMarketStats({
                           )}
                         </button>
                       </div>
-                    </div>
-
-                    <div className={`text-xs mt-3 text-center ${isRetro ? '' : 'text-slate-500'}`}
-                         style={isRetro ? { color: retroColors.dim } : {}}>
-                      {isRetro ? '> THANK YOU FOR YOUR SUPPORT' : 'Thank you for your support! 🙏'}
                     </div>
                   </div>
                 )}
@@ -1548,11 +1543,9 @@ setMarketStats({
         {/* Footer note */}
         <div className="mt-6 bg-slate-900 border border-slate-800 rounded-lg p-4">
           <p className="text-sm text-slate-300">
-            Data is pulled from your Supabase tables. If something looks stale, hit "Sync Polymarket" then
-            "Refresh."
+            Data syncs automatically every few minutes. <span className="font-semibold text-cyan-400">BUY</span> and <span className="font-semibold text-amber-400">SELL</span> trades are tracked separately.
           </p>
           <p className="text-sm text-slate-400 mt-2">
-            <span className="font-semibold text-cyan-400">BUY</span> and <span className="font-semibold text-amber-400">SELL</span> trades are tracked separately.
             Trader profitability accounts for both realized P/L from sells and settlement P/L from remaining shares.
           </p>
         </div>
