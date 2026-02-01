@@ -202,11 +202,57 @@ serve(async (req) => {
       const topTraderMap = new Map((topTraders || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
       const hotStreakMap = new Map((hotStreaks || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
 
+      // Helper function to check Isolated Contact conditions
+      // Returns { isIsolatedContact, reasons } where reasons contains which conditions triggered
+      async function checkIsolatedContact(tradeAmount: number, traderAddress: string, marketId: string): Promise<{ isIsolatedContact: boolean; reasons: string[] }> {
+        const reasons: string[] = [];
+
+        // Skip if trader is already a known top trader or on watchlist (they're not "isolated")
+        if (topTraderAddresses.has(traderAddress.toLowerCase()) ||
+            hotStreakAddresses.has(traderAddress.toLowerCase()) ||
+            watchlistAddresses.has(traderAddress.toLowerCase())) {
+          return { isIsolatedContact: false, reasons };
+        }
+
+        try {
+          // 1) Check if rare trader
+          const { data: isRare } = await supabase.rpc('is_rare_trader', { p_trader_address: traderAddress });
+          if (!isRare) {
+            return { isIsolatedContact: false, reasons };
+          }
+          reasons.push('rare_trader');
+
+          // 2) Check if thin market
+          const { data: isThin } = await supabase.rpc('is_thin_market', { p_market_id: marketId });
+          if (!isThin) {
+            return { isIsolatedContact: false, reasons };
+          }
+          reasons.push('thin_market');
+
+          // 3) Check if outsized trade
+          const { data: isOutsized } = await supabase.rpc('is_outsized_trade', {
+            p_market_id: marketId,
+            p_trade_size: tradeAmount
+          });
+          if (!isOutsized) {
+            return { isIsolatedContact: false, reasons };
+          }
+          reasons.push('outsized_trade');
+
+          // All three conditions met
+          return { isIsolatedContact: true, reasons };
+        } catch (error) {
+          console.error('Error checking Isolated Contact conditions:', error);
+          return { isIsolatedContact: false, reasons };
+        }
+      }
+
       // Create alerts for:
       // 1. Top trader trades >= $5k (by P/L)
       // 2. Hot streak trades >= $5k (by win rate, if not already top trader)
       // 3. Watchlist trades >= $5k
       // 4. Regular whale trades >= $10k (existing behavior)
+      // 5. Isolated Contact: rare trader + thin market + outsized trade
       const alertRows: any[] = [];
 
       for (const r of rows) {
@@ -305,6 +351,30 @@ serve(async (req) => {
             sent: false,
           });
         }
+
+        // 5. Isolated Contact detection (rare trader + thin market + outsized trade)
+        // Only check for trades >= $5k that haven't already triggered another alert type
+        if (r.amount >= MIN_TRADE_SIZE && !isTopTrader && !isHotStreak && !isWatchlist && r.amount < WHALE_THRESHOLD) {
+          const { isIsolatedContact, reasons } = await checkIsolatedContact(r.amount, r.trader_address, r.market_id);
+
+          if (isIsolatedContact) {
+            alertRows.push({
+              type: "isolated_contact",
+              alert_source: "isolated_contact",
+              trade_hash: r.tx_hash,
+              trader_address: r.trader_address,
+              market_id: r.market_id,
+              market_title: r.market_title,
+              market_slug: r.market_slug,
+              outcome: r.outcome,
+              side: r.side || 'BUY',
+              price: r.price,
+              amount: r.amount,
+              message: `📡 ISOLATED CONTACT: $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id} [${reasons.join(', ')}]`,
+              sent: false,
+            });
+          }
+        }
       }
 
       if (alertRows.length) {
@@ -329,7 +399,7 @@ serve(async (req) => {
             // Send Telegram only for high-priority alerts that were actually inserted
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'top_trader' || alert.type === 'hot_streak' || alert.type === 'watchlist' || alert.type === 'mega_whale')) {
+                  (alert.type === 'top_trader' || alert.type === 'hot_streak' || alert.type === 'watchlist' || alert.type === 'mega_whale' || alert.type === 'isolated_contact')) {
                 await sendTelegramAlert(alert);
               }
             }
