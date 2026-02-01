@@ -634,13 +634,23 @@ setMarketStats({
                         : '🐋 WHALE';
 
                   // Build Polymarket URL from slug
-                  // Strip condition suffix if present (e.g., "bun-hsv-bay-2026-01-31-bay" -> "bun-hsv-bay-2026-01-31")
-                  const cleanSlug = alert.market_slug
-                    ? alert.market_slug.replace(/(-\d{4}-\d{2}-\d{2})-[a-z]+$/i, '$1')
-                    : null;
-                  const polymarketUrl = cleanSlug
-                    ? `https://polymarket.com/event/${cleanSlug}`
-                    : null;
+                  // For sports bets, link to the game page; for others, link to the event
+                  const buildPolymarketUrl = (slug) => {
+                    if (!slug) return null;
+
+                    // Check if it's a sports bet (has league prefix like nba-, nhl-, cbb-, epl-, etc.)
+                    const sportsMatch = slug.match(/^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i);
+                    if (sportsMatch) {
+                      const [, league, teams, date] = sportsMatch;
+                      // Return sports game page URL
+                      return `https://polymarket.com/sports/${league.toLowerCase()}/games/week/1/${league.toLowerCase()}-${teams}-${date}`;
+                    }
+
+                    // For non-sports, strip any suffix after the date
+                    const cleanSlug = slug.replace(/(-\d{4}-\d{2}-\d{2})-[a-z0-9]+$/i, '$1');
+                    return `https://polymarket.com/event/${cleanSlug}`;
+                  };
+                  const polymarketUrl = buildPolymarketUrl(alert.market_slug);
 
                   // Determine bet direction styling
                   const isBuy = !alert.side || alert.side === 'BUY';
