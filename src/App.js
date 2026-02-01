@@ -63,29 +63,13 @@ const PolymarketTracker = () => {
       maximumFractionDigits: 2
     }).format(Number(amount || 0));
 
-  // Heat map color coding for bet amounts
-  const getBetAmountColor = (amount) => {
-    const num = Number(amount || 0);
-    if (num >= 100000) return 'text-rose-400 font-bold';      // Mega Whale
-    if (num >= 50000) return 'text-orange-400 font-semibold'; // Whale
-    if (num >= 10000) return 'text-amber-400 font-medium';    // Large
-    return 'text-slate-100';
-  };
-
+  // Border color for bet cards based on amount
   const getBetBorderColor = (amount) => {
     const num = Number(amount || 0);
     if (num >= 100000) return 'border-rose-500/40 bg-rose-500/5';   // Mega Whale
     if (num >= 50000) return 'border-orange-500/40 bg-orange-500/5'; // Whale
     if (num >= 10000) return 'border-amber-500/30 bg-amber-500/5';   // Large
     return 'border-slate-800 hover:border-slate-700';
-  };
-
-  const getOutcomeColor = (outcome) => {
-    if (!outcome) return 'text-slate-400';
-    const normalized = outcome.toLowerCase();
-    if (normalized.includes('yes')) return 'text-emerald-400';
-    if (normalized.includes('no')) return 'text-rose-400';
-    return 'text-cyan-400';
   };
 
   const getBetSizeLabel = (amount) => {
