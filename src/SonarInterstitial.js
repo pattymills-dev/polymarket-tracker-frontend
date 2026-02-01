@@ -15,10 +15,13 @@ const SonarInterstitial = ({ onComplete }) => {
   const message = 'follow the white whale';
   const typingSpeed = 50; // ms per character
 
+  // Full 6-line boot sequence
   const bootSequence = [
     'POLYMARKET TERMINAL v2.0',
-    'INITIALIZING SCANNER...',
+    'INITIALIZING MARKET SCANNER...',
     'LOADING WHALE DETECTOR...',
+    'CALIBRATING PREDICTION MODELS...',
+    'ESTABLISHING DATABASE LINK...',
     'SYSTEM READY',
   ];
 
@@ -98,7 +101,7 @@ const SonarInterstitial = ({ onComplete }) => {
         setIsVisible(false);
         onComplete();
       }, 400);
-    }, 1200);
+    }, 1400);
 
     return () => clearTimeout(timer);
   }, [phase, onComplete]);
@@ -137,8 +140,8 @@ const SonarInterstitial = ({ onComplete }) => {
         position: 'fixed',
         top: 0,
         left: 0,
-        right: 0,
-        bottom: 0,
+        width: '100%',
+        height: '100%',
         backgroundColor: colors.bg,
         display: 'flex',
         flexDirection: 'column',
@@ -151,45 +154,65 @@ const SonarInterstitial = ({ onComplete }) => {
         fontFamily: "'VT323', monospace",
       }}
     >
-      {/* Subtle sonar ring - only during sonar phase */}
+      {/* Sonar ring - fixed positioning for mobile */}
       {phase === 'sonar' && (
-        <svg
+        <div
           style={{
             position: 'absolute',
-            width: '150vmax',
-            height: '150vmax',
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
+            width: '200vw',
+            height: '200vw',
+            maxWidth: '200vh',
+            maxHeight: '200vh',
             pointerEvents: 'none',
           }}
-          viewBox="0 0 100 100"
-          preserveAspectRatio="xMidYMid slice"
         >
-          <circle
-            cx="50"
-            cy="50"
-            r="2"
-            fill="none"
-            stroke={colors.text}
-            strokeWidth="0.1"
-            style={{
-              animation: 'sonar-pulse 1.4s ease-out forwards',
-              transformOrigin: '50% 50%',
-            }}
-          />
-        </svg>
+          <svg
+            width="100%"
+            height="100%"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            <circle
+              cx="50"
+              cy="50"
+              r="2"
+              fill="none"
+              stroke={colors.text}
+              strokeWidth="0.15"
+              style={{
+                animation: 'sonar-pulse 1.4s ease-out forwards',
+                transformOrigin: 'center',
+              }}
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="2"
+              fill="none"
+              stroke={colors.textDim}
+              strokeWidth="0.1"
+              style={{
+                animation: 'sonar-pulse 1.4s ease-out 0.2s forwards',
+                transformOrigin: 'center',
+                opacity: 0,
+              }}
+            />
+          </svg>
+        </div>
       )}
 
       <style>{`
         @keyframes sonar-pulse {
           0% {
             r: 2;
-            opacity: 0.5;
+            opacity: 0.6;
             stroke-width: 0.2;
           }
           100% {
-            r: 45;
+            r: 48;
             opacity: 0;
             stroke-width: 0.02;
           }
@@ -198,7 +221,7 @@ const SonarInterstitial = ({ onComplete }) => {
 
       {/* Boot Messages */}
       {phase === 'boot' && (
-        <div style={{ textAlign: 'left', minWidth: '280px', padding: '0 2rem' }}>
+        <div style={{ textAlign: 'left', width: '90%', maxWidth: '320px', padding: '0 1rem' }}>
           {bootMessages.map((msg, i) => (
             <div
               key={i}
@@ -222,10 +245,10 @@ const SonarInterstitial = ({ onComplete }) => {
 
       {/* Main Text */}
       {(phase === 'typing' || phase === 'sonar') && (
-        <div style={{ position: 'relative', zIndex: 10, textAlign: 'center' }}>
+        <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: '0 1rem' }}>
           <div
             style={{
-              fontSize: 'clamp(1.25rem, 4vw, 2.5rem)',
+              fontSize: 'clamp(1.25rem, 5vw, 2.5rem)',
               color: colors.textBright,
               letterSpacing: '0.12em',
             }}
@@ -239,7 +262,7 @@ const SonarInterstitial = ({ onComplete }) => {
           {phase === 'sonar' && (
             <div
               style={{
-                fontSize: 'clamp(0.7rem, 1.5vw, 0.9rem)',
+                fontSize: 'clamp(0.7rem, 2vw, 0.9rem)',
                 color: colors.textDim,
                 letterSpacing: '0.08em',
                 marginTop: '0.75rem',
@@ -262,7 +285,7 @@ const SonarInterstitial = ({ onComplete }) => {
           letterSpacing: '0.08em',
         }}
       >
-        press any key to skip
+        tap to skip
       </div>
     </div>
   );
