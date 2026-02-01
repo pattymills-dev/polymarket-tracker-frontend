@@ -3,11 +3,19 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import './retro.css';
 import App from './App';
-import WhiteWhaleInterstitial from './WhiteWhaleInterstitial';
+import SonarInterstitial from './SonarInterstitial';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import reportWebVitals from './reportWebVitals';
 
-// Boot sequence for retro mode
+// Refined color palette
+const colors = {
+  bg: '#050806',
+  primary: '#4a9b6b',
+  bright: '#7CFF9B',
+  dim: '#2d5a42',
+};
+
+// Boot sequence for Below Deck mode - Refined, minimal styling
 const RetroBoot = ({ onComplete }) => {
   const [bootMessages, setBootMessages] = useState([]);
   const [bootComplete, setBootComplete] = useState(false);
@@ -37,7 +45,7 @@ const RetroBoot = ({ onComplete }) => {
         clearInterval(interval);
         setBootComplete(true);
       }
-    }, 180);
+    }, 150);
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -47,13 +55,13 @@ const RetroBoot = ({ onComplete }) => {
     if (bootComplete) {
       sessionStorage.setItem('retro-boot-complete', 'true');
       // Small delay before showing interstitial
-      setTimeout(onComplete, 400);
+      setTimeout(onComplete, 300);
     }
   }, [bootComplete, onComplete]);
 
   return (
-    <div className="retro-boot-screen" style={{
-      background: '#050806',
+    <div style={{
+      background: colors.bg,
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
@@ -62,11 +70,12 @@ const RetroBoot = ({ onComplete }) => {
       padding: '2rem',
       fontFamily: "'VT323', monospace",
     }}>
+      {/* ASCII Header - No glow */}
       <pre style={{
-        color: '#7CFF9B',
-        textShadow: '0 0 10px rgba(124, 255, 155, 0.4)',
-        fontSize: 'clamp(0.7rem, 2vw, 1rem)',
-        lineHeight: 1.1,
+        color: colors.primary,
+        textShadow: 'none',
+        fontSize: 'clamp(0.6rem, 1.5vw, 0.9rem)',
+        lineHeight: 1.2,
         marginBottom: '2rem',
       }}>
 {`╔══════════════════════════════════════════╗
@@ -74,21 +83,34 @@ const RetroBoot = ({ onComplete }) => {
 ║            [TERMINAL MODE]               ║
 ╚══════════════════════════════════════════╝`}
       </pre>
+
+      {/* Boot Messages */}
       <div style={{ textAlign: 'left', minWidth: '300px' }}>
         {bootMessages.map((msg, i) => (
           <div key={i} style={{
-            color: '#7CFF9B',
-            fontSize: '1.125rem',
+            color: i === bootMessages.length - 1 && bootComplete ? colors.bright : colors.primary,
+            fontSize: '1rem',
             marginBottom: '0.25rem',
-            opacity: 1,
+            letterSpacing: '0.02em',
           }}>
             &gt; {msg}
           </div>
         ))}
         {bootMessages.length > 0 && bootMessages.length < messages.length && (
-          <span style={{ color: '#7CFF9B', animation: 'retro-blink 1s step-end infinite' }}>█</span>
+          <span style={{
+            color: colors.primary,
+            animation: 'retro-blink 1s step-end infinite',
+          }}>█</span>
         )}
       </div>
+
+      {/* Inline keyframes for cursor blink */}
+      <style>{`
+        @keyframes retro-blink {
+          0%, 50% { opacity: 1; }
+          51%, 100% { opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 };
@@ -116,7 +138,7 @@ const ThemedApp = () => {
         setAppReady(true);
       }
     } else {
-      // Modern mode - show app directly
+      // Bridge View mode - show app directly
       setShowBoot(false);
       setShowInterstitial(false);
       setAppReady(true);
@@ -139,14 +161,14 @@ const ThemedApp = () => {
     setAppReady(true);
   };
 
-  // Show boot sequence for retro mode
+  // Show boot sequence for Below Deck mode
   if (isRetro && showBoot) {
     return <RetroBoot onComplete={handleBootComplete} />;
   }
 
-  // Show interstitial after boot (retro mode only)
+  // Show sonar interstitial after boot (Below Deck mode only)
   if (isRetro && showInterstitial) {
-    return <WhiteWhaleInterstitial onComplete={handleInterstitialComplete} />;
+    return <SonarInterstitial onComplete={handleInterstitialComplete} />;
   }
 
   // Show main app

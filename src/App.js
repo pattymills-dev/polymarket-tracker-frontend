@@ -569,35 +569,49 @@ setMarketStats({
     return tradersToShow;
   }, [profitabilityTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy]);
 
+  // Refined color palette for Below Deck theme
+  const retroColors = {
+    bg: '#050806',
+    primary: '#4a9b6b',      // Muted operational green
+    bright: '#7CFF9B',       // Reserved for emphasis/alerts
+    dim: '#2d5a42',          // Secondary text
+    accent: '#d4a84b',       // Amber for warnings/whales
+    danger: '#c45c5c',       // Muted red
+    cardBg: '#080c09',
+    border: '#152118',
+    borderHover: '#1f3528',
+  };
+
   return (
     <div className={`min-h-screen ${isRetro ? 'retro-container' : 'bg-slate-950 text-slate-100 trading-grid-bg'}`}
-         style={isRetro ? { backgroundColor: '#050806', color: '#7CFF9B', fontFamily: "'VT323', monospace" } : {}}>
+         style={isRetro ? { backgroundColor: retroColors.bg, color: retroColors.primary, fontFamily: "'VT323', monospace" } : {}}>
       <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${isRetro ? 'border border-[#3AAE66]' : 'bg-slate-900 border border-slate-800'}`}>
+                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${isRetro ? '' : 'bg-slate-900 border border-slate-800'}`}
+                     style={isRetro ? { border: `1px solid ${retroColors.border}` } : {}}>
                   {isRetro ? (
-                    <span style={{ color: '#7CFF9B', fontSize: '1.25rem' }}>▓</span>
+                    <span style={{ color: retroColors.primary, fontSize: '1.25rem' }}>▓</span>
                   ) : (
                     <TrendingUp className="w-5 h-5 text-slate-200" />
                   )}
                 </div>
                 <div>
                   <h1 className={`text-3xl font-semibold tracking-tight ${isRetro ? '' : 'text-slate-100'}`}
-                      style={isRetro ? { color: '#7CFF9B', textShadow: '0 0 10px rgba(124, 255, 155, 0.4)', letterSpacing: '0.05em' } : {}}>
+                      style={isRetro ? { color: retroColors.bright, textShadow: 'none', letterSpacing: '0.05em' } : {}}>
                     {isRetro ? 'POLYMARKET TRACKER' : 'Polymarket Tracker'}
                   </h1>
                   <p className={`text-sm mt-1 ${isRetro ? '' : 'text-slate-400'}`}
-                     style={isRetro ? { color: '#3AAE66' } : {}}>
+                     style={isRetro ? { color: retroColors.dim } : {}}>
                     {isRetro ? '> WHALE ACTIVITY MONITOR' : 'Large trade activity and trader watchlists'}
                   </p>
                 </div>
               </div>
               <p className={`text-xs mt-3 ${isRetro ? '' : 'text-slate-500'}`}
-                 style={isRetro ? { color: '#3AAE66' } : {}}>
+                 style={isRetro ? { color: retroColors.dim } : {}}>
                 {isRetro ? `> LAST UPDATE: ${lastUpdate.toLocaleTimeString()}` : `Last updated: ${lastUpdate.toLocaleTimeString()}`}
               </p>
             </div>
@@ -606,19 +620,26 @@ setMarketStats({
               {/* Alerts Button */}
               <button
                 onClick={() => setShowAlerts((v) => !v)}
-                className={`relative px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                className={`relative px-4 py-2 rounded-md transition-all flex items-center gap-2 text-sm font-medium border ${
                   isRetro
-                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                    ? ''
                     : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
                 }`}
-                style={isRetro ? { color: '#7CFF9B' } : {}}
+                style={isRetro ? {
+                  color: retroColors.primary,
+                  border: `1px solid ${retroColors.dim}`,
+                  background: 'transparent'
+                } : {}}
+                onMouseEnter={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.bright, e.currentTarget.style.color = retroColors.bright, e.currentTarget.style.boxShadow = `0 0 8px rgba(124, 255, 155, 0.2)`)}
+                onMouseLeave={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.dim, e.currentTarget.style.color = retroColors.primary, e.currentTarget.style.boxShadow = 'none')}
               >
                 <Bell className="w-4 h-4" />
                 {isRetro ? 'ALERTS' : 'Alerts'}
                 {alerts.length > 0 && (
                   <span className={`absolute -top-2 -right-2 text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold ${
-                    isRetro ? 'bg-[#FFD36A] text-[#050806]' : 'bg-cyan-600 text-slate-950'
-                  }`}>
+                    isRetro ? '' : 'bg-cyan-600 text-slate-950'
+                  }`}
+                  style={isRetro ? { backgroundColor: retroColors.accent, color: retroColors.bg } : {}}>
                     {alerts.length}
                   </span>
                 )}
@@ -629,12 +650,18 @@ setMarketStats({
                 href="https://t.me/sonarstack_bot"
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 text-sm font-medium border ${
                   isRetro
-                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                    ? ''
                     : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
                 }`}
-                style={isRetro ? { color: '#7CFF9B' } : {}}
+                style={isRetro ? {
+                  color: retroColors.primary,
+                  border: `1px solid ${retroColors.dim}`,
+                  background: 'transparent'
+                } : {}}
+                onMouseEnter={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.bright, e.currentTarget.style.color = retroColors.bright, e.currentTarget.style.boxShadow = `0 0 8px rgba(124, 255, 155, 0.2)`)}
+                onMouseLeave={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.dim, e.currentTarget.style.color = retroColors.primary, e.currentTarget.style.boxShadow = 'none')}
               >
                 <Send className="w-4 h-4" />
                 {isRetro ? 'TELEGRAM' : 'Telegram'}
@@ -644,24 +671,30 @@ setMarketStats({
               <div className="relative" ref={tipJarRef}>
                 <button
                   onClick={() => setShowTipJar((v) => !v)}
-                  className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                  className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 text-sm font-medium border ${
                     isRetro
-                      ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                      ? ''
                       : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
                   }`}
-                  style={isRetro ? { color: '#7CFF9B' } : {}}
+                  style={isRetro ? {
+                    color: retroColors.primary,
+                    border: `1px solid ${retroColors.dim}`,
+                    background: 'transparent'
+                  } : {}}
+                  onMouseEnter={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.bright, e.currentTarget.style.color = retroColors.bright, e.currentTarget.style.boxShadow = `0 0 8px rgba(124, 255, 155, 0.2)`)}
+                  onMouseLeave={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.dim, e.currentTarget.style.color = retroColors.primary, e.currentTarget.style.boxShadow = 'none')}
                 >
-                  <Heart className={`w-4 h-4 ${isRetro ? 'text-[#FFD36A]' : 'text-rose-400'}`} />
+                  <Heart className="w-4 h-4" style={isRetro ? { color: retroColors.accent } : {}} />
                   {isRetro ? 'TIP' : 'Tip'}
                 </button>
 
                 {showTipJar && (
                   <div className={`absolute right-0 mt-2 w-72 rounded-lg shadow-xl z-50 p-4 ${
-                    isRetro ? 'border border-[#3AAE66]' : 'bg-slate-900 border border-slate-700'
+                    isRetro ? '' : 'bg-slate-900 border border-slate-700'
                   }`}
-                  style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}>
+                  style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}>
                     <div className={`text-sm mb-3 ${isRetro ? '' : 'text-slate-300'}`}
-                         style={isRetro ? { color: '#3AAE66' } : {}}>
+                         style={isRetro ? { color: retroColors.dim } : {}}>
                       {isRetro ? '> SUPPORT THE PROJECT:' : 'Support the project:'}
                     </div>
 
@@ -671,45 +704,46 @@ setMarketStats({
                       target="_blank"
                       rel="noopener noreferrer"
                       className={`flex items-center gap-3 p-3 rounded-lg transition-colors mb-3 ${
-                        isRetro ? 'border border-[#1a2a1e] hover:border-[#3AAE66]' : 'bg-slate-800 hover:bg-slate-700'
+                        isRetro ? '' : 'bg-slate-800 hover:bg-slate-700'
                       }`}
-                      style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}
+                      style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}
                     >
                       <div className="w-8 h-8 bg-[#FF5E5B] rounded-lg flex items-center justify-center">
                         <span className="text-white text-lg">☕</span>
                       </div>
                       <div className="flex-1">
                         <div className={`font-medium ${isRetro ? '' : 'text-slate-100'}`}
-                             style={isRetro ? { color: '#7CFF9B' } : {}}>Ko-fi</div>
+                             style={isRetro ? { color: retroColors.primary } : {}}>Ko-fi</div>
                         <div className={`text-xs ${isRetro ? '' : 'text-slate-400'}`}
-                             style={isRetro ? { color: '#3AAE66' } : {}}>Buy me a coffee</div>
+                             style={isRetro ? { color: retroColors.dim } : {}}>Buy me a coffee</div>
                       </div>
-                      <ExternalLink className={`w-4 h-4 ${isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}`} />
+                      <ExternalLink className="w-4 h-4" style={isRetro ? { color: retroColors.dim } : {}} />
                     </a>
 
                     {/* Crypto Wallet */}
                     <div className={`p-3 rounded-lg ${
-                      isRetro ? 'border border-[#1a2a1e]' : 'bg-slate-800'
+                      isRetro ? '' : 'bg-slate-800'
                     }`}
-                    style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}>
+                    style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}>
                       <div className="flex items-center gap-3 mb-2">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          isRetro ? 'border border-[#3AAE66]' : 'bg-gradient-to-br from-blue-500 to-purple-600'
-                        }`}>
-                          <span className={`text-sm font-bold ${isRetro ? 'text-[#7CFF9B]' : 'text-white'}`}>Ξ</span>
+                          isRetro ? '' : 'bg-gradient-to-br from-blue-500 to-purple-600'
+                        }`}
+                        style={isRetro ? { border: `1px solid ${retroColors.border}` } : {}}>
+                          <span className="text-sm font-bold" style={isRetro ? { color: retroColors.primary } : {}}>Ξ</span>
                         </div>
                         <div className="flex-1">
                           <div className={`font-medium ${isRetro ? '' : 'text-slate-100'}`}
-                               style={isRetro ? { color: '#7CFF9B' } : {}}>ETH / ERC-20</div>
+                               style={isRetro ? { color: retroColors.primary } : {}}>ETH / ERC-20</div>
                           <div className={`text-xs ${isRetro ? '' : 'text-slate-400'}`}
-                               style={isRetro ? { color: '#3AAE66' } : {}}>Send crypto directly</div>
+                               style={isRetro ? { color: retroColors.dim } : {}}>Send crypto directly</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
                         <code className={`flex-1 text-xs px-2 py-1.5 rounded truncate ${
-                          isRetro ? 'border border-[#1a2a1e]' : 'bg-slate-900 text-slate-300'
+                          isRetro ? '' : 'bg-slate-900 text-slate-300'
                         }`}
-                        style={isRetro ? { backgroundColor: '#050806', color: '#7CFF9B' } : {}}>
+                        style={isRetro ? { backgroundColor: retroColors.bg, color: retroColors.primary, border: `1px solid ${retroColors.border}` } : {}}>
                           0xF30BCb8d980dD3674dE9B64875E63260765a9472
                         </code>
                         <button
@@ -719,21 +753,22 @@ setMarketStats({
                             setTimeout(() => setCopiedWallet(false), 2000);
                           }}
                           className={`p-1.5 rounded transition-colors ${
-                            isRetro ? 'border border-[#3AAE66] hover:bg-[#7CFF9B]/10' : 'bg-slate-700 hover:bg-slate-600'
+                            isRetro ? '' : 'bg-slate-700 hover:bg-slate-600'
                           }`}
+                          style={isRetro ? { border: `1px solid ${retroColors.dim}` } : {}}
                           title="Copy address"
                         >
                           {copiedWallet ? (
-                            <Check className={`w-4 h-4 ${isRetro ? 'text-[#7CFF9B]' : 'text-green-400'}`} />
+                            <Check className="w-4 h-4" style={isRetro ? { color: retroColors.bright } : {}} />
                           ) : (
-                            <Copy className={`w-4 h-4 ${isRetro ? 'text-[#3AAE66]' : 'text-slate-400'}`} />
+                            <Copy className="w-4 h-4" style={isRetro ? { color: retroColors.dim } : {}} />
                           )}
                         </button>
                       </div>
                     </div>
 
                     <div className={`text-xs mt-3 text-center ${isRetro ? '' : 'text-slate-500'}`}
-                         style={isRetro ? { color: '#3AAE66' } : {}}>
+                         style={isRetro ? { color: retroColors.dim } : {}}>
                       {isRetro ? '> THANK YOU FOR YOUR SUPPORT' : 'Thank you for your support! 🙏'}
                     </div>
                   </div>
@@ -750,12 +785,18 @@ setMarketStats({
                   }
                   toggleTheme();
                 }}
-                className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 text-sm font-medium border ${
+                className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 text-sm font-medium border ${
                   isRetro
-                    ? 'border-[#3AAE66] hover:border-[#7CFF9B] hover:bg-[#7CFF9B]/10'
+                    ? ''
                     : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
                 }`}
-                style={isRetro ? { color: '#7CFF9B' } : {}}
+                style={isRetro ? {
+                  color: retroColors.primary,
+                  border: `1px solid ${retroColors.dim}`,
+                  background: 'transparent'
+                } : {}}
+                onMouseEnter={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.bright, e.currentTarget.style.color = retroColors.bright, e.currentTarget.style.boxShadow = `0 0 8px rgba(124, 255, 155, 0.2)`)}
+                onMouseLeave={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.dim, e.currentTarget.style.color = retroColors.primary, e.currentTarget.style.boxShadow = 'none')}
                 title={isRetro ? 'Switch to Bridge View (clean UI)' : 'Switch to Below Deck (sonar theme)'}
               >
                 {isRetro ? (
@@ -776,24 +817,25 @@ setMarketStats({
 
         {/* Alerts Panel */}
         {showAlerts && (
-          <div className={`mb-6 backdrop-blur rounded-lg p-4 shadow-lg ${
+          <div className={`mb-6 backdrop-blur rounded-lg p-4 ${
             isRetro
-              ? 'border border-[#3AAE66]'
+              ? ''
               : 'bg-slate-900/80 border border-amber-500/30 shadow-amber-500/10'
           }`}
-          style={isRetro ? { backgroundColor: '#0a0f0b' } : {}}>
+          style={isRetro ? { backgroundColor: retroColors.cardBg, border: `1px solid ${retroColors.border}` } : {}}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className={`font-semibold flex items-center gap-2 text-sm ${isRetro ? '' : ''}`}>
-                <Bell className={`w-4 h-4 ${isRetro ? 'text-[#FFD36A]' : 'text-amber-400'} animate-pulse`} />
-                <span className={isRetro ? 'text-[#FFD36A]' : 'text-amber-400'}>
+              <h3 className="font-semibold flex items-center gap-2 text-sm">
+                <Bell className="w-4 h-4" style={isRetro ? { color: retroColors.accent } : {}} />
+                <span style={isRetro ? { color: retroColors.accent } : {}}>
                   {isRetro ? '> SIGNAL INTERCEPTS' : 'Signal Alerts'}
                 </span>
               </h3>
               <button
                 onClick={() => setAlerts([])}
                 className={`text-xs transition-colors ${
-                  isRetro ? 'text-[#3AAE66] hover:text-[#7CFF9B]' : 'text-slate-400 hover:text-slate-200'
+                  isRetro ? '' : 'text-slate-400 hover:text-slate-200'
                 }`}
+                style={isRetro ? { color: retroColors.dim } : {}}
               >
                 {isRetro ? 'CLEAR' : 'Clear all'}
               </button>
@@ -801,48 +843,53 @@ setMarketStats({
 
             {/* Alert Categories Legend */}
             <div className={`mb-4 p-3 rounded-lg text-xs ${
-              isRetro ? 'border border-[#1a2a1e]' : 'bg-slate-950/50'
+              isRetro ? '' : 'bg-slate-950/50'
             }`}
-            style={isRetro ? { backgroundColor: '#050806' } : {}}>
-              <div className={`font-medium mb-2 ${isRetro ? 'text-[#3AAE66]' : 'text-slate-400'}`}>
+            style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}` } : {}}>
+              <div className="font-medium mb-2" style={isRetro ? { color: retroColors.dim } : {}}>
                 {isRetro ? '> ALERT CLASSIFICATIONS:' : 'Alert Types:'}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? 'border-[#7CFF9B] text-[#7CFF9B]' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                  }`}>TOP TRADER</span>
-                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>High-performing trader activity</span>
+                    isRetro ? '' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.primary}`, color: retroColors.primary } : {}}>TOP TRADER</span>
+                  <span style={isRetro ? { color: retroColors.dim } : {}}>High-performing trader activity</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? 'border-[#7CFF9B] text-[#7CFF9B]' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                  }`}>WATCHLIST</span>
-                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Traders you're tracking</span>
+                    isRetro ? '' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.primary}`, color: retroColors.primary } : {}}>WATCHLIST</span>
+                  <span style={isRetro ? { color: retroColors.dim } : {}}>Traders you're tracking</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? 'border-[#FFD36A] text-[#FFD36A]' : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                  }`}>WHALE</span>
-                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Large position ($50k+)</span>
+                    isRetro ? '' : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.accent}`, color: retroColors.accent } : {}}>WHALE</span>
+                  <span style={isRetro ? { color: retroColors.dim } : {}}>Large position ($50k+)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? 'border-[#FFD36A] text-[#FFD36A]' : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
-                  }`}>MEGA WHALE</span>
-                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Massive position ($100k+)</span>
+                    isRetro ? '' : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.accent}`, color: retroColors.accent } : {}}>MEGA WHALE</span>
+                  <span style={isRetro ? { color: retroColors.dim } : {}}>Massive position ($100k+)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? 'border-[#FF6B6B] text-[#FF6B6B]' : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                  }`}>ISOLATED CONTACT</span>
-                  <span className={isRetro ? 'text-[#3AAE66]' : 'text-slate-500'}>Low-activity trader, outsized bet in thin market</span>
+                    isRetro ? '' : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.danger}`, color: retroColors.danger } : {}}>ISOLATED CONTACT</span>
+                  <span style={isRetro ? { color: retroColors.dim } : {}}>Low-activity trader, outsized bet in thin market</span>
                 </div>
               </div>
             </div>
 
             {alerts.length === 0 ? (
-              <p className={`text-sm ${isRetro ? 'text-[#3AAE66]' : 'text-slate-400'}`}>
+              <p className="text-sm" style={isRetro ? { color: retroColors.dim } : {}}>
                 {isRetro
                   ? '> NO SIGNALS DETECTED. MONITORING...'
                   : 'No alerts yet. They\'ll appear when top traders, watchlist traders, or whales make trades.'}

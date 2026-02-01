@@ -53,7 +53,7 @@ serve(async (req) => {
             id: trade.market_id,
             question: trade.market_title || trade.market_slug || trade.market_id,
             slug: trade.market_slug,
-            resolved: false,
+            // Don't set resolved here - let the upsert preserve existing value
           });
         }
       }
@@ -78,10 +78,10 @@ serve(async (req) => {
     const markets = Array.from(marketMap.values());
     console.log(`Found ${markets.length} unique markets from ${pagesProcessed} pages`);
 
-    // Upsert markets
+    // Insert new markets only - don't update existing ones to preserve resolved/winning_outcome
     const { error: upsertError } = await supabase
       .from("markets")
-      .upsert(markets, { onConflict: "id" });
+      .upsert(markets, { onConflict: "id", ignoreDuplicates: true });
 
     if (upsertError) {
       throw new Error(`Failed to upsert markets: ${upsertError.message}`);
