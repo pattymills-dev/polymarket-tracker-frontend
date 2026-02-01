@@ -126,16 +126,14 @@ const ThemedApp = () => {
     if (isRetro) {
       // Check if we need boot sequence
       const bootDone = sessionStorage.getItem('retro-boot-complete');
-      const interstitialDone = sessionStorage.getItem('whale-interstitial-shown');
 
       if (!bootDone) {
         setShowBoot(true);
         setAppReady(false);
-      } else if (!interstitialDone) {
+      } else {
+        // Always show interstitial after boot (on every hard refresh)
         setShowInterstitial(true);
         setAppReady(false);
-      } else {
-        setAppReady(true);
       }
     } else {
       // Bridge View mode - show app directly
@@ -147,13 +145,8 @@ const ThemedApp = () => {
 
   const handleBootComplete = () => {
     setShowBoot(false);
-    // Check if interstitial already shown
-    const interstitialDone = sessionStorage.getItem('whale-interstitial-shown');
-    if (!interstitialDone) {
-      setShowInterstitial(true);
-    } else {
-      setAppReady(true);
-    }
+    // Always show interstitial after boot
+    setShowInterstitial(true);
   };
 
   const handleInterstitialComplete = () => {

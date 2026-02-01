@@ -20,17 +20,15 @@ const SonarInterstitial = ({ onComplete }) => {
     if (!isFading) {
       setIsFading(true);
       setTimeout(() => {
-        sessionStorage.setItem('whale-interstitial-shown', 'true');
         setIsVisible(false);
         onComplete();
       }, 300);
     }
   }, [isFading, onComplete]);
 
-  // Check if already shown this session
+  // Show on every load (hard refresh shows it again)
   useEffect(() => {
-    const alreadyShown = sessionStorage.getItem('whale-interstitial-shown');
-    if (alreadyShown || prefersReducedMotion) {
+    if (prefersReducedMotion) {
       setIsVisible(false);
       onComplete();
       return;
@@ -47,7 +45,6 @@ const SonarInterstitial = ({ onComplete }) => {
     const timer = setTimeout(() => {
       setIsFading(true);
       setTimeout(() => {
-        sessionStorage.setItem('whale-interstitial-shown', 'true');
         setIsVisible(false);
         onComplete();
       }, 600);
@@ -60,7 +57,7 @@ const SonarInterstitial = ({ onComplete }) => {
     };
   }, [onComplete, prefersReducedMotion, handleSkip]);
 
-  // Don't render if reduced motion, already shown, or not visible
+  // Don't render if reduced motion or not visible
   if (!isVisible || prefersReducedMotion) {
     return null;
   }
