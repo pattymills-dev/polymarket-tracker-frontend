@@ -24,7 +24,6 @@ const PolymarketTracker = () => {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'profitability', 'win_rate', 'total_pl' - default to P/L for meaningful rankings
-  const [traderCategory, setTraderCategory] = useState('top_performers'); // 'top_performers' or 'hot_streaks'
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTrader, setSelectedTrader] = useState(null);
   const [traderTrades, setTraderTrades] = useState([]);
@@ -454,42 +453,6 @@ setMarketStats({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch hot streaks data (traders with high win rates)
-  const [hotStreakTraders, setHotStreakTraders] = useState([]);
-
-  const fetchHotStreaks = async () => {
-    try {
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/hot_streaks?order=rank.asc&limit=50`,
-        { headers }
-      );
-      const data = await response.json();
-
-      if (response.ok && Array.isArray(data)) {
-        const mappedTraders = data.map(t => ({
-          address: t.trader_address,
-          total_volume: Number(t.total_buy_cost || 0),
-          total_bets: t.resolved_markets,
-          resolved_markets: t.resolved_markets,
-          wins: t.wins,
-          losses: t.losses,
-          win_rate: Number(t.win_rate || 0),
-          total_pl: Number(t.total_pl || 0),
-          rank: t.rank,
-          last_activity: Date.now()
-        }));
-        setHotStreakTraders(mappedTraders);
-      }
-    } catch (error) {
-      console.error('Error fetching hot streaks:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchHotStreaks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Calculate smart money metrics from recent trades (7-day fallback)
   const recentActiveTraders = useMemo(() => {
     if (!largeBets || largeBets.length === 0) return [];
@@ -548,40 +511,20 @@ setMarketStats({
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
 
-    // Choose data source based on category
-    let tradersToShow;
-    if (traderCategory === 'hot_streaks') {
-      // Hot Streaks: traders with high win rates
-      tradersToShow = hotStreakTraders.length > 0 ? hotStreakTraders : [];
-    } else {
-      // Top Performers: by P/L (default)
-      tradersToShow = profitabilityTraders.length >= 5
-        ? profitabilityTraders
-        : recentActiveTraders.length > 0
-          ? recentActiveTraders
-          : topTraders || [];
-    }
+    // Top Performers: by P/L
+    let tradersToShow = profitabilityTraders.length >= 5
+      ? profitabilityTraders
+      : recentActiveTraders.length > 0
+        ? recentActiveTraders
+        : topTraders || [];
 
     // Filter by search query
     if (q) {
       tradersToShow = tradersToShow.filter((t) => (t.address || '').toLowerCase().includes(q));
     }
 
-    // Apply sorting based on category
-    if (traderCategory === 'hot_streaks') {
-      // Hot streaks: sort by win rate, then by resolved markets
-      tradersToShow = [...tradersToShow].sort((a, b) => {
-        if (traderSortBy === 'win_rate') {
-          return (b.win_rate || 0) - (a.win_rate || 0);
-        } else if (traderSortBy === 'total_pl') {
-          return (b.total_pl || 0) - (a.total_pl || 0);
-        } else if (traderSortBy === 'resolved') {
-          return (b.resolved_markets || 0) - (a.resolved_markets || 0);
-        }
-        return (b.win_rate || 0) - (a.win_rate || 0); // default to win rate
-      });
-    } else if (profitabilityTraders.length >= 5) {
-      // Top performers: sort by selected metric
+    // Apply sorting
+    if (profitabilityTraders.length >= 5) {
       tradersToShow = [...tradersToShow].sort((a, b) => {
         if (traderSortBy === 'profitability') {
           return (b.profitability_rate || 0) - (a.profitability_rate || 0);
@@ -595,7 +538,7 @@ setMarketStats({
     }
 
     return tradersToShow;
-  }, [profitabilityTraders, hotStreakTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy, traderCategory]);
+  }, [profitabilityTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 trading-grid-bg">
@@ -936,49 +879,12 @@ setMarketStats({
               <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 sticky top-6 flex flex-col h-[1200px]">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold flex items-center gap-2">
-                    {traderCategory === 'hot_streaks' ? (
-                      <>🔥 Hot Streaks</>
-                    ) : (
-                      <>
-                        <Trophy className="w-5 h-5 text-slate-300" />
-                        {profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)'}
-                      </>
-                    )}
+                    <Trophy className="w-5 h-5 text-slate-300" />
+                    {profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)'}
                   </h2>
                 </div>
 
                 <div className="mb-4 space-y-3">
-                  {/* Category Tabs */}
-                  <div className="flex gap-1 text-xs">
-                    <button
-                      onClick={() => { setTraderCategory('top_performers'); setTraderSortBy('total_pl'); }}
-                      className={`px-3 py-1.5 rounded transition-colors ${
-                        traderCategory === 'top_performers'
-                          ? 'bg-amber-600 text-white'
-                          : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                      }`}
-                      title="Traders ranked by total realized profit/loss"
-                    >
-                      🏆 Top Performers
-                    </button>
-                    <button
-                      onClick={() => { setTraderCategory('hot_streaks'); setTraderSortBy('win_rate'); }}
-                      className={`px-3 py-1.5 rounded transition-colors ${
-                        traderCategory === 'hot_streaks'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                      }`}
-                      title="Traders with 70%+ win rate and 5+ resolved markets - on a hot streak!"
-                    >
-                      🔥 Hot Streaks
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-slate-500 italic">
-                    {traderCategory === 'top_performers'
-                      ? '🏆 Ranked by total realized P/L from resolved markets'
-                      : '🔥 Traders with 70%+ win rate & 5+ resolved markets'}
-                  </p>
-
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -992,8 +898,7 @@ setMarketStats({
                     </button>
                   </div>
 
-                  {/* Sort options based on category */}
-                  {traderCategory === 'top_performers' && profitabilityTraders.length >= 5 && (
+                  {profitabilityTraders.length >= 5 && (
                     <div className="space-y-2">
                       <div className="flex gap-1 text-xs">
                         <button
@@ -1038,51 +943,6 @@ setMarketStats({
                     </div>
                   )}
 
-                  {/* Hot Streaks sort options */}
-                  {traderCategory === 'hot_streaks' && hotStreakTraders.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex gap-1 text-xs">
-                        <button
-                          onClick={() => setTraderSortBy('win_rate')}
-                          className={`px-3 py-1.5 rounded transition-colors ${
-                            traderSortBy === 'win_rate'
-                              ? 'bg-cyan-600 text-white'
-                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                          }`}
-                          title="Percentage of resolved bets where the trader picked the winning outcome"
-                        >
-                          Win %
-                        </button>
-                        <button
-                          onClick={() => setTraderSortBy('resolved')}
-                          className={`px-3 py-1.5 rounded transition-colors ${
-                            traderSortBy === 'resolved'
-                              ? 'bg-cyan-600 text-white'
-                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                          }`}
-                          title="Number of resolved markets - more resolved = more confidence in win rate"
-                        >
-                          Resolved
-                        </button>
-                        <button
-                          onClick={() => setTraderSortBy('total_pl')}
-                          className={`px-3 py-1.5 rounded transition-colors ${
-                            traderSortBy === 'total_pl'
-                              ? 'bg-cyan-600 text-white'
-                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                          }`}
-                          title="Total realized profit/loss in USD"
-                        >
-                          Total P/L
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-slate-500 italic">
-                        {traderSortBy === 'win_rate' && '🎯 Win % = Winning Bets ÷ Total Resolved (must be 70%+)'}
-                        {traderSortBy === 'resolved' && '📊 More resolved markets = higher confidence in accuracy'}
-                        {traderSortBy === 'total_pl' && '💰 Total P/L = Sum of all realized profits and losses'}
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {visibleTraders.length === 0 ? (
