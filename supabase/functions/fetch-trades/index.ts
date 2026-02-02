@@ -131,6 +131,9 @@ serve(async (req) => {
         // "Cash" amount ≈ size * price
         const amount = size != null && price != null ? size * price : null;
 
+        // Polymarket API: side is "BUY" or "SELL" (or "buy"/"sell")
+        const side = t.side ? t.side.toUpperCase() : null;
+
         return {
           tx_hash: t.transactionHash ?? null,
           market_id: t.conditionId ?? null, // use conditionId
@@ -138,6 +141,7 @@ serve(async (req) => {
           market_title: t.title ?? null,
           trader_address: t.proxyWallet ?? null,
           outcome: t.outcome ?? null,
+          side,
           amount,
           price,
           timestamp: ts != null ? new Date(ts * 1000).toISOString() : null,
