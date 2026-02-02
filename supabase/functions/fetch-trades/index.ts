@@ -89,10 +89,10 @@ serve(async (req) => {
 
     console.log("Fetching trades from Polymarket Data API...");
 
-    // Fetch ~150,000 trades per run (~4-5 min of data) to capture whale activity
-    // With ~1 whale trade per 2 min, this ensures we catch all whales in 15-min interval
+    // Fetch recent trades - optimized for 15-minute intervals
+    // ~5000 trades should cover recent whale activity without timing out
     const PAGE_SIZE = 500;
-    const MAX_PAGES = 300;
+    const MAX_PAGES = 10;  // 10 pages × 500 = 5000 trades max
 
     // Only store trades >= $5k to save database space
     const MIN_TRADE_SIZE = 5_000;
@@ -356,29 +356,8 @@ serve(async (req) => {
           });
         }
 
-        // 5. Isolated Contact detection (rare trader + thin market + outsized trade)
-        // Only check for trades >= $5k that haven't already triggered another alert type
-        if (r.amount >= MIN_TRADE_SIZE && !isTopTrader && !isHotStreak && !isWatchlist && r.amount < WHALE_THRESHOLD) {
-          const { isIsolatedContact, reasons } = await checkIsolatedContact(r.amount, r.trader_address, r.market_id);
-
-          if (isIsolatedContact) {
-            alertRows.push({
-              type: "isolated_contact",
-              alert_source: "isolated_contact",
-              trade_hash: r.tx_hash,
-              trader_address: r.trader_address,
-              market_id: r.market_id,
-              market_title: r.market_title,
-              market_slug: r.market_slug,
-              outcome: r.outcome,
-              side: r.side || 'BUY',
-              price: r.price,
-              amount: r.amount,
-              message: `📡 ISOLATED CONTACT: $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id} [${reasons.join(', ')}]`,
-              sent: false,
-            });
-          }
-        }
+        // Note: Isolated Contact detection disabled for performance
+        // The 3 RPC calls per trade were causing timeouts
       }
 
       if (alertRows.length) {
