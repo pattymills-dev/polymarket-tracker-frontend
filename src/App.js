@@ -577,7 +577,7 @@ setMarketStats({
     danger: '#A07070',                    // Muted red
     // Win/loss - numbers tier brightness
     win: '#6AD99A',                       // Wins use numbers brightness
-    loss: '#4A8A6A',                      // Losses - noticeably duller
+    loss: '#A06060',                      // Losses - muted red for clear distinction
     glow: 'rgba(90, 180, 130, 0.05)',     // Very subtle
   };
 
