@@ -206,50 +206,15 @@ serve(async (req) => {
       const topTraderMap = new Map((topTraders || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
       const hotStreakMap = new Map((hotStreaks || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
 
-      // Helper function to check Isolated Contact conditions
-      // Returns { isIsolatedContact, reasons } where reasons contains which conditions triggered
-      async function checkIsolatedContact(tradeAmount: number, traderAddress: string, marketId: string): Promise<{ isIsolatedContact: boolean; reasons: string[] }> {
-        const reasons: string[] = [];
-
-        // Skip if trader is already a known top trader or on watchlist (they're not "isolated")
-        if (topTraderAddresses.has(traderAddress.toLowerCase()) ||
-            hotStreakAddresses.has(traderAddress.toLowerCase()) ||
-            watchlistAddresses.has(traderAddress.toLowerCase())) {
-          return { isIsolatedContact: false, reasons };
-        }
-
-        try {
-          // 1) Check if rare trader
-          const { data: isRare } = await supabase.rpc('is_rare_trader', { p_trader_address: traderAddress });
-          if (!isRare) {
-            return { isIsolatedContact: false, reasons };
-          }
-          reasons.push('rare_trader');
-
-          // 2) Check if thin market
-          const { data: isThin } = await supabase.rpc('is_thin_market', { p_market_id: marketId });
-          if (!isThin) {
-            return { isIsolatedContact: false, reasons };
-          }
-          reasons.push('thin_market');
-
-          // 3) Check if outsized trade
-          const { data: isOutsized } = await supabase.rpc('is_outsized_trade', {
-            p_market_id: marketId,
-            p_trade_size: tradeAmount
-          });
-          if (!isOutsized) {
-            return { isIsolatedContact: false, reasons };
-          }
-          reasons.push('outsized_trade');
-
-          // All three conditions met
-          return { isIsolatedContact: true, reasons };
-        } catch (error) {
-          console.error('Error checking Isolated Contact conditions:', error);
-          return { isIsolatedContact: false, reasons };
-        }
-      }
+      // Batch check for Isolated Contact - collect candidates first, then check in one query
+      // A trade is "isolated contact" if:
+      // 1. Trader is rare (< 5 trades in last 30 days)
+      // 2. Market is thin (< 10 trades in last 24h)
+      // 3. Trade is outsized (> 2x avg trade size for that market)
+      const isolatedContactCandidates: Array<{
+        trade: any;
+        betDirection: string;
+      }> = [];
 
       // Create alerts for:
       // 1. Top trader trades >= $5k (by P/L)
@@ -356,8 +321,56 @@ serve(async (req) => {
           });
         }
 
-        // Note: Isolated Contact detection disabled for performance
-        // The 3 RPC calls per trade were causing timeouts
+        // Collect candidates for Isolated Contact (will batch check after loop)
+        if (r.amount >= MIN_TRADE_SIZE && !isTopTrader && !isHotStreak && !isWatchlist && r.amount < WHALE_THRESHOLD) {
+          isolatedContactCandidates.push({ trade: r, betDirection });
+        }
+      }
+
+      // Batch check Isolated Contact candidates with a single RPC call
+      if (isolatedContactCandidates.length > 0) {
+        try {
+          const candidateData = isolatedContactCandidates.map(c => ({
+            trader_address: c.trade.trader_address,
+            market_id: c.trade.market_id,
+            trade_size: c.trade.amount
+          }));
+
+          const { data: isolatedResults } = await supabase.rpc('check_isolated_contacts_batch', {
+            p_candidates: candidateData
+          });
+
+          if (isolatedResults && Array.isArray(isolatedResults)) {
+            for (const result of isolatedResults) {
+              if (result.is_isolated) {
+                const candidate = isolatedContactCandidates.find(
+                  c => c.trade.trader_address === result.trader_address &&
+                       c.trade.market_id === result.market_id
+                );
+                if (candidate) {
+                  const r = candidate.trade;
+                  alertRows.push({
+                    type: "isolated_contact",
+                    alert_source: "isolated_contact",
+                    trade_hash: r.tx_hash,
+                    trader_address: r.trader_address,
+                    market_id: r.market_id,
+                    market_title: r.market_title,
+                    market_slug: r.market_slug,
+                    outcome: r.outcome,
+                    side: r.side || 'BUY',
+                    price: r.price,
+                    amount: r.amount,
+                    message: `📡 ISOLATED CONTACT: $${Math.round(r.amount).toLocaleString()} ${candidate.betDirection} on ${r.market_title || r.market_id}`,
+                    sent: false,
+                  });
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error batch checking Isolated Contacts:', error);
+        }
       }
 
       if (alertRows.length) {
