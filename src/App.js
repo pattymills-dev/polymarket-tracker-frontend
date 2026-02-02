@@ -1400,7 +1400,9 @@ setMarketStats({
                                   {trader.address?.slice(0, 10)}…{trader.address?.slice(-4)}
                                 </p>
                                 <p className="text-xs mt-0.5 font-mono" style={isRetro ? { color: retroColors.textDim } : {}}>
-                                  {formatTimestamp(trader.last_activity)}
+                                  <span style={isRetro ? { color: retroColors.numbers } : { color: 'rgb(52, 211, 153)' }}>{trader.wins || 0}W</span>
+                                  {' · '}
+                                  <span style={isRetro ? { color: retroColors.loss } : { color: 'rgb(251, 113, 133)' }}>{trader.losses || 0}L</span>
                                 </p>
                               </div>
                             </div>

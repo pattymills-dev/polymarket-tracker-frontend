@@ -6,27 +6,57 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch: # Allow manual trigger
 
+# Prevent concurrent runs from cancelling each other
+concurrency:
+  group: sync-trades
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Sync trades from Polymarket
         run: |
-          curl -X POST \
+          response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" \
-            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/fetch-trades
+            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/fetch-trades)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response: $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: fetch-trades failed with status $http_code"
+            exit 1
+          fi
 
       - name: Populate markets from trades
         run: |
-          curl -X POST \
+          response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" \
-            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/populate-markets-from-trades
+            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/populate-markets-from-trades)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response: $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: populate-markets failed with status $http_code"
+            exit 1
+          fi
 
       - name: Sync market resolutions
         run: |
-          curl -X POST \
+          response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" \
-            https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=50&mode=recent")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response: $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: sync-resolutions failed with status $http_code"
+            exit 1
+          fi
