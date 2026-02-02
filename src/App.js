@@ -171,6 +171,37 @@ const formatTimestamp = (ts) => {
   });
 };
 
+// Format bet description for spread/total markets to show the actual position
+// e.g., "Spread: Celtics (-12.5)" + outcome "Bucks" → "Bucks +12.5"
+const formatBetPosition = (marketTitle, outcome) => {
+  if (!marketTitle || !outcome) return outcome || '—';
+
+  // Check if it's a spread market: "Spread: Team (-X.X)" or "Spread: Team (+X.X)"
+  const spreadMatch = marketTitle.match(/Spread:\s*(\w+(?:\s+\w+)*)\s*\(([+-]?\d+\.?\d*)\)/i);
+  if (spreadMatch) {
+    const favoredTeam = spreadMatch[1].trim();
+    const spreadValue = parseFloat(spreadMatch[2]);
+
+    // If outcome matches the favored team, they took the favorite (negative spread)
+    if (outcome.toLowerCase() === favoredTeam.toLowerCase()) {
+      return `${outcome} ${spreadValue >= 0 ? '+' : ''}${spreadValue}`;
+    } else {
+      // They took the underdog (opposite spread)
+      const oppositeSpread = -spreadValue;
+      return `${outcome} ${oppositeSpread >= 0 ? '+' : ''}${oppositeSpread}`;
+    }
+  }
+
+  // Check if it's an over/under market: "Team vs Team: O/U X.X"
+  const ouMatch = marketTitle.match(/O\/U\s*(\d+\.?\d*)/i);
+  if (ouMatch && (outcome.toLowerCase() === 'over' || outcome.toLowerCase() === 'under')) {
+    return `${outcome} ${ouMatch[1]}`;
+  }
+
+  // Default: just return the outcome
+  return outcome;
+};
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -1178,9 +1209,9 @@ setMarketStats({
                                 </span>
                                 <span
                                   className="font-bold"
-                                  style={isRetro ? { color: bet.outcome === 'Yes' ? retroColors.text : retroColors.warn } : { color: bet.outcome === 'Yes' ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}
+                                  style={isRetro ? { color: retroColors.text } : { color: 'rgb(226, 232, 240)' }}
                                 >
-                                  {bet.outcome}
+                                  {formatBetPosition(bet.market_title, bet.outcome)}
                                 </span>
                                 <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(148, 163, 184)' }}>@</span>
                                 <span className="font-mono" style={isRetro ? { color: retroColors.textDim } : {}}>
@@ -1729,7 +1760,7 @@ setMarketStats({
                           style={isRetro ? { fontSize: '0.8rem', marginTop: '0.5rem' } : {}}
                         >
                           <span style={isRetro ? { color: retroColors.textDim } : {}} className={isRetro ? '' : 'text-slate-500'}>
-                            Outcome: <span style={isRetro ? { color: isWin ? retroColors.numbers : isLoss ? retroColors.loss : retroColors.text, fontWeight: isWin ? 600 : 400 } : {}} className={isRetro ? '' : (isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-300')}>{trade.outcome}</span>
+                            Bet: <span style={isRetro ? { color: isWin ? retroColors.numbers : isLoss ? retroColors.loss : retroColors.text, fontWeight: isWin ? 600 : 400 } : {}} className={isRetro ? '' : (isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-300')}>{formatBetPosition(trade.market_title, trade.outcome)}</span>
                             {isWin && <span style={isRetro ? { color: retroColors.numbers, marginLeft: '0.5rem', fontWeight: 600 } : {}} className={isRetro ? '' : 'ml-2 text-emerald-400 font-semibold'}>✓ WIN</span>}
                             {isLoss && <span style={isRetro ? { color: retroColors.loss, marginLeft: '0.5rem', fontWeight: 500 } : {}} className={isRetro ? '' : 'ml-2 text-rose-400 font-semibold'}>✗ LOSS</span>}
                             {!isResolved && <span style={isRetro ? { color: retroColors.textDim, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-slate-500'}>(Pending)</span>}
