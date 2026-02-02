@@ -964,16 +964,6 @@ setMarketStats({
                           ? retroColors.danger
                           : retroColors.warn;
 
-                  const retroBadgeColor = isTopTrader
-                    ? retroColors.text
-                    : isWatchlist
-                      ? retroColors.text
-                      : isMega
-                        ? retroColors.warn
-                        : isIsolatedContact
-                          ? retroColors.danger
-                          : retroColors.warn;
-
                   // Retro badge text (no emojis)
                   const retroBadgeText = isTopTrader
                     ? 'TOP TRADER'
