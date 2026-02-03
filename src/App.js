@@ -637,36 +637,52 @@ setMarketStats({
     return tradersToShow;
   }, [profitabilityTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy]);
 
-  // Phosphor sonar terminal palette - desaturated, selective brightness
-  // Brightest = numbers only. Text = softer. Metadata = muted.
+  // SONAR TERMINAL PALETTE - Unified token system
+  // Desaturated phosphor green, NOT neon/LED. Brightest reserved for numbers only.
   const retroColors = {
-    bg: '#080a08',                        // Deep black with green cast
-    surface: '#0c0f0c',                   // Recessed panels
-    border: 'rgba(80, 140, 100, 0.18)',   // Muted green border (less bright)
-    borderActive: 'rgba(90, 160, 120, 0.3)', // Active - subtle, not glowing
-    // NUMBERS: Dollar amounts, P/L, key metrics - brightest, slightly desaturated
-    numbers: '#6AD99A',                   // Phosphor green for numbers only
-    // PRIMARY: Market titles, section headers - softer than numbers
-    textPrimary: '#5BB882',               // Readable but not glowing
-    // SECONDARY: Body text, readable content
-    text: '#4A9A6E',                      // Softer green, good contrast
-    textBright: '#58A87A',                // Slight emphasis
-    // TERTIARY: Timestamps, addresses, metadata - muted
-    textDim: '#3A7A58',                   // Clearly dimmer
-    // ACCENT: Headers - readable but not shouting
-    accent: '#5BB882',                    // Same as textPrimary (headers don't shout)
-    alert: '#5BB882',                     // Alerts match textPrimary
-    warn: '#B8A050',                      // Muted amber (less saturated)
+    // Backgrounds
+    bg: '#070907',                        // Near-black with subtle green cast
+    surface: '#0a0d0a',                   // Slightly elevated panels
+    surfaceDark: '#050705',               // Recessed/darker areas
+
+    // Borders - etched, not glowing
+    border: 'rgba(70, 120, 85, 0.15)',    // Very subtle structural borders
+    borderActive: 'rgba(85, 140, 100, 0.25)', // Active states - still subtle
+    borderEtched: 'rgba(60, 100, 75, 0.12)', // Pills/buttons - even more subtle
+
+    // Text hierarchy (3 tiers by brightness, not glow)
+    // TIER 1 - ACCENT: Dollar amounts, P/L, key numeric signals ONLY
+    numbers: '#5FD090',                   // Phosphor green - brightest but desaturated
+
+    // TIER 2 - PRIMARY: Section headers, market titles, important labels
+    textPrimary: '#4FB878',               // Readable, slightly less bright than numbers
+
+    // TIER 3 - SECONDARY: Body text, readable content
+    text: '#45A06A',                      // Good contrast, clearly secondary
+    textBright: '#4AAE70',                // Slight emphasis within secondary tier
+
+    // TIER 4 - TERTIARY: Timestamps, addresses, metadata, helper text
+    textDim: '#357A52',                   // Clearly dimmer but still legible
+    textMuted: '#2D6846',                 // Lowest tier - microcopy
+
+    // Section headers - slightly brighter than primary for anchoring
+    header: '#52C080',                    // Headers should anchor sections
+
+    // Status colors
+    warn: '#B8A050',                      // Muted amber for pending
     danger: '#A07070',                    // Muted red
-    // Win/loss - numbers tier brightness
-    win: '#6AD99A',                       // Wins use numbers brightness
-    loss: '#A06060',                      // Losses - muted red for clear distinction
-    glow: 'rgba(90, 180, 130, 0.05)',     // Very subtle
+
+    // Win/loss - keep distinct per spec (don't change these)
+    win: '#5FD090',                       // Matches numbers tier
+    loss: '#A06060',                      // Muted red for clear distinction
+
+    // Effects - very subtle
+    glow: 'rgba(80, 160, 110, 0.04)',     // Nearly imperceptible
   };
 
   return (
     <div className={`min-h-screen ${isRetro ? 'retro-container' : 'bg-slate-950 text-slate-100 trading-grid-bg'}`}
-         style={isRetro ? { backgroundColor: retroColors.bg, color: retroColors.text, fontFamily: "'VT323', monospace" } : {}}>
+         style={isRetro ? { backgroundColor: retroColors.bg, color: retroColors.text, fontFamily: "'VT323', monospace", fontSize: '1.05rem', lineHeight: 1.4 } : {}}>
       <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Header */}
         <div className="mb-6">
@@ -901,12 +917,12 @@ setMarketStats({
           }`}
           style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}` } : {}}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className={`font-semibold flex items-center gap-2 ${isRetro ? '' : 'text-sm'}`} style={isRetro ? { fontSize: '1.05rem', letterSpacing: '0.08em', fontWeight: 500 } : {}}>
+              <h3 className={`font-semibold flex items-center gap-2 ${isRetro ? '' : 'text-sm'}`} style={isRetro ? { fontSize: '1.15rem', letterSpacing: '0.08em', fontWeight: 500 } : {}}>
                 <Bell className="w-4 h-4" style={isRetro ? { color: retroColors.textDim } : {}} />
-                <span style={isRetro ? { color: retroColors.textPrimary } : {}}>
+                <span style={isRetro ? { color: retroColors.header } : {}}>
                   {isRetro ? 'SIGNAL INTERCEPTS' : 'Signal Alerts'}
                 </span>
-                {isRetro && <span style={{ color: retroColors.textDim, fontSize: '0.7rem', marginLeft: '0.5rem', fontWeight: 400 }}>24H</span>}
+                {isRetro && <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>24H</span>}
               </h3>
               <button
                 onClick={() => setAlerts([])}
@@ -1176,11 +1192,12 @@ setMarketStats({
                 style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}`, marginTop: '0.5rem' } : {}}
               >
                 <div className="flex items-center justify-between mb-5">
-                  <h2 className={`flex items-center gap-2 ${isRetro ? '' : 'text-lg font-semibold'}`} style={isRetro ? { color: retroColors.textPrimary, fontWeight: 500, letterSpacing: '0.08em', fontSize: '1.1rem' } : {}}>
+                  <h2 className={`flex items-center gap-2 ${isRetro ? '' : 'text-lg font-semibold'}`} style={isRetro ? { color: retroColors.header, fontWeight: 500, letterSpacing: '0.08em', fontSize: '1.2rem' } : {}}>
                     <AlertCircle className="w-5 h-5" style={isRetro ? { color: retroColors.textDim } : {}} />
                     {isRetro ? 'LARGE BETS' : 'Large bets'}
+                    {isRetro && <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>24H</span>}
                   </h2>
-                  <div className="text-xs" style={isRetro ? { color: retroColors.textDim, fontSize: '0.8rem' } : {}}>
+                  <div className="text-xs" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.85rem' } : {}}>
                     {filteredBets.length} trades (≥$5k)
                   </div>
                 </div>
@@ -1192,7 +1209,7 @@ setMarketStats({
                     </p>
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-2">
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3">
                     {filteredBets.map((bet, idx) => {
                       const isWatched = watchedTraders.includes(bet.trader_address);
                       const sizeLabel = getBetSizeLabel(bet.amount);
@@ -1214,14 +1231,14 @@ setMarketStats({
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
                               {/* Row 1: Time + Size Badge + Watching */}
-                              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                <span className="text-xs font-mono" style={isRetro ? { color: retroColors.textDim } : {}}>
+                              <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+                                <span className="text-xs font-mono" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.9rem' } : {}}>
                                   {formatTimestamp(bet.timestamp)}
                                 </span>
                                 {sizeLabel && (
                                   <span
                                     className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${isRetro ? '' : sizeLabel.color}`}
-                                    style={isRetro ? { border: `1px solid ${retroColors.warn}`, color: retroColors.warn } : {}}
+                                    style={isRetro ? { border: `1px solid rgba(184, 160, 80, 0.4)`, color: retroColors.warn, fontSize: '0.7rem' } : {}}
                                   >
                                     {sizeLabel.label}
                                   </span>
@@ -1229,39 +1246,39 @@ setMarketStats({
                                 {isWatched && (
                                   <span
                                     className="inline-flex items-center gap-1 text-xs"
-                                    style={isRetro ? { color: retroColors.textBright } : {}}
+                                    style={isRetro ? { color: retroColors.text } : {}}
                                   >
-                                    <Star className="w-3.5 h-3.5" style={isRetro ? { fill: retroColors.textBright, color: retroColors.textBright } : { fill: 'rgb(103, 232, 249)', color: 'rgb(103, 232, 249)' }} />
+                                    <Star className="w-3.5 h-3.5" style={isRetro ? { fill: retroColors.text, color: retroColors.text } : { fill: 'rgb(103, 232, 249)', color: 'rgb(103, 232, 249)' }} />
                                     {isRetro ? 'WATCHING' : 'Watching'}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Market Title - softer than numbers */}
+                              {/* Market Title - primary tier, readable at a glance */}
                               <a
                                 href={bet.market_slug ? `https://polymarket.com/market/${bet.market_slug}` : undefined}
                                 target="_blank"
                                 rel="noreferrer"
                                 className={`font-semibold mb-2 hover:underline block transition-colors line-clamp-2 ${isRetro ? '' : 'text-base hover:text-cyan-400'}`}
-                                style={isRetro ? { color: retroColors.textPrimary, fontWeight: 500, fontSize: '1.05rem', lineHeight: 1.3 } : {}}
+                                style={isRetro ? { color: retroColors.textPrimary, fontWeight: 500, fontSize: '1.15rem', lineHeight: 1.35 } : {}}
                               >
                                 {formatGameTitle(bet.market_title, bet.market_slug) || bet.market_id}
                               </a>
 
-                              {/* Outcome badge - muted outlines, not glowing */}
+                              {/* Outcome badge - etched outlines, not glowing */}
                               <div
                                 className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm font-bold ${isRetro ? '' : (sideInfo.label === 'BUY' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-rose-500/10 border-rose-500/40')}`}
                                 style={isRetro ? {
-                                  border: `1px solid ${sideInfo.label === 'BUY' ? retroColors.textDim : 'rgba(184, 160, 80, 0.5)'}`,
-                                  backgroundColor: 'rgba(0,0,0,0.15)'
+                                  border: `1px solid ${sideInfo.label === 'BUY' ? retroColors.borderEtched : 'rgba(160, 140, 70, 0.3)'}`,
+                                  backgroundColor: 'rgba(0,0,0,0.2)'
                                 } : {}}
                               >
-                                <span style={isRetro ? { color: sideInfo.label === 'BUY' ? retroColors.text : retroColors.warn } : { color: sideInfo.label === 'BUY' ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}>
+                                <span style={isRetro ? { color: sideInfo.label === 'BUY' ? retroColors.textDim : 'rgba(184, 160, 80, 0.8)', fontSize: '0.95rem' } : { color: sideInfo.label === 'BUY' ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}>
                                   {sideInfo.label}
                                 </span>
                                 <span
                                   className="font-bold"
-                                  style={isRetro ? { color: retroColors.text } : { color: 'rgb(226, 232, 240)' }}
+                                  style={isRetro ? { color: retroColors.text, fontSize: '1rem' } : { color: 'rgb(226, 232, 240)' }}
                                 >
                                   {formatBetPosition(bet.market_title, bet.outcome)}
                                 </span>
@@ -1337,11 +1354,12 @@ setMarketStats({
                 style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}`, marginTop: '0.5rem' } : {}}
               >
                 <div className="flex items-center justify-between mb-5">
-                  <h2 className={`flex items-center gap-2 ${isRetro ? '' : 'text-lg font-semibold'}`} style={isRetro ? { color: retroColors.textPrimary, fontWeight: 500, letterSpacing: '0.08em', fontSize: '1.1rem' } : {}}>
+                  <h2 className={`flex items-center gap-2 ${isRetro ? '' : 'text-lg font-semibold'}`} style={isRetro ? { color: retroColors.header, fontWeight: 500, letterSpacing: '0.08em', fontSize: '1.2rem' } : {}}>
                     <Trophy className="w-5 h-5" style={isRetro ? { color: retroColors.textDim } : {}} />
                     {isRetro
                       ? (profitabilityTraders.length >= 5 ? 'TOP PERFORMERS' : 'SMART MONEY')
                       : (profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)')}
+                    {isRetro && <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>7D</span>}
                   </h2>
                 </div>
 
@@ -1376,9 +1394,10 @@ setMarketStats({
                                 : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
                           }`}
                           style={isRetro ? {
-                            backgroundColor: traderSortBy === 'total_pl' ? retroColors.textBright : retroColors.bg,
+                            backgroundColor: traderSortBy === 'total_pl' ? retroColors.text : retroColors.bg,
                             color: traderSortBy === 'total_pl' ? retroColors.bg : retroColors.textDim,
-                            border: `1px solid ${traderSortBy === 'total_pl' ? retroColors.textBright : retroColors.border}`
+                            border: `1px solid ${traderSortBy === 'total_pl' ? retroColors.text : retroColors.borderEtched}`,
+                            fontSize: '0.9rem'
                           } : {}}
                           title="Total realized profit/loss in USD from resolved markets"
                         >
@@ -1394,16 +1413,17 @@ setMarketStats({
                                 : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
                           }`}
                           style={isRetro ? {
-                            backgroundColor: traderSortBy === 'hot_streak' ? retroColors.warn : retroColors.bg,
+                            backgroundColor: traderSortBy === 'hot_streak' ? 'rgba(184, 160, 80, 0.9)' : retroColors.bg,
                             color: traderSortBy === 'hot_streak' ? retroColors.bg : retroColors.textDim,
-                            border: `1px solid ${traderSortBy === 'hot_streak' ? retroColors.warn : retroColors.border}`
+                            border: `1px solid ${traderSortBy === 'hot_streak' ? 'rgba(184, 160, 80, 0.7)' : retroColors.borderEtched}`,
+                            fontSize: '0.9rem'
                           } : {}}
                           title="Traders on a hot streak - high recent win rate and consecutive wins"
                         >
                           {isRetro ? '🔥 HOT' : '🔥 Hot Streak'}
                         </button>
                       </div>
-                      <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textDim } : {}}>
+                      <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
                         {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
                         {traderSortBy === 'hot_streak' && (isRetro ? '> RANKED BY WIN STREAK + ACCURACY' : '🔥 Ranked by winning streak + recent accuracy')}
                       </p>
@@ -1417,10 +1437,10 @@ setMarketStats({
                     {isRetro ? '> NO TRADER DATA YET' : 'No trader data yet'}
                   </p>
                 ) : (
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-2">
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3">
                     {visibleTraders.map((trader, index) => {
                       const isWatched = watchedTraders.includes(trader.address);
-                      const rankColor = index === 0 ? (isRetro ? retroColors.warn : 'text-amber-400') : index === 1 ? (isRetro ? retroColors.text : 'text-slate-300') : index === 2 ? (isRetro ? retroColors.warn : 'text-orange-600') : (isRetro ? retroColors.textDim : 'text-slate-500');
+                      const rankColor = index === 0 ? (isRetro ? retroColors.warn : 'text-amber-400') : index === 1 ? (isRetro ? retroColors.textDim : 'text-slate-300') : index === 2 ? (isRetro ? 'rgba(184, 160, 80, 0.7)' : 'text-orange-600') : (isRetro ? retroColors.textMuted : 'text-slate-500');
                       return (
                         <div
                           key={trader.address}
@@ -1443,18 +1463,18 @@ setMarketStats({
                             <div className="flex items-center gap-2 min-w-0">
                               <span
                                 className={`text-sm font-bold min-w-[24px] ${isRetro ? '' : rankColor}`}
-                                style={isRetro ? { color: rankColor } : {}}
+                                style={isRetro ? { color: rankColor, fontSize: '1rem' } : {}}
                               >
                                 #{index + 1}
                               </span>
                               <div className="min-w-0">
-                                <p className="font-mono text-sm truncate" style={isRetro ? { color: retroColors.text } : {}}>
+                                <p className="font-mono text-sm truncate" style={isRetro ? { color: retroColors.text, fontSize: '1rem' } : {}}>
                                   {trader.address?.slice(0, 10)}…{trader.address?.slice(-4)}
                                 </p>
-                                <p className="text-xs mt-0.5 font-mono" style={isRetro ? { color: retroColors.textDim } : {}}>
-                                  <span style={isRetro ? { color: retroColors.numbers } : { color: 'rgb(52, 211, 153)' }}>{trader.wins || 0}W</span>
-                                  {' · '}
-                                  <span style={isRetro ? { color: retroColors.loss } : { color: 'rgb(251, 113, 133)' }}>{trader.losses || 0}L</span>
+                                <p className="text-xs mt-1 font-mono" style={isRetro ? { fontSize: '0.95rem' } : {}}>
+                                  <span style={isRetro ? { color: retroColors.numbers, fontWeight: 500 } : { color: 'rgb(52, 211, 153)' }}>{trader.wins || 0}W</span>
+                                  <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
+                                  <span style={isRetro ? { color: retroColors.loss, fontWeight: 500 } : { color: 'rgb(251, 113, 133)' }}>{trader.losses || 0}L</span>
                                 </p>
                               </div>
                             </div>
@@ -1702,11 +1722,11 @@ setMarketStats({
               <div className="mb-6">
                 <h4
                   className={isRetro ? 'flex items-center gap-2' : 'text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2'}
-                  style={isRetro ? { color: retroColors.accent, fontSize: '1rem', marginBottom: '1rem', letterSpacing: '0.05em' } : {}}
+                  style={isRetro ? { color: retroColors.header, fontSize: '1.1rem', marginBottom: '1rem', letterSpacing: '0.05em' } : {}}
                 >
-                  <Activity className="w-4 h-4" style={isRetro ? { color: retroColors.text } : {}} />
+                  <Activity className="w-4 h-4" style={isRetro ? { color: retroColors.textDim } : {}} />
                   RECENT TRADES
-                  <span style={isRetro ? { color: retroColors.textDim, fontSize: '0.8rem', fontWeight: 400 } : {}}>(last 100)</span>
+                  <span style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem', fontWeight: 400 } : {}}>(last 100)</span>
                 </h4>
 
                 {loadingTrades ? (
@@ -1755,11 +1775,11 @@ setMarketStats({
 
                       // Retro styling with left border indicator
                       const retroCardStyle = isRetro ? {
-                        backgroundColor: retroColors.bg,
+                        backgroundColor: retroColors.surfaceDark,
                         border: `1px solid ${retroColors.border}`,
                         borderLeft: `3px solid ${isWin ? retroColors.win : isLoss ? retroColors.loss : retroColors.warn}`,
                         borderRadius: '2px',
-                        padding: '1rem',
+                        padding: '1rem 1.25rem',
                       } : {};
 
                       return (
@@ -1775,13 +1795,13 @@ setMarketStats({
                               target="_blank"
                               rel="noreferrer"
                               className={isRetro ? 'block' : 'text-sm font-medium text-slate-200 hover:underline block truncate'}
-                              style={isRetro ? { color: retroColors.textPrimary, fontSize: '0.95rem', fontWeight: 400, lineHeight: 1.3 } : {}}
+                              style={isRetro ? { color: retroColors.textPrimary, fontSize: '1.05rem', fontWeight: 500, lineHeight: 1.35 } : {}}
                             >
                               {formatGameTitle(trade.market_title, trade.market_slug) || trade.market_id}
                             </a>
                             <p
                               className={isRetro ? '' : 'text-xs text-slate-500 mt-1'}
-                              style={isRetro ? { color: retroColors.textDim, fontSize: '0.75rem', marginTop: '0.35rem' } : {}}
+                              style={isRetro ? { color: retroColors.textMuted, fontSize: '0.85rem', marginTop: '0.4rem' } : {}}
                             >
                               {formatTimestamp(trade.timestamp)}
                             </p>
@@ -1799,10 +1819,10 @@ setMarketStats({
                                 display: 'inline-block',
                                 marginTop: '0.25rem',
                                 padding: '0.125rem 0.5rem',
-                                fontSize: '0.65rem',
+                                fontSize: '0.7rem',
                                 letterSpacing: '0.05em',
-                                border: `1px solid ${retroColors.textDim}`,
-                                color: retroColors.text,
+                                border: `1px solid ${retroColors.borderEtched}`,
+                                color: retroColors.textDim,
                               } : {}}
                             >
                               {tradeSideInfo.label}
@@ -1811,10 +1831,10 @@ setMarketStats({
                         </div>
                         <div
                           className={isRetro ? 'flex items-center justify-between' : 'flex items-center justify-between text-xs'}
-                          style={isRetro ? { fontSize: '0.8rem', marginTop: '0.5rem' } : {}}
+                          style={isRetro ? { fontSize: '0.9rem', marginTop: '0.75rem' } : {}}
                         >
                           <span style={isRetro ? { color: retroColors.textDim } : {}} className={isRetro ? '' : 'text-slate-500'}>
-                            Bet: <span style={isRetro ? { color: isWin ? retroColors.numbers : isLoss ? retroColors.loss : retroColors.textDim, fontWeight: isWin ? 600 : 400 } : {}} className={isRetro ? '' : (isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-400')}>{formatBetPosition(trade.market_title, trade.outcome)}</span>
+                            Bet: <span style={isRetro ? { color: isWin ? retroColors.numbers : isLoss ? retroColors.loss : retroColors.text, fontWeight: isWin ? 600 : 400 } : {}} className={isRetro ? '' : (isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-400')}>{formatBetPosition(trade.market_title, trade.outcome)}</span>
                             {isWin && <span style={isRetro ? { color: retroColors.numbers, marginLeft: '0.5rem', fontWeight: 600 } : {}} className={isRetro ? '' : 'ml-2 text-emerald-400 font-semibold'}>✓ WIN</span>}
                             {isLoss && <span style={isRetro ? { color: retroColors.loss, marginLeft: '0.5rem', fontWeight: 500 } : {}} className={isRetro ? '' : 'ml-2 text-rose-400 font-semibold'}>✗ LOSS</span>}
                             {!isResolved && <span style={isRetro ? { color: retroColors.warn, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-amber-500'}>(Pending)</span>}

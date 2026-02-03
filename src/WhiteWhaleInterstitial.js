@@ -5,9 +5,16 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
   const [showCursor, setShowCursor] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
   const [isFading, setIsFading] = useState(false);
+  const [sweepAngle, setSweepAngle] = useState(0);
 
-  const message = 'follow the white whale';
+  const message = 'follow the white whale.';
   const typingSpeed = 80; // ms per character
+
+  // Sonar green colors - matches main UI retroColors
+  const sonarGreen = '#4FB878';      // textPrimary equivalent
+  const sonarGreenDim = '#357A52';   // textDim equivalent
+  const sonarGreenMuted = '#2D6846'; // textMuted equivalent
+  const bgColor = '#050705';         // surfaceDark equivalent
 
   // Check if user prefers reduced motion
   const prefersReducedMotion = typeof window !== 'undefined'
@@ -45,6 +52,18 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
     };
   }, [onComplete, prefersReducedMotion, handleSkip]);
 
+  // Sonar sweep animation
+  useEffect(() => {
+    const alreadyShown = sessionStorage.getItem('whale-interstitial-shown');
+    if (alreadyShown || prefersReducedMotion) return;
+
+    const sweepInterval = setInterval(() => {
+      setSweepAngle(prev => (prev + 2) % 360);
+    }, 20);
+
+    return () => clearInterval(sweepInterval);
+  }, [prefersReducedMotion]);
+
   // Typewriter effect
   useEffect(() => {
     const alreadyShown = sessionStorage.getItem('whale-interstitial-shown');
@@ -66,7 +85,7 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
             sessionStorage.setItem('whale-interstitial-shown', 'true');
             onComplete();
           }, 800);
-        }, 1500);
+        }, 1200);
       }
     }, typingSpeed);
 
@@ -87,6 +106,13 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
     return null;
   }
 
+  // SVG sonar panel
+  const sonarSize = 320;
+  const center = sonarSize / 2;
+  const outerRadius = 140;
+  const innerRadius1 = 100;
+  const innerRadius2 = 60;
+
   return (
     <div
       className={`white-whale-interstitial ${isFading ? 'fading' : ''}`}
@@ -96,7 +122,7 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: '#050806',
+        backgroundColor: bgColor,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -105,14 +131,171 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
         transition: 'opacity 0.8s ease-out',
       }}
     >
+      {/* Vignette overlay */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.6) 100%)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* Sonar panel SVG */}
+      <svg
+        width={sonarSize}
+        height={sonarSize}
+        viewBox={`0 0 ${sonarSize} ${sonarSize}`}
+        style={{
+          position: 'absolute',
+          opacity: 0.4,
+        }}
+      >
+        {/* Outer ring */}
+        <circle
+          cx={center}
+          cy={center}
+          r={outerRadius}
+          fill="none"
+          stroke={sonarGreenMuted}
+          strokeWidth="1"
+          opacity="0.6"
+        />
+
+        {/* Middle ring */}
+        <circle
+          cx={center}
+          cy={center}
+          r={innerRadius1}
+          fill="none"
+          stroke={sonarGreenMuted}
+          strokeWidth="1"
+          opacity="0.4"
+        />
+
+        {/* Inner ring */}
+        <circle
+          cx={center}
+          cy={center}
+          r={innerRadius2}
+          fill="none"
+          stroke={sonarGreenMuted}
+          strokeWidth="1"
+          opacity="0.3"
+        />
+
+        {/* Center dot */}
+        <circle
+          cx={center}
+          cy={center}
+          r="3"
+          fill={sonarGreenDim}
+          opacity="0.6"
+        />
+
+        {/* Radial tick marks - every 30 degrees */}
+        {[...Array(12)].map((_, i) => {
+          const angle = (i * 30 * Math.PI) / 180;
+          const x1 = center + Math.cos(angle) * (outerRadius - 8);
+          const y1 = center + Math.sin(angle) * (outerRadius - 8);
+          const x2 = center + Math.cos(angle) * outerRadius;
+          const y2 = center + Math.sin(angle) * outerRadius;
+          return (
+            <line
+              key={i}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={sonarGreenMuted}
+              strokeWidth="1"
+              opacity="0.5"
+            />
+          );
+        })}
+
+        {/* Cross hairs */}
+        <line
+          x1={center - outerRadius}
+          y1={center}
+          x2={center + outerRadius}
+          y2={center}
+          stroke={sonarGreenMuted}
+          strokeWidth="0.5"
+          opacity="0.25"
+        />
+        <line
+          x1={center}
+          y1={center - outerRadius}
+          x2={center}
+          y2={center + outerRadius}
+          stroke={sonarGreenMuted}
+          strokeWidth="0.5"
+          opacity="0.25"
+        />
+
+        {/* Sweep wedge - subtle gradient */}
+        <defs>
+          <linearGradient id="sweepGradient" gradientTransform={`rotate(${sweepAngle}, 0.5, 0.5)`}>
+            <stop offset="0%" stopColor={sonarGreen} stopOpacity="0.15" />
+            <stop offset="100%" stopColor={sonarGreen} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Sweep arc - 45 degree wedge */}
+        <path
+          d={`
+            M ${center} ${center}
+            L ${center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius} ${center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
+            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 45) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 45) * Math.PI) / 180) * outerRadius}
+            Z
+          `}
+          fill={`url(#sweepGradient)`}
+          style={{
+            transform: `rotate(${sweepAngle}deg)`,
+            transformOrigin: 'center',
+          }}
+        />
+
+        {/* Sweep line */}
+        <line
+          x1={center}
+          y1={center}
+          x2={center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius}
+          y2={center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
+          stroke={sonarGreen}
+          strokeWidth="1"
+          opacity="0.4"
+        />
+
+        {/* Random noise dots - subtle */}
+        {[...Array(8)].map((_, i) => {
+          const angle = (i * 47 + sweepAngle * 0.3) * Math.PI / 180;
+          const dist = 30 + (i * 17) % 90;
+          return (
+            <circle
+              key={`noise-${i}`}
+              cx={center + Math.cos(angle) * dist}
+              cy={center + Math.sin(angle) * dist}
+              r="1.5"
+              fill={sonarGreenDim}
+              opacity={0.2 + (Math.sin(sweepAngle * 0.05 + i) * 0.15)}
+            />
+          );
+        })}
+      </svg>
+
+      {/* Main text */}
       <div
         className="interstitial-text"
         style={{
           fontFamily: "'VT323', monospace",
-          fontSize: 'clamp(1.5rem, 5vw, 3rem)',
-          color: '#7CFF9B',
-          letterSpacing: '0.15em',
-          textShadow: '0 0 20px rgba(124, 255, 155, 0.5)',
+          fontSize: 'clamp(1.5rem, 5vw, 2.5rem)',
+          color: sonarGreen,
+          letterSpacing: '0.12em',
+          textShadow: `0 0 12px rgba(79, 184, 120, 0.3)`,
+          position: 'relative',
+          zIndex: 1,
         }}
       >
         {displayedText}
@@ -120,7 +303,7 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
           style={{
             opacity: showCursor ? 1 : 0,
             marginLeft: '2px',
-            color: '#7CFF9B',
+            color: sonarGreen,
           }}
         >
           _
@@ -132,11 +315,11 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
         style={{
           position: 'absolute',
           bottom: '2rem',
-          fontSize: '0.875rem',
-          color: '#3AAE66',
-          opacity: 0.6,
+          fontSize: '0.9rem',
+          color: sonarGreenDim,
+          opacity: 0.5,
           fontFamily: "'VT323', monospace",
-          letterSpacing: '0.1em',
+          letterSpacing: '0.08em',
         }}
       >
         press any key to skip
