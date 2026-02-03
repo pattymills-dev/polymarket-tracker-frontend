@@ -374,55 +374,71 @@ const SonarInterstitial = ({ onComplete }) => {
         })}
       </svg>
 
-      {/* Text content */}
+      {/* Boot sequence - absolutely positioned */}
       <div
         style={{
-          position: 'relative',
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
           zIndex: 10,
           textAlign: 'center',
           padding: '0 1.5rem',
           maxWidth: '600px',
+          width: '100%',
+          opacity: phase === 'boot' ? 1 : 0,
+          transition: 'opacity 0.3s ease-out',
+          pointerEvents: phase === 'boot' ? 'auto' : 'none',
         }}
       >
-        {/* Boot sequence lines */}
-        {phase === 'boot' && (
-          <div
-            style={{
-              fontSize: 'clamp(0.9rem, 2.5vw, 1.1rem)',
-              color: colors.sonarGreenDim,
-              letterSpacing: '0.05em',
-              lineHeight: 1.8,
-              minHeight: '180px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}
-          >
-            {bootLines.map((line, idx) => (
-              <div key={idx} style={{ opacity: line ? 0.7 : 0 }}>
-                {line}
-              </div>
-            ))}
+        <div
+          style={{
+            fontSize: 'clamp(0.9rem, 2.5vw, 1.1rem)',
+            color: colors.sonarGreenDim,
+            letterSpacing: '0.05em',
+            lineHeight: 1.8,
+          }}
+        >
+          {bootLines.map((line, idx) => (
+            <div key={idx} style={{ opacity: line ? 0.7 : 0, minHeight: '1.8em' }}>
+              {line}
+            </div>
+          ))}
+          {phase === 'boot' && (
             <span style={{ opacity: showCursor ? 0.7 : 0 }}>_</span>
-          </div>
-        )}
+          )}
+        </div>
+      </div>
 
-        {/* Main message */}
-        {phase === 'message' && (
-          <div
-            style={{
-              fontSize: 'clamp(1.6rem, 6vw, 2.8rem)',
-              color: colors.sonarGreen,
-              letterSpacing: '0.12em',
-              textShadow: `0 0 15px rgba(79, 184, 120, 0.3)`,
-            }}
-          >
-            {displayedText}
-            {!isComplete && (
-              <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
-            )}
-          </div>
-        )}
+      {/* Main message - absolutely positioned */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 10,
+          textAlign: 'center',
+          padding: '0 1.5rem',
+          width: '100%',
+          opacity: phase === 'message' ? 1 : 0,
+          transition: 'opacity 0.3s ease-in',
+          pointerEvents: phase === 'message' ? 'auto' : 'none',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 'clamp(1.6rem, 6vw, 2.8rem)',
+            color: colors.sonarGreen,
+            letterSpacing: '0.12em',
+            textShadow: `0 0 15px rgba(79, 184, 120, 0.3)`,
+          }}
+        >
+          {displayedText}
+          {phase === 'message' && !isComplete && (
+            <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
+          )}
+        </div>
       </div>
 
       {/* Skip hint */}
