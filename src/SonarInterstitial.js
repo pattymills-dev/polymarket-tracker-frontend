@@ -1,41 +1,31 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
 /**
- * Sonar Interstitial
- * Minimal intro sequence - restrained, functional
+ * Sonar Interstitial v2
+ * Subdued sonar panel effect with matching main UI colors
  */
 const SonarInterstitial = ({ onComplete }) => {
-  const [phase, setPhase] = useState('boot'); // 'boot' | 'typing' | 'sonar' | 'done'
-  const [bootMessages, setBootMessages] = useState([]);
   const [displayedText, setDisplayedText] = useState('');
   const [showCursor, setShowCursor] = useState(true);
+  const [isComplete, setIsComplete] = useState(false);
   const [isFading, setIsFading] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
+  const [sweepAngle, setSweepAngle] = useState(0);
 
-  const message = 'follow the white whale';
-  const typingSpeed = 50; // ms per character
+  const message = 'follow the white whale.';
+  const typingSpeed = 70; // ms per character
 
-  // Full 6-line boot sequence
-  const bootSequence = [
-    'POLYMARKET TERMINAL v2.0',
-    'INITIALIZING MARKET SCANNER...',
-    'LOADING WHALE DETECTOR...',
-    'CALIBRATING PREDICTION MODELS...',
-    'ESTABLISHING DATABASE LINK...',
-    'SYSTEM READY',
-  ];
+  // Sonar green colors - matches main UI retroColors exactly
+  const colors = {
+    bg: '#050705',              // surfaceDark
+    sonarGreen: '#4FB878',      // textPrimary - main text color
+    sonarGreenDim: '#357A52',   // textDim - secondary elements
+    sonarGreenMuted: '#2D6846', // textMuted - subtle elements
+  };
 
   // Check if user prefers reduced motion
   const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  // Console colors - muted, restrained
-  const colors = {
-    bg: '#0a0c0a',
-    text: '#708070',
-    textBright: '#8faa8f',
-    textDim: '#4a5a4a',
-  };
 
   // Skip handler
   const handleSkip = useCallback(() => {
@@ -48,34 +38,24 @@ const SonarInterstitial = ({ onComplete }) => {
     }
   }, [isFading, onComplete]);
 
-  // Boot sequence effect
+  // Sonar sweep animation
+  useEffect(() => {
+    if (prefersReducedMotion || !isVisible) return;
+
+    const sweepInterval = setInterval(() => {
+      setSweepAngle(prev => (prev + 2) % 360);
+    }, 20);
+
+    return () => clearInterval(sweepInterval);
+  }, [prefersReducedMotion, isVisible]);
+
+  // Typewriter effect
   useEffect(() => {
     if (prefersReducedMotion) {
       setIsVisible(false);
       onComplete();
       return;
     }
-
-    if (phase !== 'boot') return;
-
-    let index = 0;
-    const bootInterval = setInterval(() => {
-      if (index < bootSequence.length) {
-        setBootMessages(prev => [...prev, bootSequence[index]]);
-        index++;
-      } else {
-        clearInterval(bootInterval);
-        setTimeout(() => setPhase('typing'), 300);
-      }
-    }, 100);
-
-    return () => clearInterval(bootInterval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, prefersReducedMotion]);
-
-  // Typewriter effect
-  useEffect(() => {
-    if (phase !== 'typing') return;
 
     let charIndex = 0;
     const typeInterval = setInterval(() => {
@@ -84,27 +64,21 @@ const SonarInterstitial = ({ onComplete }) => {
         charIndex++;
       } else {
         clearInterval(typeInterval);
-        setTimeout(() => setPhase('sonar'), 200);
+        setIsComplete(true);
+
+        // Wait then fade out
+        setTimeout(() => {
+          setIsFading(true);
+          setTimeout(() => {
+            setIsVisible(false);
+            onComplete();
+          }, 600);
+        }, 1000);
       }
     }, typingSpeed);
 
     return () => clearInterval(typeInterval);
-  }, [phase]);
-
-  // Sonar phase - quick completion
-  useEffect(() => {
-    if (phase !== 'sonar') return;
-
-    const timer = setTimeout(() => {
-      setIsFading(true);
-      setTimeout(() => {
-        setIsVisible(false);
-        onComplete();
-      }, 400);
-    }, 1400);
-
-    return () => clearTimeout(timer);
-  }, [phase, onComplete]);
+  }, [prefersReducedMotion, onComplete]);
 
   // Cursor blink
   useEffect(() => {
@@ -134,6 +108,13 @@ const SonarInterstitial = ({ onComplete }) => {
     return null;
   }
 
+  // SVG sonar panel dimensions
+  const sonarSize = 300;
+  const center = sonarSize / 2;
+  const outerRadius = 130;
+  const innerRadius1 = 95;
+  const innerRadius2 = 55;
+
   return (
     <div
       style={{
@@ -144,148 +125,201 @@ const SonarInterstitial = ({ onComplete }) => {
         height: '100%',
         backgroundColor: colors.bg,
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 9999,
         opacity: isFading ? 0 : 1,
-        transition: 'opacity 0.4s ease-out',
+        transition: 'opacity 0.6s ease-out',
         overflow: 'hidden',
         fontFamily: "'VT323', monospace",
       }}
     >
-      {/* Sonar ring - fixed positioning for mobile */}
-      {phase === 'sonar' && (
+      {/* Vignette overlay */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'radial-gradient(ellipse at center, transparent 25%, rgba(0,0,0,0.5) 100%)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* Sonar panel SVG */}
+      <svg
+        width={sonarSize}
+        height={sonarSize}
+        viewBox={`0 0 ${sonarSize} ${sonarSize}`}
+        style={{
+          position: 'absolute',
+          opacity: 0.35,
+        }}
+      >
+        {/* Outer ring */}
+        <circle
+          cx={center}
+          cy={center}
+          r={outerRadius}
+          fill="none"
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="1"
+          opacity="0.6"
+        />
+
+        {/* Middle ring */}
+        <circle
+          cx={center}
+          cy={center}
+          r={innerRadius1}
+          fill="none"
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="1"
+          opacity="0.4"
+        />
+
+        {/* Inner ring */}
+        <circle
+          cx={center}
+          cy={center}
+          r={innerRadius2}
+          fill="none"
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="1"
+          opacity="0.3"
+        />
+
+        {/* Center dot */}
+        <circle
+          cx={center}
+          cy={center}
+          r="3"
+          fill={colors.sonarGreenDim}
+          opacity="0.5"
+        />
+
+        {/* Radial tick marks - every 30 degrees */}
+        {[...Array(12)].map((_, i) => {
+          const angle = (i * 30 * Math.PI) / 180;
+          const x1 = center + Math.cos(angle) * (outerRadius - 8);
+          const y1 = center + Math.sin(angle) * (outerRadius - 8);
+          const x2 = center + Math.cos(angle) * outerRadius;
+          const y2 = center + Math.sin(angle) * outerRadius;
+          return (
+            <line
+              key={i}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={colors.sonarGreenMuted}
+              strokeWidth="1"
+              opacity="0.45"
+            />
+          );
+        })}
+
+        {/* Cross hairs */}
+        <line
+          x1={center - outerRadius}
+          y1={center}
+          x2={center + outerRadius}
+          y2={center}
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="0.5"
+          opacity="0.2"
+        />
+        <line
+          x1={center}
+          y1={center - outerRadius}
+          x2={center}
+          y2={center + outerRadius}
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="0.5"
+          opacity="0.2"
+        />
+
+        {/* Sweep line */}
+        <line
+          x1={center}
+          y1={center}
+          x2={center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius}
+          y2={center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
+          stroke={colors.sonarGreen}
+          strokeWidth="1"
+          opacity="0.35"
+        />
+
+        {/* Sweep wedge gradient */}
+        <defs>
+          <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={colors.sonarGreen} stopOpacity="0.12" />
+            <stop offset="100%" stopColor={colors.sonarGreen} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Sweep wedge - 40 degree trailing arc */}
+        <path
+          d={`
+            M ${center} ${center}
+            L ${center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius} ${center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
+            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 40) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 40) * Math.PI) / 180) * outerRadius}
+            Z
+          `}
+          fill="url(#sweepGrad)"
+        />
+
+        {/* Subtle noise dots */}
+        {[...Array(6)].map((_, i) => {
+          const dotAngle = (i * 53 + sweepAngle * 0.25) * Math.PI / 180;
+          const dist = 35 + (i * 19) % 80;
+          return (
+            <circle
+              key={`dot-${i}`}
+              cx={center + Math.cos(dotAngle) * dist}
+              cy={center + Math.sin(dotAngle) * dist}
+              r="1.5"
+              fill={colors.sonarGreenDim}
+              opacity={0.15 + (Math.sin(sweepAngle * 0.04 + i) * 0.1)}
+            />
+          );
+        })}
+      </svg>
+
+      {/* Main text */}
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          textAlign: 'center',
+          padding: '0 1rem',
+        }}
+      >
         <div
           style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: '200vw',
-            height: '200vw',
-            maxWidth: '200vh',
-            maxHeight: '200vh',
-            pointerEvents: 'none',
+            fontSize: 'clamp(1.4rem, 5vw, 2.4rem)',
+            color: colors.sonarGreen,
+            letterSpacing: '0.1em',
+            textShadow: `0 0 10px rgba(79, 184, 120, 0.25)`,
           }}
         >
-          <svg
-            width="100%"
-            height="100%"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="xMidYMid meet"
-          >
-            <circle
-              cx="50"
-              cy="50"
-              r="2"
-              fill="none"
-              stroke={colors.text}
-              strokeWidth="0.15"
-              style={{
-                animation: 'sonar-pulse 1.4s ease-out forwards',
-                transformOrigin: 'center',
-              }}
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r="2"
-              fill="none"
-              stroke={colors.textDim}
-              strokeWidth="0.1"
-              style={{
-                animation: 'sonar-pulse 1.4s ease-out 0.2s forwards',
-                transformOrigin: 'center',
-                opacity: 0,
-              }}
-            />
-          </svg>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes sonar-pulse {
-          0% {
-            r: 2;
-            opacity: 0.6;
-            stroke-width: 0.2;
-          }
-          100% {
-            r: 48;
-            opacity: 0;
-            stroke-width: 0.02;
-          }
-        }
-      `}</style>
-
-      {/* Boot Messages */}
-      {phase === 'boot' && (
-        <div style={{ textAlign: 'left', width: '90%', maxWidth: '320px', padding: '0 1rem' }}>
-          {bootMessages.map((msg, i) => (
-            <div
-              key={i}
-              style={{
-                color: i === bootMessages.length - 1 && bootMessages.length === bootSequence.length
-                  ? colors.textBright
-                  : colors.text,
-                fontSize: '0.9rem',
-                marginBottom: '0.2rem',
-                letterSpacing: '0.02em',
-              }}
-            >
-              &gt; {msg}
-            </div>
-          ))}
-          {bootMessages.length < bootSequence.length && (
-            <span style={{ color: colors.text, opacity: showCursor ? 1 : 0 }}>█</span>
+          {displayedText}
+          {!isComplete && (
+            <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
           )}
         </div>
-      )}
-
-      {/* Main Text */}
-      {(phase === 'typing' || phase === 'sonar') && (
-        <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: '0 1rem' }}>
-          <div
-            style={{
-              fontSize: 'clamp(1.25rem, 5vw, 2.5rem)',
-              color: colors.textBright,
-              letterSpacing: '0.12em',
-            }}
-          >
-            {displayedText}
-            {phase === 'typing' && (
-              <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
-            )}
-          </div>
-
-          {phase === 'sonar' && (
-            <div
-              style={{
-                fontSize: 'clamp(0.7rem, 2vw, 0.9rem)',
-                color: colors.textDim,
-                letterSpacing: '0.08em',
-                marginTop: '0.75rem',
-              }}
-            >
-              scanning...
-            </div>
-          )}
-        </div>
-      )}
+      </div>
 
       {/* Skip hint */}
       <div
         style={{
           position: 'absolute',
           bottom: '1.5rem',
-          fontSize: '0.7rem',
-          color: colors.textDim,
-          opacity: 0.3,
-          letterSpacing: '0.08em',
+          fontSize: '0.85rem',
+          color: colors.sonarGreenDim,
+          opacity: 0.4,
+          letterSpacing: '0.06em',
         }}
       >
-        tap to skip
+        press any key to skip
       </div>
     </div>
   );

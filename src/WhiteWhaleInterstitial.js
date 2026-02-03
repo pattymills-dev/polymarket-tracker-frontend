@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
+// Sonar terminal intro interstitial - v2
 const WhiteWhaleInterstitial = ({ onComplete }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [showCursor, setShowCursor] = useState(true);
