@@ -5,31 +5,40 @@
 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 
 /* ============================================
-   UNIFIED PALETTE - No blue, green-biased darks
-   - bg: #060908 (near-black, green cast)
-   - surface: #0b100d (recessed panels)
-   - surfaceAlt: #0e1410 (slightly raised)
-   - border: rgba(90, 200, 140, 0.15)
-   - primary: #5a8a6a (muted operational green)
-   - bright: #6ddb8a (phosphor green - emphasis only)
-   - dim: #3a5a48 (secondary text)
-   - accent: #c9a84b (warm amber for warnings)
-   - danger: #b85c5c (muted red)
+   UNIFIED PALETTE - Desaturated phosphor green
+   Matches App.js retroColors exactly
+   - bg: #070907 (near-black, subtle green cast)
+   - surface: #0a0d0a (slightly elevated panels)
+   - surfaceDark: #050705 (recessed/darker)
+   - numbers: #5FD090 (brightest - numbers only)
+   - textPrimary: #4FB878 (headers, titles)
+   - text: #45A06A (body text)
+   - textDim: #357A52 (timestamps, metadata)
+   - header: #52C080 (section headers)
+   - warn: #B8A050 (pending/amber)
+   - loss: #A06060 (muted red)
    ============================================ */
 
 :root {
-  --retro-bg: #060908;
-  --retro-surface: #0b100d;
-  --retro-surface-alt: #0e1410;
-  --retro-border: rgba(90, 200, 140, 0.12);
-  --retro-border-hover: rgba(90, 200, 140, 0.25);
-  --retro-primary: #5a8a6a;
-  --retro-bright: #6ddb8a;
-  --retro-dim: #3a5a48;
-  --retro-accent: #c9a84b;
-  --retro-danger: #b85c5c;
-  --retro-glow: rgba(109, 219, 138, 0.25);
-  --retro-glow-accent: rgba(201, 168, 75, 0.25);
+  --retro-bg: #070907;
+  --retro-surface: #0a0d0a;
+  --retro-surface-dark: #050705;
+  --retro-border: rgba(70, 120, 85, 0.15);
+  --retro-border-hover: rgba(85, 140, 100, 0.25);
+  --retro-border-etched: rgba(60, 100, 75, 0.12);
+  --retro-numbers: #5FD090;
+  --retro-primary: #4FB878;
+  --retro-text: #45A06A;
+  --retro-bright: #4AAE70;
+  --retro-dim: #357A52;
+  --retro-muted: #2D6846;
+  --retro-header: #52C080;
+  --retro-accent: #B8A050;
+  --retro-danger: #A06060;
+  --retro-win: #5FD090;
+  --retro-loss: #A06060;
+  --retro-glow: rgba(80, 160, 110, 0.04);
+  --retro-glow-accent: rgba(184, 160, 80, 0.15);
 }
 
 /* ============================================
@@ -43,7 +52,7 @@
 .retro-theme body {
   font-family: 'VT323', monospace;
   background-color: var(--retro-bg);
-  color: var(--retro-primary);
+  color: var(--retro-text);
   font-size: 18px;
   letter-spacing: 0.02em;
   line-height: 1.5;
@@ -93,11 +102,12 @@
    TYPOGRAPHY - Muted base, bright for emphasis
    ============================================ */
 
+/* Base text - use inherit to allow inline styles to work */
 .retro-theme,
 .retro-theme p,
 .retro-theme span,
 .retro-theme div {
-  color: var(--retro-primary);
+  color: inherit;
   text-shadow: none;
 }
 
@@ -105,19 +115,19 @@
 .retro-theme h2,
 .retro-theme h3,
 .retro-theme .retro-heading {
-  color: var(--retro-bright);
+  color: var(--retro-header);
   text-shadow: none;
   font-weight: normal;
   letter-spacing: 0.05em;
 }
 
 .retro-theme .retro-emphasis {
-  color: var(--retro-bright);
+  color: var(--retro-primary);
   text-shadow: none;
 }
 
 .retro-theme .retro-glow-active {
-  color: var(--retro-bright);
+  color: var(--retro-numbers);
   text-shadow: 0 0 6px var(--retro-glow);
 }
 
@@ -135,13 +145,13 @@
 }
 
 .retro-theme .retro-number {
-  color: var(--retro-bright);
+  color: var(--retro-numbers);
   text-shadow: none;
   font-weight: normal;
 }
 
 .retro-theme .retro-number-alert {
-  color: var(--retro-bright);
+  color: var(--retro-numbers);
   text-shadow: 0 0 5px var(--retro-glow);
 }
 
@@ -165,12 +175,12 @@
 }
 
 .retro-theme .retro-card-active {
-  border-color: var(--retro-primary);
+  border-color: var(--retro-text);
 }
 
 .retro-theme .retro-card-alert {
-  border-color: var(--retro-bright);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 8px rgba(109, 219, 138, 0.1);
+  border-color: var(--retro-numbers);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 8px rgba(95, 208, 144, 0.08);
 }
 
 .retro-theme .retro-card-whale {
@@ -196,7 +206,7 @@
 
 .retro-theme .retro-panel-header {
   font-size: 1.125rem;
-  color: var(--retro-primary);
+  color: var(--retro-header);
   text-shadow: none;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
@@ -212,7 +222,7 @@
 .retro-theme .retro-button {
   background: transparent;
   border: 1px solid var(--retro-dim);
-  color: var(--retro-primary);
+  color: var(--retro-text);
   padding: 0.5rem 1rem;
   font-family: 'VT323', monospace;
   font-size: 1rem;
@@ -224,17 +234,17 @@
 
 .retro-theme .retro-button:hover,
 .retro-theme .retro-button:focus {
-  border-color: var(--retro-bright);
-  color: var(--retro-bright);
-  background: rgba(90, 138, 106, 0.06);
-  box-shadow: 0 0 6px rgba(109, 219, 138, 0.15);
+  border-color: var(--retro-primary);
+  color: var(--retro-primary);
+  background: rgba(79, 184, 120, 0.06);
+  box-shadow: none;
   outline: none;
 }
 
 .retro-theme .retro-button-active {
-  background: rgba(90, 138, 106, 0.1);
-  border-color: var(--retro-primary);
-  color: var(--retro-bright);
+  background: rgba(69, 160, 106, 0.1);
+  border-color: var(--retro-text);
+  color: var(--retro-primary);
 }
 
 /* ============================================
@@ -251,24 +261,24 @@
 
 .retro-theme .retro-value {
   font-size: 1.125rem;
-  color: var(--retro-primary);
+  color: var(--retro-text);
   text-shadow: none;
 }
 
 .retro-theme .retro-value-lg {
   font-size: 1.5rem;
-  color: var(--retro-bright);
+  color: var(--retro-numbers);
   text-shadow: none;
 }
 
 .retro-theme .retro-value-lg-alert {
   font-size: 1.5rem;
-  color: var(--retro-bright);
+  color: var(--retro-numbers);
   text-shadow: 0 0 6px var(--retro-glow);
 }
 
 .retro-theme .retro-positive {
-  color: var(--retro-bright);
+  color: var(--retro-win);
 }
 
 .retro-theme .retro-negative {
@@ -297,11 +307,11 @@
 .retro-theme .retro-table td {
   padding: 0.75rem;
   border-bottom: 1px solid var(--retro-border);
-  color: var(--retro-primary);
+  color: var(--retro-text);
 }
 
 .retro-theme .retro-table tr:hover {
-  background: rgba(90, 138, 106, 0.03);
+  background: rgba(69, 160, 106, 0.03);
 }
 
 /* ============================================
@@ -313,8 +323,8 @@
   padding: 0.2rem 0.5rem;
   font-size: 0.7rem;
   letter-spacing: 0.05em;
-  border: 1px solid var(--retro-dim);
-  color: var(--retro-primary);
+  border: 1px solid var(--retro-border-etched);
+  color: var(--retro-text);
   background: transparent;
 }
 
@@ -335,8 +345,8 @@
 
 @keyframes alert-row-fade {
   0% {
-    background-color: rgba(109, 219, 138, 0.08);
-    border-color: var(--retro-bright);
+    background-color: rgba(95, 208, 144, 0.06);
+    border-color: var(--retro-numbers);
   }
   100% {
     background-color: var(--retro-surface);
@@ -413,7 +423,7 @@
 }
 
 .retro-theme .retro-boot-line {
-  color: var(--retro-primary);
+  color: var(--retro-dim);
   font-size: 1.125rem;
   margin: 0.25rem 0;
   opacity: 0;
@@ -432,7 +442,7 @@
   font-family: 'VT323', monospace;
   white-space: pre;
   line-height: 1.1;
-  color: var(--retro-primary);
+  color: var(--retro-text);
   text-shadow: none;
 }
 
@@ -469,7 +479,7 @@
 }
 
 .retro-theme .retro-progress-fill {
-  background: var(--retro-bright);
+  background: var(--retro-numbers);
   border-radius: 0;
 }
 
