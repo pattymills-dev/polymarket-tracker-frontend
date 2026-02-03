@@ -171,6 +171,58 @@ const formatTimestamp = (ts) => {
   });
 };
 
+// Format game title for spread/O-U markets to show "Team vs Team" instead of "Spread: Team (-X.X)"
+// Uses the slug to extract team codes and format them properly
+// e.g., slug "nba-bkn-uta-2026-01-30-spread-home-2pt5" + title "Spread: Jazz (-2.5)" → "Nets vs Jazz"
+const formatGameTitle = (marketTitle, marketSlug) => {
+  if (!marketTitle) return marketTitle || '—';
+
+  // If it's already a clean format like "Team vs. Team" or "Team vs Team", return as-is
+  if (/vs\.?\s/i.test(marketTitle) && !marketTitle.toLowerCase().includes('spread') && !marketTitle.toLowerCase().includes('o/u')) {
+    return marketTitle;
+  }
+
+  // Try to extract team info from slug for spread markets
+  // Format: league-away-home-date-type (e.g., nba-bkn-uta-2026-01-30-spread-home-2pt5)
+  if (marketSlug) {
+    const slugMatch = marketSlug.match(/^(nba|nhl|mlb|nfl|cbb|cfb|ucl)-([a-z0-9]+)-([a-z0-9]+)-\d{4}-\d{2}-\d{2}/i);
+    if (slugMatch) {
+      const league = slugMatch[1].toUpperCase();
+      const awayCode = slugMatch[2].toUpperCase();
+      const homeCode = slugMatch[3].toUpperCase();
+
+      // League-specific team code mappings
+      const nbaTeams = {
+        'ATL': 'Hawks', 'BOS': 'Celtics', 'BKN': 'Nets', 'CHA': 'Hornets', 'CHI': 'Bulls',
+        'CLE': 'Cavaliers', 'DAL': 'Mavericks', 'DEN': 'Nuggets', 'DET': 'Pistons', 'GSW': 'Warriors',
+        'HOU': 'Rockets', 'IND': 'Pacers', 'LAC': 'Clippers', 'LAL': 'Lakers', 'MEM': 'Grizzlies',
+        'MIA': 'Heat', 'MIL': 'Bucks', 'MIN': 'Timberwolves', 'NOP': 'Pelicans', 'NYK': 'Knicks',
+        'OKC': 'Thunder', 'ORL': 'Magic', 'PHI': '76ers', 'PHX': 'Suns', 'POR': 'Trail Blazers',
+        'SAC': 'Kings', 'SAS': 'Spurs', 'TOR': 'Raptors', 'UTA': 'Jazz', 'WAS': 'Wizards',
+      };
+      const nhlTeams = {
+        'ANA': 'Ducks', 'ARI': 'Coyotes', 'BOS': 'Bruins', 'BUF': 'Sabres', 'CAR': 'Hurricanes',
+        'CBJ': 'Blue Jackets', 'CGY': 'Flames', 'CHI': 'Blackhawks', 'COL': 'Avalanche',
+        'DAL': 'Stars', 'DET': 'Red Wings', 'EDM': 'Oilers', 'FLA': 'Panthers', 'LA': 'Kings',
+        'LAS': 'Golden Knights', 'MIN': 'Wild', 'MTL': 'Canadiens', 'NJ': 'Devils', 'NSH': 'Predators',
+        'NYI': 'Islanders', 'NYR': 'Rangers', 'OTT': 'Senators', 'PHI': 'Flyers', 'PIT': 'Penguins',
+        'SEA': 'Kraken', 'SJ': 'Sharks', 'STL': 'Blues', 'TB': 'Lightning', 'TOR': 'Maple Leafs',
+        'VAN': 'Canucks', 'WPG': 'Jets', 'WSH': 'Capitals',
+      };
+
+      // Choose the right mapping based on league
+      const teamNames = league === 'NHL' ? nhlTeams : nbaTeams;
+      const awayName = teamNames[awayCode] || awayCode;
+      const homeName = teamNames[homeCode] || homeCode;
+
+      return `${awayName} vs ${homeName}`;
+    }
+  }
+
+  // Fallback: just return original title if we can't parse
+  return marketTitle;
+};
+
 // Format bet description for spread/total markets to show the actual position
 // e.g., "Spread: Celtics (-12.5)" + outcome "Bucks" → "Bucks +12.5"
 const formatBetPosition = (marketTitle, outcome) => {
@@ -1193,7 +1245,7 @@ setMarketStats({
                                 className={`font-semibold mb-2 hover:underline block transition-colors line-clamp-2 ${isRetro ? '' : 'text-base hover:text-cyan-400'}`}
                                 style={isRetro ? { color: retroColors.textPrimary, fontWeight: 500, fontSize: '1.05rem', lineHeight: 1.3 } : {}}
                               >
-                                {bet.market_title || bet.market_slug || bet.market_id}
+                                {formatGameTitle(bet.market_title, bet.market_slug) || bet.market_id}
                               </a>
 
                               {/* Outcome badge - muted outlines, not glowing */}
@@ -1725,7 +1777,7 @@ setMarketStats({
                               className={isRetro ? 'block' : 'text-sm font-medium text-slate-200 hover:underline block truncate'}
                               style={isRetro ? { color: retroColors.textPrimary, fontSize: '0.95rem', fontWeight: 400, lineHeight: 1.3 } : {}}
                             >
-                              {trade.market_title || trade.market_slug || trade.market_id}
+                              {formatGameTitle(trade.market_title, trade.market_slug) || trade.market_id}
                             </a>
                             <p
                               className={isRetro ? '' : 'text-xs text-slate-500 mt-1'}
@@ -1762,10 +1814,10 @@ setMarketStats({
                           style={isRetro ? { fontSize: '0.8rem', marginTop: '0.5rem' } : {}}
                         >
                           <span style={isRetro ? { color: retroColors.textDim } : {}} className={isRetro ? '' : 'text-slate-500'}>
-                            Bet: <span style={isRetro ? { color: isWin ? retroColors.numbers : isLoss ? retroColors.loss : retroColors.text, fontWeight: isWin ? 600 : 400 } : {}} className={isRetro ? '' : (isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-300')}>{formatBetPosition(trade.market_title, trade.outcome)}</span>
+                            Bet: <span style={isRetro ? { color: isWin ? retroColors.numbers : isLoss ? retroColors.loss : retroColors.textDim, fontWeight: isWin ? 600 : 400 } : {}} className={isRetro ? '' : (isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-400')}>{formatBetPosition(trade.market_title, trade.outcome)}</span>
                             {isWin && <span style={isRetro ? { color: retroColors.numbers, marginLeft: '0.5rem', fontWeight: 600 } : {}} className={isRetro ? '' : 'ml-2 text-emerald-400 font-semibold'}>✓ WIN</span>}
                             {isLoss && <span style={isRetro ? { color: retroColors.loss, marginLeft: '0.5rem', fontWeight: 500 } : {}} className={isRetro ? '' : 'ml-2 text-rose-400 font-semibold'}>✗ LOSS</span>}
-                            {!isResolved && <span style={isRetro ? { color: retroColors.textDim, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-slate-500'}>(Pending)</span>}
+                            {!isResolved && <span style={isRetro ? { color: retroColors.warn, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-amber-500'}>(Pending)</span>}
                           </span>
                           <span style={isRetro ? { color: retroColors.textDim } : {}} className={isRetro ? '' : 'text-slate-500'}>
                             Price: <span style={isRetro ? { color: retroColors.text } : {}} className={isRetro ? '' : 'text-slate-300'}>
