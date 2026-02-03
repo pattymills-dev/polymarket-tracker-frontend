@@ -1757,7 +1757,7 @@ setMarketStats({
                       const retroCardStyle = isRetro ? {
                         backgroundColor: retroColors.bg,
                         border: `1px solid ${retroColors.border}`,
-                        borderLeft: `3px solid ${isWin ? retroColors.win : isLoss ? retroColors.loss : retroColors.textDim}`,
+                        borderLeft: `3px solid ${isWin ? retroColors.win : isLoss ? retroColors.loss : retroColors.warn}`,
                         borderRadius: '2px',
                         padding: '1rem',
                       } : {};
