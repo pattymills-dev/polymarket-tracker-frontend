@@ -46,7 +46,7 @@ jobs:
             exit 1
           fi
 
-      - name: Sync market resolutions
+      - name: Sync market resolutions (recent trades)
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
@@ -54,9 +54,24 @@ jobs:
             "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=50&mode=recent")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
-          echo "Response: $body"
+          echo "Response (recent): $body"
           echo "HTTP Status: $http_code"
           if [ "$http_code" -ge 400 ]; then
-            echo "Error: sync-resolutions failed with status $http_code"
+            echo "Error: sync-resolutions (recent) failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Backfill market resolutions (oldest first)
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=50&mode=all")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (backfill): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: sync-resolutions (backfill) failed with status $http_code"
             exit 1
           fi
