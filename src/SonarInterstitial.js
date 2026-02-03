@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
 /**
- * Sonar Interstitial v2
- * Subdued sonar panel effect with matching main UI colors
+ * Sonar Interstitial v3
+ * Full-page sonar panel with boot sequence + "follow the white whale."
  */
 const SonarInterstitial = ({ onComplete }) => {
+  const [phase, setPhase] = useState('boot'); // 'boot' | 'message'
+  const [bootLines, setBootLines] = useState([]);
   const [displayedText, setDisplayedText] = useState('');
   const [showCursor, setShowCursor] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
@@ -12,7 +14,17 @@ const SonarInterstitial = ({ onComplete }) => {
   const [isVisible, setIsVisible] = useState(true);
   const [sweepAngle, setSweepAngle] = useState(0);
 
+  // Boot sequence lines
+  const bootSequence = [
+    '> INITIALIZING SONAR ARRAY...',
+    '> SCANNING POLYMARKET FEEDS...',
+    '> WHALE DETECTION ONLINE...',
+    '> TRACKING ENABLED...',
+    '',
+  ];
+
   const message = 'follow the white whale.';
+  const bootLineDelay = 280; // ms per boot line
   const typingSpeed = 70; // ms per character
 
   // Sonar green colors - matches main UI retroColors exactly
@@ -38,7 +50,7 @@ const SonarInterstitial = ({ onComplete }) => {
     }
   }, [isFading, onComplete]);
 
-  // Sonar sweep animation
+  // Sonar sweep animation - runs throughout
   useEffect(() => {
     if (prefersReducedMotion || !isVisible) return;
 
@@ -49,13 +61,34 @@ const SonarInterstitial = ({ onComplete }) => {
     return () => clearInterval(sweepInterval);
   }, [prefersReducedMotion, isVisible]);
 
-  // Typewriter effect
+  // Boot sequence effect
   useEffect(() => {
     if (prefersReducedMotion) {
       setIsVisible(false);
       onComplete();
       return;
     }
+
+    let lineIndex = 0;
+    const bootInterval = setInterval(() => {
+      if (lineIndex < bootSequence.length) {
+        setBootLines(prev => [...prev, bootSequence[lineIndex]]);
+        lineIndex++;
+      } else {
+        clearInterval(bootInterval);
+        // Transition to message phase
+        setTimeout(() => {
+          setPhase('message');
+        }, 400);
+      }
+    }, bootLineDelay);
+
+    return () => clearInterval(bootInterval);
+  }, [prefersReducedMotion, onComplete]);
+
+  // Typewriter effect for main message
+  useEffect(() => {
+    if (phase !== 'message' || prefersReducedMotion) return;
 
     let charIndex = 0;
     const typeInterval = setInterval(() => {
@@ -73,12 +106,12 @@ const SonarInterstitial = ({ onComplete }) => {
             setIsVisible(false);
             onComplete();
           }, 600);
-        }, 1000);
+        }, 1200);
       }
     }, typingSpeed);
 
     return () => clearInterval(typeInterval);
-  }, [prefersReducedMotion, onComplete]);
+  }, [phase, prefersReducedMotion, onComplete]);
 
   // Cursor blink
   useEffect(() => {
@@ -108,12 +141,16 @@ const SonarInterstitial = ({ onComplete }) => {
     return null;
   }
 
-  // SVG sonar panel dimensions
-  const sonarSize = 300;
+  // Full viewport sonar - use min dimension to fit
+  const viewportSize = typeof window !== 'undefined'
+    ? Math.min(window.innerWidth, window.innerHeight) * 0.95
+    : 600;
+  const sonarSize = viewportSize;
   const center = sonarSize / 2;
-  const outerRadius = 130;
-  const innerRadius1 = 95;
-  const innerRadius2 = 55;
+  const outerRadius = sonarSize * 0.45;
+  const innerRadius1 = sonarSize * 0.32;
+  const innerRadius2 = sonarSize * 0.18;
+  const innerRadius3 = sonarSize * 0.08;
 
   return (
     <div
@@ -139,19 +176,19 @@ const SonarInterstitial = ({ onComplete }) => {
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'radial-gradient(ellipse at center, transparent 25%, rgba(0,0,0,0.5) 100%)',
+          background: 'radial-gradient(ellipse at center, transparent 20%, rgba(0,0,0,0.7) 100%)',
           pointerEvents: 'none',
         }}
       />
 
-      {/* Sonar panel SVG */}
+      {/* FULL PAGE Sonar panel SVG */}
       <svg
         width={sonarSize}
         height={sonarSize}
         viewBox={`0 0 ${sonarSize} ${sonarSize}`}
         style={{
           position: 'absolute',
-          opacity: 0.35,
+          opacity: 0.3,
         }}
       >
         {/* Outer ring */}
@@ -161,11 +198,11 @@ const SonarInterstitial = ({ onComplete }) => {
           r={outerRadius}
           fill="none"
           stroke={colors.sonarGreenMuted}
-          strokeWidth="1"
+          strokeWidth="1.5"
           opacity="0.6"
         />
 
-        {/* Middle ring */}
+        {/* Ring 2 */}
         <circle
           cx={center}
           cy={center}
@@ -173,10 +210,10 @@ const SonarInterstitial = ({ onComplete }) => {
           fill="none"
           stroke={colors.sonarGreenMuted}
           strokeWidth="1"
-          opacity="0.4"
+          opacity="0.45"
         />
 
-        {/* Inner ring */}
+        {/* Ring 3 */}
         <circle
           cx={center}
           cy={center}
@@ -184,23 +221,34 @@ const SonarInterstitial = ({ onComplete }) => {
           fill="none"
           stroke={colors.sonarGreenMuted}
           strokeWidth="1"
-          opacity="0.3"
+          opacity="0.35"
+        />
+
+        {/* Inner ring */}
+        <circle
+          cx={center}
+          cy={center}
+          r={innerRadius3}
+          fill="none"
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="1"
+          opacity="0.25"
         />
 
         {/* Center dot */}
         <circle
           cx={center}
           cy={center}
-          r="3"
+          r={sonarSize * 0.008}
           fill={colors.sonarGreenDim}
-          opacity="0.5"
+          opacity="0.6"
         />
 
         {/* Radial tick marks - every 30 degrees */}
         {[...Array(12)].map((_, i) => {
           const angle = (i * 30 * Math.PI) / 180;
-          const x1 = center + Math.cos(angle) * (outerRadius - 8);
-          const y1 = center + Math.sin(angle) * (outerRadius - 8);
+          const x1 = center + Math.cos(angle) * (outerRadius - 12);
+          const y1 = center + Math.sin(angle) * (outerRadius - 12);
           const x2 = center + Math.cos(angle) * outerRadius;
           const y2 = center + Math.sin(angle) * outerRadius;
           return (
@@ -212,7 +260,29 @@ const SonarInterstitial = ({ onComplete }) => {
               y2={y2}
               stroke={colors.sonarGreenMuted}
               strokeWidth="1"
-              opacity="0.45"
+              opacity="0.5"
+            />
+          );
+        })}
+
+        {/* Minor tick marks - every 10 degrees */}
+        {[...Array(36)].map((_, i) => {
+          if (i % 3 === 0) return null; // Skip major ticks
+          const angle = (i * 10 * Math.PI) / 180;
+          const x1 = center + Math.cos(angle) * (outerRadius - 6);
+          const y1 = center + Math.sin(angle) * (outerRadius - 6);
+          const x2 = center + Math.cos(angle) * outerRadius;
+          const y2 = center + Math.sin(angle) * outerRadius;
+          return (
+            <line
+              key={`minor-${i}`}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={colors.sonarGreenMuted}
+              strokeWidth="0.5"
+              opacity="0.3"
             />
           );
         })}
@@ -237,6 +307,45 @@ const SonarInterstitial = ({ onComplete }) => {
           opacity="0.2"
         />
 
+        {/* Diagonal cross hairs */}
+        <line
+          x1={center - outerRadius * 0.707}
+          y1={center - outerRadius * 0.707}
+          x2={center + outerRadius * 0.707}
+          y2={center + outerRadius * 0.707}
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="0.3"
+          opacity="0.12"
+        />
+        <line
+          x1={center + outerRadius * 0.707}
+          y1={center - outerRadius * 0.707}
+          x2={center - outerRadius * 0.707}
+          y2={center + outerRadius * 0.707}
+          stroke={colors.sonarGreenMuted}
+          strokeWidth="0.3"
+          opacity="0.12"
+        />
+
+        {/* Sweep wedge gradient */}
+        <defs>
+          <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={colors.sonarGreen} stopOpacity="0.15" />
+            <stop offset="100%" stopColor={colors.sonarGreen} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Sweep wedge - 50 degree trailing arc */}
+        <path
+          d={`
+            M ${center} ${center}
+            L ${center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius} ${center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
+            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 50) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 50) * Math.PI) / 180) * outerRadius}
+            Z
+          `}
+          fill="url(#sweepGrad)"
+        />
+
         {/* Sweep line */}
         <line
           x1={center}
@@ -244,68 +353,76 @@ const SonarInterstitial = ({ onComplete }) => {
           x2={center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius}
           y2={center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
           stroke={colors.sonarGreen}
-          strokeWidth="1"
-          opacity="0.35"
+          strokeWidth="1.5"
+          opacity="0.4"
         />
 
-        {/* Sweep wedge gradient */}
-        <defs>
-          <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={colors.sonarGreen} stopOpacity="0.12" />
-            <stop offset="100%" stopColor={colors.sonarGreen} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
-        {/* Sweep wedge - 40 degree trailing arc */}
-        <path
-          d={`
-            M ${center} ${center}
-            L ${center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius} ${center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
-            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 40) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 40) * Math.PI) / 180) * outerRadius}
-            Z
-          `}
-          fill="url(#sweepGrad)"
-        />
-
-        {/* Subtle noise dots */}
-        {[...Array(6)].map((_, i) => {
-          const dotAngle = (i * 53 + sweepAngle * 0.25) * Math.PI / 180;
-          const dist = 35 + (i * 19) % 80;
+        {/* Noise dots - more of them for larger display */}
+        {[...Array(12)].map((_, i) => {
+          const dotAngle = (i * 31 + sweepAngle * 0.2) * Math.PI / 180;
+          const dist = (outerRadius * 0.2) + (i * outerRadius * 0.06) % (outerRadius * 0.7);
           return (
             <circle
               key={`dot-${i}`}
               cx={center + Math.cos(dotAngle) * dist}
               cy={center + Math.sin(dotAngle) * dist}
-              r="1.5"
+              r={sonarSize * 0.004}
               fill={colors.sonarGreenDim}
-              opacity={0.15 + (Math.sin(sweepAngle * 0.04 + i) * 0.1)}
+              opacity={0.2 + (Math.sin(sweepAngle * 0.03 + i) * 0.15)}
             />
           );
         })}
       </svg>
 
-      {/* Main text */}
+      {/* Text content */}
       <div
         style={{
           position: 'relative',
           zIndex: 10,
           textAlign: 'center',
-          padding: '0 1rem',
+          padding: '0 1.5rem',
+          maxWidth: '600px',
         }}
       >
-        <div
-          style={{
-            fontSize: 'clamp(1.4rem, 5vw, 2.4rem)',
-            color: colors.sonarGreen,
-            letterSpacing: '0.1em',
-            textShadow: `0 0 10px rgba(79, 184, 120, 0.25)`,
-          }}
-        >
-          {displayedText}
-          {!isComplete && (
-            <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
-          )}
-        </div>
+        {/* Boot sequence lines */}
+        {phase === 'boot' && (
+          <div
+            style={{
+              fontSize: 'clamp(0.9rem, 2.5vw, 1.1rem)',
+              color: colors.sonarGreenDim,
+              letterSpacing: '0.05em',
+              lineHeight: 1.8,
+              minHeight: '180px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}
+          >
+            {bootLines.map((line, idx) => (
+              <div key={idx} style={{ opacity: line ? 0.7 : 0 }}>
+                {line}
+              </div>
+            ))}
+            <span style={{ opacity: showCursor ? 0.7 : 0 }}>_</span>
+          </div>
+        )}
+
+        {/* Main message */}
+        {phase === 'message' && (
+          <div
+            style={{
+              fontSize: 'clamp(1.6rem, 6vw, 2.8rem)',
+              color: colors.sonarGreen,
+              letterSpacing: '0.12em',
+              textShadow: `0 0 15px rgba(79, 184, 120, 0.3)`,
+            }}
+          >
+            {displayedText}
+            {!isComplete && (
+              <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Skip hint */}
@@ -315,7 +432,7 @@ const SonarInterstitial = ({ onComplete }) => {
           bottom: '1.5rem',
           fontSize: '0.85rem',
           color: colors.sonarGreenDim,
-          opacity: 0.4,
+          opacity: 0.35,
           letterSpacing: '0.06em',
         }}
       >
