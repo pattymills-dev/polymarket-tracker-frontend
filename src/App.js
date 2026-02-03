@@ -700,11 +700,11 @@ setMarketStats({
                 <div>
                   <h1 className={`text-3xl font-semibold tracking-tight ${isRetro ? '' : 'text-slate-100'}`}
                       style={isRetro ? { color: retroColors.textBright, textShadow: 'none', letterSpacing: '0.05em' } : {}}>
-                    {isRetro ? 'POLYMARKET TRACKER v2' : 'Polymarket Tracker'}
+                    {isRetro ? 'SonarStack' : 'Polymarket Tracker'}
                   </h1>
                   <p className={`text-sm mt-1 ${isRetro ? '' : 'text-slate-400'}`}
                      style={isRetro ? { color: retroColors.textDim } : {}}>
-                    {isRetro ? '> WHALE ACTIVITY MONITOR' : 'Large trade activity and trader watchlists'}
+                    {isRetro ? '> Prediction Market Whale Monitor' : 'Large trade activity and trader watchlists'}
                   </p>
                 </div>
               </div>
