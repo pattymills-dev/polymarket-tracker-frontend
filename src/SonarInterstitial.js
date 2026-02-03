@@ -4,6 +4,19 @@ import React, { useState, useEffect, useCallback } from 'react';
  * Sonar Interstitial v3
  * Full-page sonar panel with boot sequence + "follow the white whale."
  */
+
+// Constants moved outside component to avoid dependency warnings
+const BOOT_SEQUENCE = [
+  '> INITIALIZING SONAR ARRAY...',
+  '> SCANNING POLYMARKET FEEDS...',
+  '> WHALE DETECTION ONLINE...',
+  '> TRACKING ENABLED...',
+  '',
+];
+const MESSAGE = 'follow the white whale.';
+const BOOT_LINE_DELAY = 280; // ms per boot line
+const TYPING_SPEED = 70; // ms per character
+
 const SonarInterstitial = ({ onComplete }) => {
   const [phase, setPhase] = useState('boot'); // 'boot' | 'message'
   const [bootLines, setBootLines] = useState([]);
@@ -13,19 +26,6 @@ const SonarInterstitial = ({ onComplete }) => {
   const [isFading, setIsFading] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [sweepAngle, setSweepAngle] = useState(0);
-
-  // Boot sequence lines
-  const bootSequence = [
-    '> INITIALIZING SONAR ARRAY...',
-    '> SCANNING POLYMARKET FEEDS...',
-    '> WHALE DETECTION ONLINE...',
-    '> TRACKING ENABLED...',
-    '',
-  ];
-
-  const message = 'follow the white whale.';
-  const bootLineDelay = 280; // ms per boot line
-  const typingSpeed = 70; // ms per character
 
   // Sonar green colors - matches main UI retroColors exactly
   const colors = {
@@ -71,8 +71,8 @@ const SonarInterstitial = ({ onComplete }) => {
 
     let lineIndex = 0;
     const bootInterval = setInterval(() => {
-      if (lineIndex < bootSequence.length) {
-        setBootLines(prev => [...prev, bootSequence[lineIndex]]);
+      if (lineIndex < BOOT_SEQUENCE.length) {
+        setBootLines(prev => [...prev, BOOT_SEQUENCE[lineIndex]]);
         lineIndex++;
       } else {
         clearInterval(bootInterval);
@@ -81,7 +81,7 @@ const SonarInterstitial = ({ onComplete }) => {
           setPhase('message');
         }, 400);
       }
-    }, bootLineDelay);
+    }, BOOT_LINE_DELAY);
 
     return () => clearInterval(bootInterval);
   }, [prefersReducedMotion, onComplete]);
@@ -92,8 +92,8 @@ const SonarInterstitial = ({ onComplete }) => {
 
     let charIndex = 0;
     const typeInterval = setInterval(() => {
-      if (charIndex < message.length) {
-        setDisplayedText(message.slice(0, charIndex + 1));
+      if (charIndex < MESSAGE.length) {
+        setDisplayedText(MESSAGE.slice(0, charIndex + 1));
         charIndex++;
       } else {
         clearInterval(typeInterval);
@@ -108,7 +108,7 @@ const SonarInterstitial = ({ onComplete }) => {
           }, 600);
         }, 1200);
       }
-    }, typingSpeed);
+    }, TYPING_SPEED);
 
     return () => clearInterval(typeInterval);
   }, [phase, prefersReducedMotion, onComplete]);
