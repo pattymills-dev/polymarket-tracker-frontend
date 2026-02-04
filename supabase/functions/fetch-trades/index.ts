@@ -132,9 +132,9 @@ serve(async (req) => {
     console.log("Fetching trades from Polymarket Data API...");
 
     // Fetch recent trades - optimized for 15-minute intervals
-    // ~5000 trades should cover recent whale activity without timing out
+    // Polymarket Data API enforces low limit/offset caps, so we filter server-side.
     const PAGE_SIZE = 500;
-    const MAX_PAGES = 10;  // 10 pages × 500 = 5000 trades max
+    const MAX_PAGES = 10;  // Stop early if API returns 400/404 (offset cap)
 
     // Only store trades >= $1k to keep data manageable while improving coverage
     const MIN_TRADE_SIZE = 1_000;
@@ -151,6 +151,7 @@ serve(async (req) => {
     let rawMissingAddress = 0;
     let rawMissingTraderName = 0;
     let rawWithEventSlug = 0;
+    let rawMissingMarketSlug = 0;
 
     let droppedMissingTxHash = 0;
     let droppedMissingMarketId = 0;
@@ -162,8 +163,14 @@ serve(async (req) => {
 
     for (let page = 0; page < MAX_PAGES; page++) {
       const offset = page * PAGE_SIZE;
-      const url =
-        `https://data-api.polymarket.com/trades?limit=${PAGE_SIZE}&offset=${offset}`;
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+        takerOnly: "false",              // include maker trades
+        filterType: "CASH",              // filter by cash amount
+        filterAmount: String(MIN_TRADE_SIZE),
+      });
+      const url = `https://data-api.polymarket.com/trades?${params.toString()}`;
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -209,6 +216,9 @@ serve(async (req) => {
         }
         if (t.eventSlug) {
           rawWithEventSlug += 1;
+        }
+        if (!t.slug) {
+          rawMissingMarketSlug += 1;
         }
 
         if (txHash) {
@@ -296,6 +306,30 @@ serve(async (req) => {
       }
 
       upsertedTrades += rows.length;
+
+      // Ensure markets table includes any new markets from these trades
+      const marketMap = new Map<string, any>();
+      for (const r of rows) {
+        if (!r.market_id) continue;
+        const marketRow: any = { id: r.market_id };
+        if (r.market_title || r.market_slug) {
+          marketRow.question = r.market_title || r.market_slug;
+        }
+        if (r.market_slug) {
+          marketRow.slug = r.market_slug;
+        }
+        marketMap.set(r.market_id, marketRow);
+      }
+
+      if (marketMap.size > 0) {
+        const marketRows = Array.from(marketMap.values());
+        const { error: marketError } = await supabase
+          .from("markets")
+          .upsert(marketRows, { onConflict: "id" });
+        if (marketError) {
+          console.error("Market upsert error:", marketError);
+        }
+      }
 
       // Fetch top 20 traders (by P/L) and hot streaks (by win rate) for smart alerts
       const { data: topTraders } = await supabase
@@ -529,6 +563,14 @@ serve(async (req) => {
       console.log("Trader stats recalculated successfully");
     }
 
+    // Refresh top traders + hot streak caches for UI/alerts
+    const { error: cacheError } = await supabase.rpc('refresh_all_trader_caches');
+    if (cacheError) {
+      console.error("Error refreshing trader caches:", cacheError);
+    } else {
+      console.log("Trader caches refreshed successfully");
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -547,6 +589,7 @@ serve(async (req) => {
             rawMissingAddress,
             rawMissingTraderName,
             rawWithEventSlug,
+            rawMissingMarketSlug,
             droppedMissingTxHash,
             droppedMissingMarketId,
             droppedMissingAddress,
@@ -554,6 +597,11 @@ serve(async (req) => {
             droppedInvalidAmount,
             droppedBelowMin,
             dedupedCount,
+            apiFilters: {
+              takerOnly: false,
+              filterType: "CASH",
+              filterAmount: MIN_TRADE_SIZE,
+            },
           }
           : undefined,
       }),
