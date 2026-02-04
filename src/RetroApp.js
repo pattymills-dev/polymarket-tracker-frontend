@@ -8,18 +8,29 @@ const RetroApp = () => {
   const [bootMessages, setBootMessages] = useState([]);
 
   // Supabase Configuration
-  const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
-  const SUPABASE_ANON_KEY =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtdWt0bGdjbHd2YXhuZHV1aW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMzI0MTQsImV4cCI6MjA4MzkwODQxNH0.tZMxayi3YL7DzUeG2_YcAfZzZDxMsO16RGurS-MiBUo';
+  const SUPABASE_URL =
+    process.env.REACT_APP_SUPABASE_URL || 'https://smuktlgclwvaxnduuinm.supabase.co';
+  const SUPABASE_PUBLIC_KEY =
+    process.env.REACT_APP_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.REACT_APP_SUPABASE_ANON_KEY ||
+    '';
 
   const headers = useMemo(
     () => ({
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_PUBLIC_KEY}`,
+      apikey: SUPABASE_PUBLIC_KEY,
       'Content-Type': 'application/json'
     }),
-    [SUPABASE_ANON_KEY]
+    [SUPABASE_PUBLIC_KEY]
   );
+
+  useEffect(() => {
+    if (!SUPABASE_PUBLIC_KEY) {
+      console.error(
+        'Missing Supabase public key. Set REACT_APP_SUPABASE_PUBLISHABLE_KEY (preferred) or REACT_APP_SUPABASE_ANON_KEY.'
+      );
+    }
+  }, [SUPABASE_PUBLIC_KEY]);
 
   // Boot sequence
   useEffect(() => {

@@ -20,14 +20,16 @@ import { useTheme } from './ThemeContext';
 const PolymarketTracker = () => {
   const { isRetro, toggleTheme } = useTheme();
   const [largeBets, setLargeBets] = useState([]);
+  const [recentTrades, setRecentTrades] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
+  const [hotStreakTraders, setHotStreakTraders] = useState([]);
   const [watchedTraders, setWatchedTraders] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [marketStats, setMarketStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // const [selectedCategory, setSelectedCategory] = useState('all'); // placeholder for future
-  const [minBetSize] = useState(5000); // UI filter (DB already filters to $5k+)
+  const [minBetSize] = useState(5000); // UI filter for large bets (DB now stores >= $1k)
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'total_pl', 'hot_streak' - simplified sort options
@@ -40,18 +42,29 @@ const PolymarketTracker = () => {
   const [loadingTrades, setLoadingTrades] = useState(false);
 
   // Supabase Configuration
-  const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
-  const SUPABASE_ANON_KEY =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtdWt0bGdjbHd2YXhuZHV1aW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMzI0MTQsImV4cCI6MjA4MzkwODQxNH0.tZMxayi3YL7DzUeG2_YcAfZzZDxMsO16RGurS-MiBUo';
+  const SUPABASE_URL =
+    process.env.REACT_APP_SUPABASE_URL || 'https://smuktlgclwvaxnduuinm.supabase.co';
+  const SUPABASE_PUBLIC_KEY =
+    process.env.REACT_APP_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.REACT_APP_SUPABASE_ANON_KEY ||
+    '';
 
   const headers = useMemo(
     () => ({
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_PUBLIC_KEY}`,
+      apikey: SUPABASE_PUBLIC_KEY,
       'Content-Type': 'application/json'
     }),
-    [SUPABASE_ANON_KEY]
+    [SUPABASE_PUBLIC_KEY]
   );
+
+  useEffect(() => {
+    if (!SUPABASE_PUBLIC_KEY) {
+      console.error(
+        'Missing Supabase public key. Set REACT_APP_SUPABASE_PUBLISHABLE_KEY (preferred) or REACT_APP_SUPABASE_ANON_KEY.'
+      );
+    }
+  }, [SUPABASE_PUBLIC_KEY]);
 
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('en-US', {
@@ -259,7 +272,11 @@ const formatBetPosition = (marketTitle, outcome) => {
       setLoading(true);
 
      const FEED_LIMIT = 500;
-     const MIN_TRADE_AMOUNT = 5000; // Only fetch trades >= $5k
+     const MIN_TRADE_AMOUNT = 5000; // Only fetch trades >= $5k for large bets
+     const STATS_MIN_AMOUNT = 5000; // High-level stats should match large bets section
+     const SMART_MONEY_MIN_AMOUNT = 1000; // Use >= $1k trades for smart money/hot streak fallback
+     const SMART_MONEY_LIMIT = 1000;
+     const sevenDaysIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
 const tradesRes = await fetch(
   `${SUPABASE_URL}/rest/v1/trades?amount=gte.${MIN_TRADE_AMOUNT}&order=timestamp.desc&limit=${FEED_LIMIT}`,
@@ -267,10 +284,17 @@ const tradesRes = await fetch(
 );
       const tradesJson = await tradesRes.json();
 
+      const recentTradesRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/trades?amount=gte.${SMART_MONEY_MIN_AMOUNT}&timestamp=gte.${sevenDaysIso}&order=timestamp.desc&limit=${SMART_MONEY_LIMIT}`,
+        { headers }
+      );
+      const recentTradesJson = await recentTradesRes.json();
+
       if (!tradesRes.ok) {
         console.error('Trades error:', tradesJson);
         setMarketStats(null);
         setLargeBets([]);
+        setRecentTrades([]);
         return;
       }
 
@@ -301,13 +325,13 @@ const tradesRes = await fetch(
         setAlerts(Array.isArray(alertsJson) ? alertsJson : []);
       }
 
-      // Fetch whale stats (>= $10k, last 24h)
+      // Fetch large-bet stats (>= $5k, last 24h)
 const statsRes = await fetch(
   `${SUPABASE_URL}/rest/v1/rpc/whale_stats_24h`,
   {
     method: "POST",
     headers,
-    body: JSON.stringify({ min_amount: 10000 }),
+    body: JSON.stringify({ min_amount: STATS_MIN_AMOUNT }),
   }
 );
 
@@ -316,7 +340,7 @@ const stats = statsArr?.[0] ?? null;
 
       // Get count of active (unresolved) markets with recent activity
       const marketsRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/trades?select=market_id&timestamp=gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
+        `${SUPABASE_URL}/rest/v1/trades?select=market_id&amount=gte.${STATS_MIN_AMOUNT}&timestamp=gte.${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`,
         { headers }
       );
       const marketsJson = await marketsRes.json();
@@ -327,17 +351,26 @@ const stats = statsArr?.[0] ?? null;
       const trades = Array.isArray(tradesJson) ? tradesJson : [];
       setLargeBets(trades);
 
+      if (recentTradesRes.ok && Array.isArray(recentTradesJson)) {
+        setRecentTrades(recentTradesJson);
+      } else {
+        if (!recentTradesRes.ok) {
+          console.error('Recent trades error:', recentTradesJson);
+        }
+        setRecentTrades([]);
+      }
+
       if (!statsRes.ok) {
   console.error("Stats error:", statsArr);
 }
 
 setMarketStats({
-  // DB-computed: >= $10k, last 24h (does NOT depend on minBetSize)
+  // DB-computed: >= $5k, last 24h (matches large bets section)
   total_volume_24h: stats?.total_volume ?? 0,
   total_trades_24h: stats?.total_trades ?? 0,
   unique_traders_24h: stats?.unique_traders ?? 0,
 
-  // Count of unique markets with trades in last 24h
+  // Count of unique markets with trades >= $5k in last 24h
   active_markets: activeMarkets,
 });
 
@@ -376,6 +409,7 @@ setMarketStats({
     const interval = setInterval(() => {
       fetchData();
       fetchProfitability();
+      fetchHotStreaks();
     }, 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -462,6 +496,55 @@ setMarketStats({
     }
   };
 
+  const fetchHotStreaks = async () => {
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/hot_streaks?order=rank.asc&limit=50`,
+        { headers }
+      );
+      const data = await response.json();
+
+      if (response.ok && Array.isArray(data)) {
+        const mapped = data.map((t) => {
+          const recentRate =
+            typeof t.recent_win_rate === 'number'
+              ? t.recent_win_rate
+              : typeof t.win_rate === 'number'
+                ? t.win_rate / 100
+                : 0;
+
+          return {
+            address: t.trader_address,
+            total_volume: Number(t.total_buy_cost || 0),
+            total_bets: Number(t.resolved_markets || 0),
+            resolved_markets: t.resolved_markets,
+            wins: Number(t.wins || 0),
+            losses: Number(t.losses || 0),
+            win_rate: typeof t.win_rate === 'number' ? t.win_rate / 100 : 0,
+            profit_wins: t.profit_wins,
+            profit_losses: t.profit_losses,
+            profitability_rate: 0, // ensure profitability layout renders
+            total_pl: Number(t.total_pl || 0),
+            avg_bet_size: Number(t.total_buy_cost || 0) / (t.resolved_markets || 1),
+            unique_markets: t.resolved_markets,
+            last_activity: t.last_resolved_at || Date.now(),
+            current_streak: Number(t.current_streak || 0),
+            recent_win_rate: recentRate,
+            recent_markets: Number(t.recent_markets || 0),
+            last_resolved_at: t.last_resolved_at || null,
+          };
+        });
+        setHotStreakTraders(mapped);
+      } else {
+        console.error('Hot streaks error:', data);
+        setHotStreakTraders([]);
+      }
+    } catch (error) {
+      console.error('Error fetching hot streaks:', error);
+      setHotStreakTraders([]);
+    }
+  };
+
   const filteredBets = useMemo(() => {
     return (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
   }, [largeBets, minBetSize]);
@@ -471,18 +554,12 @@ setMarketStats({
 
   const fetchProfitability = async () => {
     try {
-      const headers = {
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey': SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json'
-      };
-
       const response = await fetch(
         `${SUPABASE_URL}/rest/v1/rpc/calculate_trader_performance`,
         {
           method: 'POST',
           headers,
-          body: JSON.stringify({ min_resolved_markets: 3 })  // Require at least 3 resolved markets for meaningful stats
+          body: JSON.stringify({ min_resolved_markets: 2 })  // Require at least 2 resolved markets for meaningful stats
         }
       );
 
@@ -515,7 +592,10 @@ setMarketStats({
           avg_bet_size: Number(t.total_volume || 0) / (t.total_bets || 1),
           unique_markets: t.resolved_markets,
           last_activity: t.last_activity || Date.now(),
-          current_streak: t.current_streak || 0
+          current_streak: Number(t.current_streak || 0),
+          recent_win_rate: Number(t.recent_win_rate || 0),
+          recent_markets: Number(t.recent_markets || 0),
+          last_resolved_at: t.last_resolved_at || null
         }));
         console.log('Mapped profitability traders:', mappedTraders.length, mappedTraders);
         setProfitabilityTraders(mappedTraders);
@@ -529,6 +609,7 @@ setMarketStats({
 
   useEffect(() => {
     fetchProfitability();
+    fetchHotStreaks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -551,7 +632,8 @@ setMarketStats({
 
   // Calculate smart money metrics from recent trades (7-day fallback)
   const recentActiveTraders = useMemo(() => {
-    if (!largeBets || largeBets.length === 0) return [];
+    const sourceTrades = recentTrades && recentTrades.length > 0 ? recentTrades : largeBets;
+    if (!sourceTrades || sourceTrades.length === 0) return [];
 
     const now = Date.now();
     const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
@@ -559,7 +641,7 @@ setMarketStats({
     // Group trades by trader address
     const traderMap = new Map();
 
-    largeBets.forEach(bet => {
+    sourceTrades.forEach(bet => {
       const betTime = toMs(bet.timestamp);
       if (!betTime || betTime < sevenDaysAgo) return; // Only last 7 days
 
@@ -602,17 +684,23 @@ setMarketStats({
 
     // Sort by smart money score
     return traders.sort((a, b) => b.smart_score - a.smart_score).slice(0, 20);
-  }, [largeBets]);
+  }, [recentTrades, largeBets]);
 
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
+    const hasResolvedTraders = profitabilityTraders.length >= 5;
+    const isHot = traderSortBy === 'hot_streak';
 
     // Top Performers: by P/L
-    let tradersToShow = profitabilityTraders.length >= 5
+    let tradersToShow = hasResolvedTraders
       ? profitabilityTraders
       : recentActiveTraders.length > 0
         ? recentActiveTraders
         : topTraders || [];
+
+    if (isHot) {
+      tradersToShow = hotStreakTraders;
+    }
 
     // Filter by search query
     if (q) {
@@ -620,13 +708,19 @@ setMarketStats({
     }
 
     // Apply sorting
-    if (profitabilityTraders.length >= 5) {
+    if (hasResolvedTraders && (!isHot || hotStreakTraders.length === 0)) {
       tradersToShow = [...tradersToShow].sort((a, b) => {
         if (traderSortBy === 'hot_streak') {
-          // Hot streak = combo of win streak + recent win rate + recent activity
-          const aStreak = (a.current_streak || 0) + (a.win_rate || 0) * 10 + (a.wins || 0) * 0.5;
-          const bStreak = (b.current_streak || 0) + (b.win_rate || 0) * 10 + (b.wins || 0) * 0.5;
-          return bStreak - aStreak;
+          // Hot streak = prioritize current streak, then recent win rate, then recent market count
+          const aRecentRate = a.recent_win_rate || a.win_rate || 0;
+          const bRecentRate = b.recent_win_rate || b.win_rate || 0;
+          const aRecentMarkets = a.recent_markets || a.resolved_markets || 0;
+          const bRecentMarkets = b.recent_markets || b.resolved_markets || 0;
+          return (
+            (b.current_streak || 0) - (a.current_streak || 0) ||
+            bRecentRate - aRecentRate ||
+            bRecentMarkets - aRecentMarkets
+          );
         } else if (traderSortBy === 'total_pl') {
           return (b.total_pl || 0) - (a.total_pl || 0);
         }
@@ -635,7 +729,7 @@ setMarketStats({
     }
 
     return tradersToShow;
-  }, [profitabilityTraders, recentActiveTraders, topTraders, searchAddress, traderSortBy]);
+  }, [profitabilityTraders, recentActiveTraders, topTraders, hotStreakTraders, searchAddress, traderSortBy]);
 
   // SONAR TERMINAL PALETTE - Unified token system
   // Desaturated phosphor green, NOT neon/LED. Brightest reserved for numbers only.
@@ -1133,7 +1227,7 @@ setMarketStats({
           </div>
         )}
 
-        {/* Stats - background telemetry for $10k+ trades, last 24h */}
+        {/* Stats - background telemetry for $5k+ trades, last 24h */}
         {marketStats && (
           <div
             className={`mb-6 px-2 ${isRetro ? '' : 'text-slate-500'}`}
@@ -1141,7 +1235,7 @@ setMarketStats({
           >
             {isRetro && (
               <p className="text-center text-xs uppercase tracking-wider mb-3" style={{ color: retroColors.textDim }}>
-                WHALE TRADES ≥$10K • LAST 24H
+                LARGE BETS ≥$5K • LAST 24H
               </p>
             )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -1359,7 +1453,11 @@ setMarketStats({
                     {isRetro
                       ? (profitabilityTraders.length >= 5 ? 'TOP PERFORMERS' : 'SMART MONEY')
                       : (profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)')}
-                    {isRetro && <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>7D</span>}
+                    {isRetro && (
+                      <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>
+                        {profitabilityTraders.length >= 5 ? 'RESOLVED (ALL-TIME)' : '7D'}
+                      </span>
+                    )}
                   </h2>
                 </div>
 
@@ -1434,13 +1532,25 @@ setMarketStats({
 
                 {visibleTraders.length === 0 ? (
                   <p className="text-sm text-center py-8" style={isRetro ? { color: retroColors.textDim } : {}}>
-                    {isRetro ? '> NO TRADER DATA YET' : 'No trader data yet'}
+                    {traderSortBy === 'hot_streak'
+                      ? (isRetro ? '> NO HOT STREAK DATA YET' : 'No hot streak data yet')
+                      : (isRetro ? '> NO TRADER DATA YET' : 'No trader data yet')}
                   </p>
                 ) : (
                   <div className="flex-1 overflow-y-auto pr-2 space-y-3">
                     {visibleTraders.map((trader, index) => {
                       const isWatched = watchedTraders.includes(trader.address);
                       const rankColor = index === 0 ? (isRetro ? retroColors.warn : 'text-amber-400') : index === 1 ? (isRetro ? retroColors.textDim : 'text-slate-300') : index === 2 ? (isRetro ? 'rgba(184, 160, 80, 0.7)' : 'text-orange-600') : (isRetro ? retroColors.textMuted : 'text-slate-500');
+                      const rawRecentRate = trader.recent_win_rate != null ? trader.recent_win_rate : trader.win_rate;
+                      const recentRatePct = Number.isFinite(Number(rawRecentRate))
+                        ? (Number(rawRecentRate) > 1 ? Number(rawRecentRate) : Number(rawRecentRate) * 100)
+                        : null;
+                      const recentMarkets = Number(trader.recent_markets || 0);
+                      const recentWins = recentRatePct != null && recentMarkets
+                        ? Math.round((recentRatePct / 100) * recentMarkets)
+                        : null;
+                      const showHotMetrics = (trader.current_streak != null || trader.recent_win_rate != null || trader.recent_markets != null) &&
+                        (trader.current_streak || recentMarkets);
                       return (
                         <div
                           key={trader.address}
@@ -1535,6 +1645,32 @@ setMarketStats({
                                   </p>
                                 </div>
                               </div>
+                              {showHotMetrics && (
+                                <div
+                                  className={isRetro ? 'mt-2 pt-2' : 'mt-2 pt-2'}
+                                  style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : { borderTop: '1px solid rgba(30, 41, 59, 0.5)' }}
+                                >
+                                  <p
+                                    className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                    style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                  >
+                                    Streak · Recent
+                                  </p>
+                                  <p
+                                    className={isRetro ? 'font-mono' : 'font-mono text-xs text-slate-100'}
+                                    style={isRetro ? { fontSize: '0.95rem', color: retroColors.text } : {}}
+                                  >
+                                    <span style={isRetro ? { color: retroColors.numbers } : {}}>
+                                      {trader.current_streak || 0}W
+                                    </span>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
+                                    <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
+                                      {recentRatePct != null ? `${Math.round(recentRatePct)}%` : '—'}
+                                      {recentMarkets ? ` (${recentWins ?? 0}/${recentMarkets})` : ''}
+                                    </span>
+                                  </p>
+                                </div>
+                              )}
                             </>
                           ) : (
                             <>
@@ -1573,7 +1709,13 @@ setMarketStats({
                 )}
 
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500">
-                  {profitabilityTraders.length > 0 ? (
+                  {traderSortBy === 'hot_streak' && hotStreakTraders.length > 0 ? (
+                    <>
+                      <p>Showing hot streaks ranked by streak + recent win rate.</p>
+                      <p className="mt-1">Click a trader to view details and watchlist.</p>
+                      <p className="mt-2 text-amber-400/70">💡 Recent win rate is based on the last 10 resolved markets.</p>
+                    </>
+                  ) : profitabilityTraders.length > 0 ? (
                     <>
                       <p>Showing {profitabilityTraders.length} traders with resolved markets.</p>
                       <p className="mt-1">Click a trader to view details and watchlist.</p>

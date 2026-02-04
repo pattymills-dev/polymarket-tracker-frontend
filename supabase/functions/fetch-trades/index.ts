@@ -12,8 +12,25 @@ function safeNumber(x: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-// Build Polymarket URL from slug - handles sports bets and regular events
-function buildPolymarketUrl(slug: string | null): string | null {
+function cleanString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+type PolymarketUrlInput = {
+  eventSlug?: string | null;
+  marketSlug?: string | null;
+};
+
+// Build Polymarket URL from eventSlug or market slug - handles sports bets and regular events
+function buildPolymarketUrl(input: PolymarketUrlInput): string | null {
+  const eventSlug = cleanString(input.eventSlug);
+  if (eventSlug) {
+    return `https://polymarket.com/event/${eventSlug}`;
+  }
+
+  const slug = cleanString(input.marketSlug);
   if (!slug) return null;
 
   // Check if it's a sports bet (has league prefix like nba-, nhl-, cbb-, epl-, etc.)
@@ -29,8 +46,25 @@ function buildPolymarketUrl(slug: string | null): string | null {
   return `https://polymarket.com/event/${cleanSlug}`;
 }
 
+type TradeMeta = {
+  eventSlug?: string | null;
+  traderName?: string | null;
+  traderPseudonym?: string | null;
+  traderAddress?: string | null;
+};
+
+function formatTraderLine(meta: TradeMeta | null): string {
+  if (!meta) return "";
+  const address = cleanString(meta.traderAddress);
+  const name = cleanString(meta.traderPseudonym) ?? cleanString(meta.traderName);
+
+  if (!address && !name) return "";
+  if (name && address) return `\n👤 Trader: ${name} (${address})`;
+  return `\n👤 Trader: ${name ?? address}`;
+}
+
 // Send Telegram notification for important alerts
-async function sendTelegramAlert(alert: any): Promise<void> {
+async function sendTelegramAlert(alert: any, meta: TradeMeta | null): Promise<void> {
   const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
   const chatId = Deno.env.get("TELEGRAM_CHAT_ID");
 
@@ -40,13 +74,17 @@ async function sendTelegramAlert(alert: any): Promise<void> {
   }
 
   try {
-    const polymarketUrl = buildPolymarketUrl(alert.market_slug);
+    const polymarketUrl = buildPolymarketUrl({
+      eventSlug: meta?.eventSlug ?? null,
+      marketSlug: alert.market_slug,
+    });
+    const traderLine = formatTraderLine(meta);
 
     const polymarketLink = polymarketUrl
       ? `\n\n🔗 <a href="${polymarketUrl}">View on Polymarket</a>`
       : '';
 
-    const text = `${alert.message}${polymarketLink}`;
+    const text = `${alert.message}${traderLine}${polymarketLink}`;
 
     const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
@@ -76,6 +114,10 @@ serve(async (req) => {
   }
 
   try {
+    const requestUrl = new URL(req.url);
+    const diagnosticsEnabled =
+      requestUrl.searchParams.get("diagnostics") === "1";
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -94,14 +136,29 @@ serve(async (req) => {
     const PAGE_SIZE = 500;
     const MAX_PAGES = 10;  // 10 pages × 500 = 5000 trades max
 
-    // Only store trades >= $5k to save database space
-    const MIN_TRADE_SIZE = 5_000;
+    // Only store trades >= $1k to keep data manageable while improving coverage
+    const MIN_TRADE_SIZE = 1_000;
     const WHALE_THRESHOLD = 10_000;
     const MEGA_WHALE_THRESHOLD = 50_000;
 
     let fetchedTotal = 0;
     let upsertedTrades = 0;
     let insertedAlerts = 0;
+    const tradeMetaByHash = new Map<string, TradeMeta>();
+    let pageCount = 0;
+    let stoppedByEmptyPage = false;
+
+    let rawMissingAddress = 0;
+    let rawMissingTraderName = 0;
+    let rawWithEventSlug = 0;
+
+    let droppedMissingTxHash = 0;
+    let droppedMissingMarketId = 0;
+    let droppedMissingAddress = 0;
+    let droppedMissingTimestamp = 0;
+    let droppedInvalidAmount = 0;
+    let droppedBelowMin = 0;
+    let dedupedCount = 0;
 
     for (let page = 0; page < MAX_PAGES; page++) {
       const offset = page * PAGE_SIZE;
@@ -117,16 +174,19 @@ serve(async (req) => {
 
       if (!Array.isArray(trades) || trades.length === 0) {
         console.log(`No trades returned at offset=${offset}. Stopping.`);
+        stoppedByEmptyPage = true;
         break;
       }
 
       fetchedTotal += trades.length;
+      pageCount += 1;
 
       // 1) Map into your DB schema
       const rowsRaw = trades.map((t: any) => {
         const size = safeNumber(t.size);
         const price = safeNumber(t.price);
         const ts = safeNumber(t.timestamp);
+        const txHash = t.transactionHash ?? null;
 
         // "Cash" amount ≈ size * price
         const amount = size != null && price != null ? size * price : null;
@@ -134,8 +194,27 @@ serve(async (req) => {
         // Polymarket API: side is "BUY" or "SELL" (or "buy"/"sell")
         const side = t.side ? t.side.toUpperCase() : null;
 
+        if (!t.proxyWallet) {
+          rawMissingAddress += 1;
+        }
+        if (!t.pseudonym && !t.name) {
+          rawMissingTraderName += 1;
+        }
+        if (t.eventSlug) {
+          rawWithEventSlug += 1;
+        }
+
+        if (txHash) {
+          tradeMetaByHash.set(txHash, {
+            eventSlug: t.eventSlug ?? null,
+            traderName: t.name ?? null,
+            traderPseudonym: t.pseudonym ?? null,
+            traderAddress: t.proxyWallet ?? null,
+          });
+        }
+
         return {
-          tx_hash: t.transactionHash ?? null,
+          tx_hash: txHash,
           market_id: t.conditionId ?? null, // use conditionId
           market_slug: t.slug ?? null,
           market_title: t.title ?? null,
@@ -149,10 +228,35 @@ serve(async (req) => {
       });
 
       // 2) Filter out invalid rows AND trades below $5k threshold
-      const rowsFiltered = rowsRaw.filter((r: any) =>
-        r.tx_hash && r.market_id && r.trader_address && r.timestamp &&
-        typeof r.amount === "number" && r.amount >= MIN_TRADE_SIZE
-      );
+      // Note: each dropped counter is mutually exclusive based on first failure.
+      const rowsFiltered: any[] = [];
+      for (const r of rowsRaw) {
+        if (!r.tx_hash) {
+          droppedMissingTxHash += 1;
+          continue;
+        }
+        if (!r.market_id) {
+          droppedMissingMarketId += 1;
+          continue;
+        }
+        if (!r.trader_address) {
+          droppedMissingAddress += 1;
+          continue;
+        }
+        if (!r.timestamp) {
+          droppedMissingTimestamp += 1;
+          continue;
+        }
+        if (typeof r.amount !== "number") {
+          droppedInvalidAmount += 1;
+          continue;
+        }
+        if (r.amount < MIN_TRADE_SIZE) {
+          droppedBelowMin += 1;
+          continue;
+        }
+        rowsFiltered.push(r);
+      }
 
       // 3) Dedupe by tx_hash within this batch to avoid:
       //    "ON CONFLICT DO UPDATE command cannot affect row a second time"
@@ -163,9 +267,10 @@ serve(async (req) => {
         seen.add(r.tx_hash);
         rows.push(r);
       }
+      dedupedCount += rowsFiltered.length - rows.length;
 
       console.log(
-        `Page ${page + 1}/${MAX_PAGES} offset=${offset}: raw=${rowsRaw.length} filtered_$5k+=${rowsFiltered.length} deduped=${rows.length}`,
+        `Page ${page + 1}/${MAX_PAGES} offset=${offset}: raw=${rowsRaw.length} filtered_min=${rowsFiltered.length} deduped=${rows.length}`,
       );
 
       if (rows.length === 0) {
@@ -396,7 +501,8 @@ serve(async (req) => {
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
                   (alert.type === 'top_trader' || alert.type === 'hot_streak' || alert.type === 'watchlist' || alert.type === 'mega_whale' || alert.type === 'isolated_contact')) {
-                await sendTelegramAlert(alert);
+                const meta = tradeMetaByHash.get(alert.trade_hash) ?? null;
+                await sendTelegramAlert(alert, meta);
               }
             }
           }
@@ -422,6 +528,27 @@ serve(async (req) => {
         fetched: fetchedTotal,
         stored: upsertedTrades,
         alertsInserted: insertedAlerts,
+        diagnostics: diagnosticsEnabled
+          ? {
+            pageSize: PAGE_SIZE,
+            maxPages: MAX_PAGES,
+            pagesFetched: pageCount,
+            stoppedByEmptyPage,
+            minTradeSize: MIN_TRADE_SIZE,
+            whaleThreshold: WHALE_THRESHOLD,
+            megaWhaleThreshold: MEGA_WHALE_THRESHOLD,
+            rawMissingAddress,
+            rawMissingTraderName,
+            rawWithEventSlug,
+            droppedMissingTxHash,
+            droppedMissingMarketId,
+            droppedMissingAddress,
+            droppedMissingTimestamp,
+            droppedInvalidAmount,
+            droppedBelowMin,
+            dedupedCount,
+          }
+          : undefined,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
