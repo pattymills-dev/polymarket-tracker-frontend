@@ -167,6 +167,13 @@ serve(async (req) => {
 
       const response = await fetch(url);
       if (!response.ok) {
+        // Polymarket data API sometimes returns 400 at high offsets.
+        // Treat as end-of-data instead of failing the whole job.
+        if (response.status === 400 || response.status === 404) {
+          console.warn(`Data API returned ${response.status} for ${url}. Stopping pagination.`);
+          stoppedByEmptyPage = true;
+          break;
+        }
         throw new Error(`Data API returned ${response.status} for ${url}`);
       }
 
