@@ -48,7 +48,6 @@ Deno.serve(async (req) => {
             trades!inner(timestamp)
           `)
           .or('resolved.eq.false,winning_outcome.is.null')
-          .not('slug', 'is', null)
           .gte('trades.timestamp', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
           .limit(batchSize)
 
@@ -59,7 +58,6 @@ Deno.serve(async (req) => {
             .from('markets')
             .select('id, question, slug, resolved, winning_outcome')
             .or('resolved.eq.false,winning_outcome.is.null')
-            .not('slug', 'is', null)
             .order('updated_at', { ascending: false }) // Most recently updated first
             .limit(batchSize)
 
@@ -83,7 +81,6 @@ Deno.serve(async (req) => {
         .from('markets')
         .select('id, question, slug, resolved, winning_outcome')
         .or('resolved.eq.false,winning_outcome.is.null')
-        .not('slug', 'is', null)
         .order('updated_at', { ascending: true, nullsFirst: true })
         .limit(batchSize)
 
