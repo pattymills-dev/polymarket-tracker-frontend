@@ -67,74 +67,40 @@ serve(async (req) => {
       const ids = chunk.map((m: any) => m.id).filter(Boolean);
       if (ids.length === 0) continue;
 
-      const gammaUrl = new URL("https://gamma-api.polymarket.com/markets");
-      gammaUrl.searchParams.set("condition_ids", ids.join(","));
+      // Bulk lookup in Gamma does not accept comma-separated condition_ids.
+      // Fallback to per-conditionId requests using the same endpoint.
+      for (const id of ids) {
+        try {
+          const fallbackUrl = new URL("https://gamma-api.polymarket.com/markets");
+          fallbackUrl.searchParams.set("condition_ids", id);
 
-      const response = await fetch(gammaUrl.toString());
-      if (!response.ok) {
-        gammaErrors += 1;
-        continue;
-      }
+          const fallbackResp = await fetch(fallbackUrl.toString());
+          lookedUp += 1;
+          if (!fallbackResp.ok) continue;
 
-      const gammaMarkets: GammaMarket[] = await response.json();
-      lookedUp += ids.length;
+          const gmList: GammaMarket[] = await fallbackResp.json();
+          if (!Array.isArray(gmList) || gmList.length === 0) continue;
 
-      if (!Array.isArray(gammaMarkets) || gammaMarkets.length === 0) {
-        continue;
-      }
+          const gm = gmList[0];
+          if (!gm?.conditionId || !gm?.slug) continue;
 
-      const updates = gammaMarkets
-        .filter((gm) => gm.conditionId && gm.slug)
-        .map((gm) => ({
-          id: gm.conditionId,
-          slug: gm.slug ?? null,
-          question: gm.question ?? gm.title ?? null,
-        }));
+          const row = {
+            id: gm.conditionId,
+            slug: gm.slug ?? null,
+            question: gm.question ?? gm.title ?? null,
+          };
 
-      let batchUpdated = 0;
-      if (updates.length > 0) {
-        const { error: updateError } = await supabase
-          .from("markets")
-          .upsert(updates, { onConflict: "id" });
+          const { error: upsertError } = await supabase
+            .from("markets")
+            .upsert([row], { onConflict: "id" });
 
-        if (updateError) {
-          gammaErrors += 1;
-        } else {
-          updated += updates.length;
-          batchUpdated = updates.length;
-        }
-      }
-
-      // Fallback: if bulk lookup returned nothing, try per-conditionId lookup
-      if (batchUpdated === 0) {
-        for (const id of ids) {
-          try {
-            const fallbackUrl = `https://gamma-api.polymarket.com/markets/condition/${id}`;
-            const fallbackResp = await fetch(fallbackUrl);
-            if (!fallbackResp.ok) continue;
-
-            const gm: GammaMarket = await fallbackResp.json();
-            lookedUp += 1;
-
-            if (!gm?.conditionId || !gm?.slug) continue;
-            const row = {
-              id: gm.conditionId,
-              slug: gm.slug ?? null,
-              question: gm.question ?? gm.title ?? null,
-            };
-
-            const { error: upsertError } = await supabase
-              .from("markets")
-              .upsert([row], { onConflict: "id" });
-
-            if (upsertError) {
-              gammaErrors += 1;
-            } else {
-              updated += 1;
-            }
-          } catch (_error) {
+          if (upsertError) {
             gammaErrors += 1;
+          } else {
+            updated += 1;
           }
+        } catch (_error) {
+          gammaErrors += 1;
         }
       }
     }
