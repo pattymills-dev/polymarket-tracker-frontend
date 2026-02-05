@@ -1,5 +1,5 @@
 {
   "imports": {
-    "supabase": "https://esm.sh/@supabase/supabase-js@2.39.3"
+    "supabase": "https://esm.sh/v135/@supabase/supabase-js@2.39.3?alias=@supabase/functions-js@2.1.0"
   }
 }

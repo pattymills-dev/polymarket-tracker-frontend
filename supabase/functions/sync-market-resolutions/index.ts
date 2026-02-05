@@ -1,5 +1,5 @@
 // Deno Edge Function to sync Polymarket market resolutions
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { createClient } from 'supabase'
 
 console.log('sync-market-resolutions v3 starting')
 
@@ -122,18 +122,38 @@ Deno.serve(async (req) => {
 
       const results = await Promise.allSettled(batch.map(async (market: any) => {
         try {
-          const gammaUrl = `https://gamma-api.polymarket.com/markets/slug/${market.slug}`
+          let gammaMarket: any = null
 
-          const gammaResponse = await fetch(gammaUrl, {
-            headers: { 'Accept': 'application/json' }
-          })
+          if (market.slug) {
+            const gammaUrl = `https://gamma-api.polymarket.com/markets/slug/${market.slug}`
+            const gammaResponse = await fetch(gammaUrl, {
+              headers: { 'Accept': 'application/json' }
+            })
 
-          if (!gammaResponse.ok) {
-            console.log(`Market ${market.slug} not found in Gamma API (${gammaResponse.status})`)
-            return { checked: true, updated: false }
+            if (gammaResponse.ok) {
+              gammaMarket = await gammaResponse.json()
+            }
           }
 
-          const gammaMarket = await gammaResponse.json()
+          if (!gammaMarket && market.id) {
+            // Fallback: fetch by conditionId (Gamma accepts single condition_ids)
+            const byIdUrl = `https://gamma-api.polymarket.com/markets?condition_ids=${market.id}`
+            const byIdResponse = await fetch(byIdUrl, {
+              headers: { 'Accept': 'application/json' }
+            })
+
+            if (byIdResponse.ok) {
+              const byIdMarkets = await byIdResponse.json()
+              if (Array.isArray(byIdMarkets) && byIdMarkets.length > 0) {
+                gammaMarket = byIdMarkets[0]
+              }
+            }
+          }
+
+          if (!gammaMarket) {
+            console.log(`Market ${market.slug || market.id} not found in Gamma API`)
+            return { checked: true, updated: false }
+          }
 
           // Check if market is resolved
           if (gammaMarket.closed && gammaMarket.outcomePrices) {
@@ -159,6 +179,8 @@ Deno.serve(async (req) => {
                 resolved: true,
                 resolved_at: gammaMarket.closed_time || new Date().toISOString(),
                 winning_outcome: winningOutcome,
+                slug: market.slug || gammaMarket.slug || null,
+                question: market.question || gammaMarket.question || gammaMarket.title || null,
                 updated_at: new Date().toISOString()
               })
               .eq('id', market.id)
@@ -173,7 +195,11 @@ Deno.serve(async (req) => {
             // Market not yet resolved, update timestamp so it moves down the queue
             await supabase
               .from('markets')
-              .update({ updated_at: new Date().toISOString() })
+              .update({
+                updated_at: new Date().toISOString(),
+                slug: market.slug || gammaMarket.slug || null,
+                question: market.question || gammaMarket.question || gammaMarket.title || null
+              })
               .eq('id', market.id)
 
             return { checked: true, updated: false }
