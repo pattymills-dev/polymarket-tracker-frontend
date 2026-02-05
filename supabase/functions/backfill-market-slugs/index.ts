@@ -91,18 +91,51 @@ serve(async (req) => {
           question: gm.question ?? gm.title ?? null,
         }));
 
-      if (updates.length === 0) {
-        continue;
+      let batchUpdated = 0;
+      if (updates.length > 0) {
+        const { error: updateError } = await supabase
+          .from("markets")
+          .upsert(updates, { onConflict: "id" });
+
+        if (updateError) {
+          gammaErrors += 1;
+        } else {
+          updated += updates.length;
+          batchUpdated = updates.length;
+        }
       }
 
-      const { error: updateError } = await supabase
-        .from("markets")
-        .upsert(updates, { onConflict: "id" });
+      // Fallback: if bulk lookup returned nothing, try per-conditionId lookup
+      if (batchUpdated === 0) {
+        for (const id of ids) {
+          try {
+            const fallbackUrl = `https://gamma-api.polymarket.com/markets/condition/${id}`;
+            const fallbackResp = await fetch(fallbackUrl);
+            if (!fallbackResp.ok) continue;
 
-      if (updateError) {
-        gammaErrors += 1;
-      } else {
-        updated += updates.length;
+            const gm: GammaMarket = await fallbackResp.json();
+            lookedUp += 1;
+
+            if (!gm?.conditionId || !gm?.slug) continue;
+            const row = {
+              id: gm.conditionId,
+              slug: gm.slug ?? null,
+              question: gm.question ?? gm.title ?? null,
+            };
+
+            const { error: upsertError } = await supabase
+              .from("markets")
+              .upsert([row], { onConflict: "id" });
+
+            if (upsertError) {
+              gammaErrors += 1;
+            } else {
+              updated += 1;
+            }
+          } catch (_error) {
+            gammaErrors += 1;
+          }
+        }
       }
     }
 
