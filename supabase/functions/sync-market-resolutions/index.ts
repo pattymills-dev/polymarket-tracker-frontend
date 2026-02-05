@@ -1,7 +1,7 @@
 // Deno Edge Function to sync Polymarket market resolutions
 import { createClient } from 'supabase'
 
-console.log('sync-market-resolutions v3 starting')
+console.log('sync-market-resolutions v4 starting')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,6 +20,7 @@ Deno.serve(async (req) => {
     const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'all' does oldest first
     const forceFallback = url.searchParams.get('force_fallback') === '1'
     const marketIdParam = url.searchParams.get('market_id')
+    const recentDays = parseInt(url.searchParams.get('days') || '7', 10)
 
     console.log(`Processing batch of ${batchSize} markets in ${mode} mode`)
 
@@ -44,9 +45,71 @@ Deno.serve(async (req) => {
     } else if (mode === 'recent') {
       // PRIORITY MODE: Get markets that have trades in the last 7 days
       // These are the ones users actually care about
-      if (!forceFallback) {
+      // NOTE: A PostgREST join can be extremely duplicate-heavy (many trades per market),
+      // which means `limit(batchSize)` may only yield a handful of unique markets.
+      // We instead pull recent trades, dedupe market_ids in-memory, then fetch the
+      // corresponding unresolved markets.
+
+      const tradeSampleLimit = Math.max(batchSize * 50, 2000) // enough trades to yield many unique market_ids
+      const tradeLookbackIso = new Date(Date.now() - recentDays * 24 * 60 * 60 * 1000).toISOString()
+
+      const { data: recentTrades, error: recentTradesError } = await supabase
+        .from('trades')
+        .select('market_id,timestamp')
+        .not('market_id', 'is', null)
+        .gte('timestamp', tradeLookbackIso)
+        .order('timestamp', { ascending: false })
+        .limit(tradeSampleLimit)
+
+      if (!recentTradesError && Array.isArray(recentTrades) && recentTrades.length > 0) {
+        const seenMarketIds = new Set<string>()
+        const orderedMarketIds: string[] = []
+        const maxMarketIds = Math.min(Math.max(batchSize * 5, batchSize), 600)
+
+        for (const t of recentTrades) {
+          const id = (t as any)?.market_id
+          if (typeof id !== 'string' || id.length === 0) continue
+          if (seenMarketIds.has(id)) continue
+          seenMarketIds.add(id)
+          orderedMarketIds.push(id)
+          // Pull more than batchSize because many may already be resolved,
+          // but cap to keep PostgREST URL sizes reasonable.
+          if (orderedMarketIds.length >= maxMarketIds) break
+        }
+
+        if (orderedMarketIds.length > 0) {
+          const idx = new Map(orderedMarketIds.map((id, i) => [id, i]))
+          const candidates: any[] = []
+          const chunkSize = 150
+
+          for (let start = 0; start < orderedMarketIds.length; start += chunkSize) {
+            const chunk = orderedMarketIds.slice(start, start + chunkSize)
+            const { data: chunkMarkets, error: chunkError } = await supabase
+              .from('markets')
+              .select('id, question, slug, resolved, winning_outcome')
+              .in('id', chunk)
+              .or('resolved.eq.false,winning_outcome.is.null')
+
+            if (chunkError) continue
+            if (Array.isArray(chunkMarkets) && chunkMarkets.length > 0) {
+              candidates.push(...chunkMarkets)
+            }
+
+            // If we already have plenty of candidates, stop early.
+            if (candidates.length >= batchSize * 2) break
+          }
+
+          if (candidates.length > 0) {
+            unresolvedMarkets = candidates
+              .sort((a: any, b: any) => (idx.get(a.id) ?? 0) - (idx.get(b.id) ?? 0))
+              .slice(0, batchSize)
+          }
+        }
+      }
+
+      if ((!unresolvedMarkets || unresolvedMarkets.length === 0) && !forceFallback) {
         const { data, error } = await supabase.rpc('get_unresolved_markets_with_recent_trades', {
-          p_days: 7,
+          p_days: recentDays,
           p_limit: batchSize
         })
 
@@ -66,7 +129,7 @@ Deno.serve(async (req) => {
             trades!inner(timestamp)
           `)
           .or('resolved.eq.false,winning_outcome.is.null')
-          .gte('trades.timestamp', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+          .gte('trades.timestamp', tradeLookbackIso)
           .order('timestamp', { ascending: false, foreignTable: 'trades' })
           .limit(batchSize)
 
