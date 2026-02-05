@@ -19,6 +19,7 @@ Deno.serve(async (req) => {
     const batchSize = parseInt(url.searchParams.get('batch') || '50', 10)
     const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'all' does oldest first
     const forceFallback = url.searchParams.get('force_fallback') === '1'
+    const marketIdParam = url.searchParams.get('market_id')
 
     console.log(`Processing batch of ${batchSize} markets in ${mode} mode`)
 
@@ -31,7 +32,16 @@ Deno.serve(async (req) => {
     let unresolvedMarkets: any[] = []
     let marketsError: any = null
 
-    if (mode === 'recent') {
+    if (marketIdParam) {
+      const { data, error } = await supabase
+        .from('markets')
+        .select('id, question, slug, resolved, winning_outcome')
+        .eq('id', marketIdParam)
+        .limit(1)
+
+      unresolvedMarkets = data || []
+      marketsError = error
+    } else if (mode === 'recent') {
       // PRIORITY MODE: Get markets that have trades in the last 7 days
       // These are the ones users actually care about
       if (!forceFallback) {
@@ -57,6 +67,7 @@ Deno.serve(async (req) => {
           `)
           .or('resolved.eq.false,winning_outcome.is.null')
           .gte('trades.timestamp', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+          .order('timestamp', { ascending: false, foreignTable: 'trades' })
           .limit(batchSize)
 
         if (fallbackError) {
