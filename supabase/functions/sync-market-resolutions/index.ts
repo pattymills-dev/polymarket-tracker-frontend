@@ -18,6 +18,7 @@ Deno.serve(async (req) => {
     const url = new URL(req.url)
     const batchSize = parseInt(url.searchParams.get('batch') || '50', 10)
     const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'all' does oldest first
+    const forceFallback = url.searchParams.get('force_fallback') === '1'
 
     console.log(`Processing batch of ${batchSize} markets in ${mode} mode`)
 
@@ -33,14 +34,21 @@ Deno.serve(async (req) => {
     if (mode === 'recent') {
       // PRIORITY MODE: Get markets that have trades in the last 7 days
       // These are the ones users actually care about
-      const { data, error } = await supabase.rpc('get_unresolved_markets_with_recent_trades', {
-        p_days: 7,
-        p_limit: batchSize
-      })
+      if (!forceFallback) {
+        const { data, error } = await supabase.rpc('get_unresolved_markets_with_recent_trades', {
+          p_days: 7,
+          p_limit: batchSize
+        })
 
-      if (error) {
-        // Fallback if RPC doesn't exist - use a join query approach
-        console.log('RPC not found, using fallback query')
+        if (error) {
+          // Fallback if RPC doesn't exist - use a join query approach
+          console.log('RPC not found, using fallback query')
+        } else if (data && data.length > 0) {
+          unresolvedMarkets = data || []
+        }
+      }
+
+      if (!unresolvedMarkets || unresolvedMarkets.length === 0) {
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('markets')
           .select(`
@@ -72,8 +80,6 @@ Deno.serve(async (req) => {
             return true
           })
         }
-      } else {
-        unresolvedMarkets = data || []
       }
     } else {
       // ALL MODE: Process oldest unresolved markets first (for backfill)
