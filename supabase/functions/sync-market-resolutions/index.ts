@@ -169,29 +169,83 @@ Deno.serve(async (req) => {
             return { checked: true, updated: false }
           }
 
-          // Check if market is resolved
-          if (gammaMarket.closed && gammaMarket.outcomePrices) {
-            // Parse outcomes and prices - they come as JSON strings from the API
-            const outcomes = typeof gammaMarket.outcomes === 'string'
-              ? JSON.parse(gammaMarket.outcomes)
-              : gammaMarket.outcomes
-            const outcomePrices = typeof gammaMarket.outcomePrices === 'string'
-              ? JSON.parse(gammaMarket.outcomePrices).map(Number)
-              : gammaMarket.outcomePrices.map(Number)
+          const parseMaybeJson = (value: any) => {
+            if (value == null) return null
+            if (typeof value === 'string') {
+              try {
+                return JSON.parse(value)
+              } catch {
+                return value
+              }
+            }
+            return value
+          }
 
-            // Find winning outcome (highest price)
-            const maxPrice = Math.max(...outcomePrices)
-            const winningIndex = outcomePrices.indexOf(maxPrice)
-            const winningOutcome = outcomes[winningIndex]
+          const outcomesRaw = parseMaybeJson(gammaMarket.outcomes)
+          const outcomePricesRaw = parseMaybeJson(gammaMarket.outcomePrices)
+          const outcomes = Array.isArray(outcomesRaw) ? outcomesRaw : null
+          const outcomePrices = Array.isArray(outcomePricesRaw)
+            ? outcomePricesRaw.map((value: any) => Number(value))
+            : null
 
-            console.log(`Market ${market.slug} resolved: winner = ${winningOutcome}`)
+          const resolutionStatus = String(gammaMarket.umaResolutionStatus || '').toLowerCase()
+          const resolutionStatusesRaw = parseMaybeJson(gammaMarket.umaResolutionStatuses)
+          const resolutionStatuses = Array.isArray(resolutionStatusesRaw)
+            ? resolutionStatusesRaw.map((value: any) => String(value).toLowerCase())
+            : []
+
+          const isResolvedByStatus =
+            resolutionStatus === 'resolved' || resolutionStatuses.includes('resolved')
+
+          const hasOutcomePrices =
+            Array.isArray(outcomePrices) &&
+            outcomePrices.length > 0 &&
+            outcomePrices.some((value) => Number.isFinite(value))
+
+          const winningOutcomeRaw =
+            gammaMarket.winningOutcome ||
+            gammaMarket.winning_outcome ||
+            gammaMarket.resolvedOutcome ||
+            gammaMarket.resolution
+
+          let winningOutcome =
+            typeof winningOutcomeRaw === 'string' && winningOutcomeRaw.length > 0
+              ? winningOutcomeRaw
+              : null
+
+          if (!winningOutcome && hasOutcomePrices && Array.isArray(outcomes)) {
+            const maxPrice = Math.max(...outcomePrices!)
+            const winningIndexes = outcomePrices!.reduce<number[]>((acc, price, idx) => {
+              if (price === maxPrice) acc.push(idx)
+              return acc
+            }, [])
+
+            if (winningIndexes.length === 1) {
+              winningOutcome = outcomes[winningIndexes[0]]
+            }
+          }
+
+          const isResolved =
+            gammaMarket.resolved === true ||
+            isResolvedByStatus ||
+            ((gammaMarket.closed === true || gammaMarket.active === false) &&
+              (hasOutcomePrices || Boolean(winningOutcome)))
+
+          if (isResolved && winningOutcome) {
+            console.log(`Market ${market.slug || market.id} resolved: winner = ${winningOutcome}`)
+
+            const resolvedAt =
+              gammaMarket.closed_time ||
+              gammaMarket.closedTime ||
+              gammaMarket.resolvedTime ||
+              new Date().toISOString()
 
             // Update market as resolved
             const { error: updateError } = await supabase
               .from('markets')
               .update({
                 resolved: true,
-                resolved_at: gammaMarket.closed_time || new Date().toISOString(),
+                resolved_at: resolvedAt,
                 winning_outcome: winningOutcome,
                 slug: market.slug || gammaMarket.slug || null,
                 question: market.question || gammaMarket.question || gammaMarket.title || null,
@@ -205,7 +259,15 @@ Deno.serve(async (req) => {
             }
 
             return { checked: true, updated: true }
-          } else {
+          }
+
+          if (isResolved && !winningOutcome) {
+            console.log(
+              `Market ${market.slug || market.id} appears resolved but has no winning outcome yet`
+            )
+          }
+
+          {
             // Market not yet resolved, update timestamp so it moves down the queue
             await supabase
               .from('markets')
