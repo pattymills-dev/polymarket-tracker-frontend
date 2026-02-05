@@ -23,10 +23,12 @@ const PolymarketTracker = () => {
   const [recentTrades, setRecentTrades] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
   const [hotStreakTraders, setHotStreakTraders] = useState([]);
+  const [whaleVolumeTraders, setWhaleVolumeTraders] = useState([]);
   const [watchedTraders, setWatchedTraders] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [marketStats, setMarketStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [openExposureMap, setOpenExposureMap] = useState({});
 
   // const [selectedCategory, setSelectedCategory] = useState('all'); // placeholder for future
   const [minBetSize] = useState(5000); // UI filter for large bets (DB now stores >= $1k)
@@ -410,6 +412,8 @@ setMarketStats({
       fetchData();
       fetchProfitability();
       fetchHotStreaks();
+      fetchWhaleVolumeTraders();
+      fetchOpenExposure();
     }, 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -545,6 +549,63 @@ setMarketStats({
     }
   };
 
+  const fetchWhaleVolumeTraders = async () => {
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/whale_volume_traders?order=rank.asc&limit=50`,
+        { headers }
+      );
+      const data = await response.json();
+
+      if (response.ok && Array.isArray(data)) {
+        const mapped = data.map((t) => ({
+          address: t.trader_address,
+          total_volume: Number(t.total_volume || 0),
+          total_bets: Number(t.trade_count || 0),
+          avg_bet_size: Number(t.avg_trade_size || 0),
+          unique_markets: Number(t.unique_markets || 0),
+          last_activity: t.last_trade_at || Date.now(),
+        }));
+        setWhaleVolumeTraders(mapped);
+      } else {
+        console.error('Whale volume error:', data);
+        setWhaleVolumeTraders([]);
+      }
+    } catch (error) {
+      console.error('Error fetching whale volume traders:', error);
+      setWhaleVolumeTraders([]);
+    }
+  };
+
+  const fetchOpenExposure = async () => {
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/trader_open_exposure?select=trader_address,open_markets,open_cost,open_abs_exposure`,
+        { headers }
+      );
+      const data = await response.json();
+
+      if (response.ok && Array.isArray(data)) {
+        const map = {};
+        data.forEach((row) => {
+          if (!row.trader_address) return;
+          map[row.trader_address.toLowerCase()] = {
+            open_markets: Number(row.open_markets || 0),
+            open_cost: Number(row.open_cost || 0),
+            open_abs_exposure: Number(row.open_abs_exposure || 0),
+          };
+        });
+        setOpenExposureMap(map);
+      } else {
+        console.error('Open exposure error:', data);
+        setOpenExposureMap({});
+      }
+    } catch (error) {
+      console.error('Error fetching open exposure:', error);
+      setOpenExposureMap({});
+    }
+  };
+
   const filteredBets = useMemo(() => {
     return (largeBets || []).filter((bet) => Number(bet.amount || 0) >= Number(minBetSize || 0));
   }, [largeBets, minBetSize]);
@@ -610,6 +671,8 @@ setMarketStats({
   useEffect(() => {
     fetchProfitability();
     fetchHotStreaks();
+    fetchWhaleVolumeTraders();
+    fetchOpenExposure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -690,6 +753,7 @@ setMarketStats({
     const q = (searchAddress || '').trim().toLowerCase();
     const hasResolvedTraders = profitabilityTraders.length >= 5;
     const isHot = traderSortBy === 'hot_streak';
+    const isWhale = traderSortBy === 'whale_volume';
 
     // Top Performers: by P/L
     let tradersToShow = hasResolvedTraders
@@ -701,6 +765,9 @@ setMarketStats({
     if (isHot) {
       tradersToShow = hotStreakTraders;
     }
+    if (isWhale) {
+      tradersToShow = whaleVolumeTraders;
+    }
 
     // Filter by search query
     if (q) {
@@ -708,7 +775,7 @@ setMarketStats({
     }
 
     // Apply sorting
-    if (hasResolvedTraders && (!isHot || hotStreakTraders.length === 0)) {
+    if (hasResolvedTraders && !isHot && !isWhale) {
       tradersToShow = [...tradersToShow].sort((a, b) => {
         if (traderSortBy === 'hot_streak') {
           // Hot streak = prioritize current streak, then recent win rate, then recent market count
@@ -729,7 +796,7 @@ setMarketStats({
     }
 
     return tradersToShow;
-  }, [profitabilityTraders, recentActiveTraders, topTraders, hotStreakTraders, searchAddress, traderSortBy]);
+  }, [profitabilityTraders, recentActiveTraders, topTraders, hotStreakTraders, whaleVolumeTraders, searchAddress, traderSortBy]);
 
   // SONAR TERMINAL PALETTE - Unified token system
   // Desaturated phosphor green, NOT neon/LED. Brightest reserved for numbers only.
@@ -1451,11 +1518,17 @@ setMarketStats({
                   <h2 className={`flex items-center gap-2 ${isRetro ? '' : 'text-lg font-semibold'}`} style={isRetro ? { color: retroColors.header, fontWeight: 500, letterSpacing: '0.08em', fontSize: '1.2rem' } : {}}>
                     <Trophy className="w-5 h-5" style={isRetro ? { color: retroColors.textDim } : {}} />
                     {isRetro
-                      ? (profitabilityTraders.length >= 5 ? 'TOP PERFORMERS' : 'SMART MONEY')
-                      : (profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)')}
+                      ? (traderSortBy === 'whale_volume'
+                        ? 'TOP SPENDERS'
+                        : (profitabilityTraders.length >= 5 ? 'TOP PERFORMERS' : 'SMART MONEY'))
+                      : (traderSortBy === 'whale_volume'
+                        ? 'Top Spenders'
+                        : (profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)'))}
                     {isRetro && (
                       <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>
-                        {profitabilityTraders.length >= 5 ? 'RESOLVED (ALL-TIME)' : '7D'}
+                        {traderSortBy === 'whale_volume'
+                          ? 'VOLUME (30D)'
+                          : (profitabilityTraders.length >= 5 ? 'RESOLVED (ALL-TIME)' : '7D')}
                       </span>
                     )}
                   </h2>
@@ -1479,7 +1552,7 @@ setMarketStats({
                     </button>
                   </div>
 
-                  {profitabilityTraders.length >= 5 && (
+                  {(profitabilityTraders.length >= 5 || whaleVolumeTraders.length > 0) && (
                     <div className="space-y-2">
                       <div className="flex gap-1 text-xs">
                         <button
@@ -1520,10 +1593,30 @@ setMarketStats({
                         >
                           {isRetro ? '🔥 HOT' : '🔥 Hot Streak'}
                         </button>
+                        <button
+                          onClick={() => setTraderSortBy('whale_volume')}
+                          className={`px-3 py-1.5 rounded transition-colors ${
+                            isRetro
+                              ? ''
+                              : (traderSortBy === 'whale_volume'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
+                          }`}
+                          style={isRetro ? {
+                            backgroundColor: traderSortBy === 'whale_volume' ? retroColors.text : retroColors.bg,
+                            color: traderSortBy === 'whale_volume' ? retroColors.bg : retroColors.textDim,
+                            border: `1px solid ${traderSortBy === 'whale_volume' ? retroColors.text : retroColors.borderEtched}`,
+                            fontSize: '0.9rem'
+                          } : {}}
+                          title="Biggest spenders by 30-day volume"
+                        >
+                          {isRetro ? '💸 VOL' : '💸 Volume'}
+                        </button>
                       </div>
                       <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
                         {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
                         {traderSortBy === 'hot_streak' && (isRetro ? '> RANKED BY WIN STREAK + ACCURACY' : '🔥 Ranked by winning streak + recent accuracy')}
+                        {traderSortBy === 'whale_volume' && (isRetro ? '> RANKED BY 30D VOLUME' : '💸 Ranked by 30-day volume')}
                       </p>
                     </div>
                   )}
@@ -1534,7 +1627,9 @@ setMarketStats({
                   <p className="text-sm text-center py-8" style={isRetro ? { color: retroColors.textDim } : {}}>
                     {traderSortBy === 'hot_streak'
                       ? (isRetro ? '> NO HOT STREAK DATA YET' : 'No hot streak data yet')
-                      : (isRetro ? '> NO TRADER DATA YET' : 'No trader data yet')}
+                      : traderSortBy === 'whale_volume'
+                        ? (isRetro ? '> NO VOLUME DATA YET' : 'No volume data yet')
+                        : (isRetro ? '> NO TRADER DATA YET' : 'No trader data yet')}
                   </p>
                 ) : (
                   <div className="flex-1 overflow-y-auto pr-2 space-y-3">
@@ -1549,6 +1644,11 @@ setMarketStats({
                       const recentWins = recentRatePct != null && recentMarkets
                         ? Math.round((recentRatePct / 100) * recentMarkets)
                         : null;
+                      const exposure = trader.address
+                        ? openExposureMap[String(trader.address).toLowerCase()]
+                        : null;
+                      const openExposure = exposure?.open_abs_exposure;
+                      const openMarkets = exposure?.open_markets;
                       const showHotMetrics = (trader.current_streak != null || trader.recent_win_rate != null || trader.recent_markets != null) &&
                         (trader.current_streak || recentMarkets);
                       return (
@@ -1645,6 +1745,41 @@ setMarketStats({
                                   </p>
                                 </div>
                               </div>
+                              {openExposure != null && (
+                                <div
+                                  className={isRetro ? 'grid grid-cols-2 gap-3 mt-2 pt-2' : 'grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50'}
+                                  style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : {}}
+                                >
+                                  <div>
+                                    <p
+                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                    >
+                                      Open Exposure
+                                    </p>
+                                    <p
+                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
+                                      style={isRetro ? { fontSize: '1rem', fontWeight: 500 } : {}}
+                                    >
+                                      {formatCurrency(openExposure)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p
+                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                    >
+                                      Open Mkts
+                                    </p>
+                                    <p
+                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
+                                      style={isRetro ? { fontSize: '1rem', fontWeight: 500 } : {}}
+                                    >
+                                      {openMarkets || 0}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
                               {showHotMetrics && (
                                 <div
                                   className={isRetro ? 'mt-2 pt-2' : 'mt-2 pt-2'}
@@ -1676,13 +1811,17 @@ setMarketStats({
                             <>
                               <div className="grid grid-cols-2 gap-2 text-sm mt-2.5 pt-2.5 border-t border-slate-800/50">
                                 <div>
-                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Volume (7d)</p>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">
+                                    {traderSortBy === 'whale_volume' ? 'Volume (30d)' : 'Volume (7d)'}
+                                  </p>
                                   <p className="font-bold text-slate-100 font-mono text-sm">
                                     {formatCurrency(trader.total_volume)}
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">Avg Bet</p>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">
+                                    {traderSortBy === 'whale_volume' ? 'Avg Trade' : 'Avg Bet'}
+                                  </p>
                                   <p className="font-bold text-slate-100 font-mono text-sm">
                                     {trader.avg_bet_size ? formatCurrency(trader.avg_bet_size) : formatCurrency(trader.total_volume / (trader.total_bets || 1))}
                                   </p>
@@ -1697,6 +1836,20 @@ setMarketStats({
                                   <div>
                                     <p className="text-[10px] text-slate-500 uppercase tracking-wide">Trades</p>
                                     <p className="font-bold text-slate-100 font-mono text-sm">{trader.total_bets}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {openExposure != null && (
+                                <div className="grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50">
+                                  <div>
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Open Exposure</p>
+                                    <p className="font-bold text-slate-100 font-mono text-sm">
+                                      {formatCurrency(openExposure)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Open Mkts</p>
+                                    <p className="font-bold text-slate-100 font-mono text-sm">{openMarkets || 0}</p>
                                   </div>
                                 </div>
                               )}

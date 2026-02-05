@@ -147,6 +147,7 @@ serve(async (req) => {
     const tradeMetaByHash = new Map<string, TradeMeta>();
     let pageCount = 0;
     let stoppedByEmptyPage = false;
+    let hitMaxPages = false;
 
     let rawMissingAddress = 0;
     let rawMissingTraderName = 0;
@@ -555,6 +556,8 @@ serve(async (req) => {
       );
     }
 
+    hitMaxPages = pageCount >= MAX_PAGES && !stoppedByEmptyPage;
+
     // Recalculate trader stats after storing all trades
     const { error: statsError } = await supabase.rpc('recalculate_trader_stats');
     if (statsError) {
@@ -583,6 +586,7 @@ serve(async (req) => {
             maxPages: MAX_PAGES,
             pagesFetched: pageCount,
             stoppedByEmptyPage,
+            hitMaxPages,
             minTradeSize: MIN_TRADE_SIZE,
             whaleThreshold: WHALE_THRESHOLD,
             megaWhaleThreshold: MEGA_WHALE_THRESHOLD,
