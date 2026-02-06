@@ -1,7 +1,7 @@
 // Deno Edge Function to sync Polymarket market resolutions
 import { createClient } from 'supabase'
 
-console.log('sync-market-resolutions v5 starting')
+console.log('sync-market-resolutions v6 starting')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -136,7 +136,10 @@ Deno.serve(async (req) => {
       const baseRows = eventMarkets
         .filter((m: any) => typeof m?.conditionId === 'string' && m.conditionId.length > 0)
         .map((m: any) => {
-          const row: any = { id: m.conditionId, updated_at: nowIso }
+          // Track resolution check time separately from the row's metadata updates.
+          // `updated_at` is frequently mutated by other jobs (e.g., trade/slug upserts),
+          // so it is not a reliable "last checked for resolution" signal.
+          const row: any = { id: m.conditionId, resolution_checked_at: nowIso }
           if (typeof m?.slug === 'string' && m.slug.length > 0) row.slug = m.slug
           const q = m?.question ?? m?.title
           if (typeof q === 'string' && q.length > 0) row.question = q
@@ -197,7 +200,7 @@ Deno.serve(async (req) => {
             resolved: true,
             resolved_at: resolvedAt,
             winning_outcome: decision.winningOutcome,
-            updated_at: nowIso,
+            resolution_checked_at: nowIso,
           }
           if (typeof m?.slug === 'string' && m.slug.length > 0) row.slug = m.slug
           const q = m?.question ?? m?.title
@@ -332,13 +335,13 @@ Deno.serve(async (req) => {
 
       const { data: candidateMarkets, error: candidateError } = await supabase
         .from('markets')
-        .select('slug,updated_at,resolved,winning_outcome')
+        .select('slug,resolution_checked_at,winning_outcome')
         .not('slug', 'is', null)
         // Treat winning_outcome as the source of truth for "pending" (avoids OR nesting limits in PostgREST).
         .is('winning_outcome', null)
         // Filter down to sports slugs server-side; otherwise the limit can be consumed by non-sports markets.
         .or(sportsSlugOr)
-        .order('updated_at', { ascending: true, nullsFirst: true })
+        .order('resolution_checked_at', { ascending: true, nullsFirst: true })
         .limit(candidateLimit)
 
       if (candidateError) {
@@ -358,9 +361,9 @@ Deno.serve(async (req) => {
         const slug = (row as any)?.slug
         if (typeof slug !== 'string') continue
 
-        const updatedAt = (row as any)?.updated_at
-        if (typeof updatedAt === 'string' && updatedAt.length > 0 && recheckHours > 0) {
-          const t = Date.parse(updatedAt)
+        const checkedAt = (row as any)?.resolution_checked_at
+        if (typeof checkedAt === 'string' && checkedAt.length > 0 && recheckHours > 0) {
+          const t = Date.parse(checkedAt)
           if (Number.isFinite(t) && t > cutoffMs) continue
         }
 
@@ -433,11 +436,11 @@ Deno.serve(async (req) => {
 
       const { data: candidateMarkets, error: candidateError } = await supabase
         .from('markets')
-        .select('slug,updated_at,resolved,winning_outcome')
+        .select('slug,resolution_checked_at,winning_outcome')
         .not('slug', 'is', null)
         .is('winning_outcome', null)
         .or(windowSlugOr)
-        .order('updated_at', { ascending: true, nullsFirst: true })
+        .order('resolution_checked_at', { ascending: true, nullsFirst: true })
         .limit(candidateLimit)
 
       if (candidateError) {
@@ -457,9 +460,9 @@ Deno.serve(async (req) => {
         const slug = (row as any)?.slug
         if (typeof slug !== 'string') continue
 
-        const updatedAt = (row as any)?.updated_at
-        if (typeof updatedAt === 'string' && updatedAt.length > 0 && recheckHours > 0) {
-          const t = Date.parse(updatedAt)
+        const checkedAt = (row as any)?.resolution_checked_at
+        if (typeof checkedAt === 'string' && checkedAt.length > 0 && recheckHours > 0) {
+          const t = Date.parse(checkedAt)
           if (Number.isFinite(t) && t > cutoffMs) continue
         }
 
@@ -645,10 +648,10 @@ Deno.serve(async (req) => {
 
       const { data, error } = await supabase
         .from('markets')
-        .select('id, question, slug, resolved, winning_outcome')
-        .or('resolved.eq.false,winning_outcome.is.null')
-        .or(`updated_at.is.null,updated_at.lt.${cutoffIso}`)
-        .order('updated_at', { ascending: true, nullsFirst: true })
+        .select('id, question, slug, resolved, winning_outcome, resolution_checked_at')
+        .is('winning_outcome', null)
+        .or(`resolution_checked_at.is.null,resolution_checked_at.lt.${cutoffIso}`)
+        .order('resolution_checked_at', { ascending: true, nullsFirst: true })
         .limit(batchSize)
 
       unresolvedMarkets = data || []
@@ -657,9 +660,9 @@ Deno.serve(async (req) => {
       // ALL MODE: Process oldest unresolved markets first (for backfill)
       const { data, error } = await supabase
         .from('markets')
-        .select('id, question, slug, resolved, winning_outcome')
-        .or('resolved.eq.false,winning_outcome.is.null')
-        .order('updated_at', { ascending: true, nullsFirst: true })
+        .select('id, question, slug, resolved, winning_outcome, resolution_checked_at')
+        .is('winning_outcome', null)
+        .order('resolution_checked_at', { ascending: true, nullsFirst: true })
         .limit(batchSize)
 
       unresolvedMarkets = data || []
@@ -773,9 +776,9 @@ Deno.serve(async (req) => {
                 resolved: true,
                 resolved_at: resolvedAt,
                 winning_outcome: decision.winningOutcome,
+                resolution_checked_at: new Date().toISOString(),
                 slug: market.slug || gammaMarket.slug || null,
                 question: market.question || gammaMarket.question || gammaMarket.title || null,
-                updated_at: new Date().toISOString()
               })
               .eq('id', market.id)
 
@@ -794,13 +797,12 @@ Deno.serve(async (req) => {
           }
 
           {
-            // Market not yet resolved, update timestamp so it moves down the queue
+            // Market not yet resolved. Record that we've checked it so it can be rechecked later,
+            // without being blocked by other jobs that mutate `updated_at`.
             await supabase
               .from('markets')
               .update({
-                updated_at: new Date().toISOString(),
-                slug: market.slug || gammaMarket.slug || null,
-                question: market.question || gammaMarket.question || gammaMarket.title || null
+                resolution_checked_at: new Date().toISOString(),
               })
               .eq('id', market.id)
 
