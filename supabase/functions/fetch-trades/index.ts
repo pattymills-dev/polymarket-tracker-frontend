@@ -18,6 +18,21 @@ function cleanString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function computeMaxRoi(sideRaw: unknown, priceRaw: unknown): number | null {
+  const price = safeNumber(priceRaw);
+  if (price == null) return null;
+
+  // Guard against divide-by-zero and settled/invalid prices
+  if (price <= 0 || price >= 1) return 0;
+
+  const side = typeof sideRaw === "string" ? sideRaw.toUpperCase() : "BUY";
+
+  // BUY: risk = price, max profit = (1 - price)  => ROI = (1 - p) / p
+  // SELL: risk = (1 - price), max profit = price => ROI = p / (1 - p)
+  if (side === "SELL") return price / (1 - price);
+  return (1 - price) / price;
+}
+
 type PolymarketUrlInput = {
   eventSlug?: string | null;
   marketSlug?: string | null;
@@ -141,6 +156,11 @@ serve(async (req) => {
     const WHALE_THRESHOLD = 10_000;
     const MEGA_WHALE_THRESHOLD = 50_000;
 
+    // Suppress "penny scrape" alerts (e.g. BUY @ 99-100c, SELL @ 0-1c).
+    // This is the max-ROI on the trade (profit/risk) if the bet goes the trader's way.
+    // 0.03 => require at least ~3% max ROI to qualify for alerts/Telegram.
+    const MIN_ALERT_MAX_ROI = 0.03;
+
     let fetchedTotal = 0;
     let upsertedTrades = 0;
     let insertedAlerts = 0;
@@ -160,6 +180,7 @@ serve(async (req) => {
     let droppedMissingTimestamp = 0;
     let droppedInvalidAmount = 0;
     let droppedBelowMin = 0;
+    let suppressedLowRoiAlerts = 0;
     let dedupedCount = 0;
 
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -373,6 +394,14 @@ serve(async (req) => {
 
       for (const r of rows) {
         if (typeof r.amount !== "number") continue;
+
+        // Skip alerting on "penny scrape" trades.
+        // We still store the trade itself; this only suppresses alerts + Telegram noise.
+        const roi = computeMaxRoi(r.side || "BUY", r.price);
+        if (roi != null && roi < MIN_ALERT_MAX_ROI) {
+          suppressedLowRoiAlerts += 1;
+          continue;
+        }
 
         const traderLower = r.trader_address?.toLowerCase();
         const isTopTrader = topTraderAddresses.has(traderLower);
@@ -600,11 +629,15 @@ serve(async (req) => {
             droppedMissingTimestamp,
             droppedInvalidAmount,
             droppedBelowMin,
+            suppressedLowRoiAlerts,
             dedupedCount,
             apiFilters: {
               takerOnly: false,
               filterType: "CASH",
               filterAmount: MIN_TRADE_SIZE,
+            },
+            alertFilters: {
+              minAlertMaxRoi: MIN_ALERT_MAX_ROI,
             },
           }
           : undefined,
