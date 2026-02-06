@@ -13,8 +13,13 @@ ADD COLUMN IF NOT EXISTS recent_markets INTEGER;
 ALTER TABLE hot_streaks
 ADD COLUMN IF NOT EXISTS last_resolved_at TIMESTAMPTZ;
 
--- Enriched performance function with streak + recency metrics
-CREATE OR REPLACE FUNCTION calculate_trader_performance(min_resolved_markets int DEFAULT 1)
+-- Enriched performance function with streak + recency metrics.
+-- NOTE: We keep the original `calculate_trader_performance(int)` signature stable (it is used by
+-- `refresh_top_traders()` + the frontend RPC). Changing a function's RETURN TABLE is not allowed
+-- via CREATE OR REPLACE, and requires DROP + recreating dependents.
+--
+-- Instead, we introduce a separate function for the HOT leaderboard.
+CREATE OR REPLACE FUNCTION calculate_trader_performance_with_streaks(min_resolved_markets int DEFAULT 1)
 RETURNS TABLE (
   trader_address text,
   total_buy_cost numeric,
@@ -174,8 +179,8 @@ BEGIN
         NULLIF(SUM(CASE WHEN rn <= 10 THEN 1 ELSE 0 END), 0) as recent_win_rate,
       SUM(CASE WHEN rn <= 10 THEN 1 ELSE 0 END)::int as recent_markets,
       CASE
-        WHEN MIN(CASE WHEN win_flag = 0 THEN rn END) IS NULL THEN COUNT(*)
-        ELSE GREATEST(MIN(CASE WHEN win_flag = 0 THEN rn END) - 1, 0)
+        WHEN MIN(CASE WHEN win_flag = 0 THEN rn END) IS NULL THEN COUNT(*)::int
+        ELSE GREATEST(MIN(CASE WHEN win_flag = 0 THEN rn END) - 1, 0)::int
       END as current_streak
     FROM ordered_markets
     GROUP BY pos_trader_address
@@ -263,7 +268,7 @@ BEGIN
     COALESCE(recent_win_rate, win_rate),
     COALESCE(recent_markets, resolved_markets),
     last_resolved_at
-  FROM calculate_trader_performance(5)  -- Minimum 5 resolved markets
+  FROM calculate_trader_performance_with_streaks(5)  -- Minimum 5 resolved markets
   WHERE COALESCE(recent_markets, resolved_markets) >= 5
     AND COALESCE(recent_win_rate, win_rate) >= 0.70
   ORDER BY current_streak DESC, recent_win_rate DESC, resolved_markets DESC
