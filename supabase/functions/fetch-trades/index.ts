@@ -158,8 +158,8 @@ serve(async (req) => {
 
     // Suppress "penny scrape" alerts (e.g. BUY @ 99-100c, SELL @ 0-1c).
     // This is the max-ROI on the trade (profit/risk) if the bet goes the trader's way.
-    // 0.03 => require at least ~3% max ROI to qualify for alerts/Telegram.
-    const MIN_ALERT_MAX_ROI = 0.03;
+    // 0.10 => require at least ~10% max ROI to qualify for alerts/Telegram.
+    const MIN_ALERT_MAX_ROI = 0.10;
 
     let fetchedTotal = 0;
     let upsertedTrades = 0;
