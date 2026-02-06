@@ -64,6 +64,22 @@ jobs:
             exit 1
           fi
 
+      - name: Sync crypto updown resolutions (recent window)
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=200&mode=updown_window&window_hours=48&recheck_minutes=5")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (updown_window): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: sync-resolutions (updown_window) failed with status $http_code"
+            exit 1
+          fi
+
       - name: Sync sports event resolutions (recent)
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \

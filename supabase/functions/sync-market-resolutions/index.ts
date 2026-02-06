@@ -96,6 +96,33 @@ function computeResolutionDecision(gammaMarket: any) {
   }
 }
 
+function parseUpdownSlug(slug: string) {
+  // Example: eth-updown-15m-1770354900 (start epoch seconds)
+  const m = slug.match(/^([a-z0-9]+)-updown-(\d+)([mhd])-(\d+)$/i)
+  if (!m) return null
+
+  const amount = Number(m[2])
+  const unit = String(m[3]).toLowerCase()
+  const startSeconds = Number(m[4])
+
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  if (!Number.isFinite(startSeconds) || startSeconds <= 0) return null
+
+  const unitSeconds =
+    unit === 'm' ? 60 :
+    unit === 'h' ? 60 * 60 :
+    unit === 'd' ? 24 * 60 * 60 :
+    null
+
+  if (!unitSeconds) return null
+
+  const durationSeconds = amount * unitSeconds
+  const startMs = startSeconds * 1000
+  const endMs = startMs + durationSeconds * 1000
+
+  return { startMs, endMs, durationSeconds }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -111,6 +138,8 @@ Deno.serve(async (req) => {
     const eventSlugParam = url.searchParams.get('event_slug')
     const recentDays = parseInt(url.searchParams.get('days') || '7', 10)
     const recheckHours = parseInt(url.searchParams.get('recheck_hours') || '2', 10)
+    const windowHours = parseInt(url.searchParams.get('window_hours') || '48', 10)
+    const recheckMinutes = parseInt(url.searchParams.get('recheck_minutes') || '10', 10)
     const debugEnabled = url.searchParams.get('debug') === '1'
 
     console.log(`Processing batch of ${batchSize} markets in ${mode} mode`)
@@ -517,6 +546,59 @@ Deno.serve(async (req) => {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
+    } else if (mode === 'updown_window') {
+      // Crypto "Up or Down" markets resolve very quickly after close, but they also stop trading immediately.
+      // If we only follow "recent trades", we can miss the short window where UMA flips to resolved.
+      // This mode targets recently-ended updown markets by parsing the timestamp embedded in the slug.
+
+      const candidateLimit = Math.max(batchSize * 50, 5000)
+      const nowMs = Date.now()
+      const graceMs = 2 * 60 * 1000
+      const minStartMs = nowMs - Math.max(windowHours, 1) * 60 * 60 * 1000
+      const cutoffMs = nowMs - Math.max(recheckMinutes, 0) * 60 * 1000
+
+      const { data: candidateMarkets, error: candidateError } = await supabase
+        .from('markets')
+        .select('id, question, slug, resolved, winning_outcome, resolution_checked_at')
+        .not('slug', 'is', null)
+        .is('winning_outcome', null)
+        .ilike('slug', '%-updown-%')
+        // Lexicographically sorts by the embedded epoch seconds (fixed-width) so this biases recent markets first.
+        .order('slug', { ascending: false })
+        .limit(candidateLimit)
+
+      if (candidateError) {
+        return new Response(JSON.stringify({ error: candidateError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const selected: any[] = []
+      for (const row of (candidateMarkets || [])) {
+        const slug = (row as any)?.slug
+        if (typeof slug !== 'string' || slug.length === 0) continue
+
+        const info = parseUpdownSlug(slug)
+        if (!info) continue
+
+        // Ignore markets that have not finished yet (plus a small grace period for close time skew).
+        if (info.endMs + graceMs > nowMs) continue
+
+        // Keep focus on a recent window to avoid spending cycles on old historical markets.
+        if (info.startMs < minStartMs) continue
+
+        const checkedAt = (row as any)?.resolution_checked_at
+        if (typeof checkedAt === 'string' && checkedAt.length > 0 && recheckMinutes > 0) {
+          const t = Date.parse(checkedAt)
+          if (Number.isFinite(t) && t > cutoffMs) continue
+        }
+
+        selected.push(row)
+        if (selected.length >= batchSize) break
+      }
+
+      unresolvedMarkets = selected
     } else if (mode === 'recent') {
       // PRIORITY MODE: Get markets that have trades in the last 7 days
       // These are the ones users actually care about
@@ -835,6 +917,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       ok: true,
+      mode,
       processed: checkedCount,
       updated: updatedCount,
       errors: errorCount,
