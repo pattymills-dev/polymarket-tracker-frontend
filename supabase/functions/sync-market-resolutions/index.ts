@@ -399,6 +399,98 @@ Deno.serve(async (req) => {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
+    } else if (mode === 'events_window') {
+      // Target sports events within the last `days` (default 7), based on the date embedded in markets.slug.
+      // This prevents us from missing "yesterday's games" when recent trade volume is dominated by
+      // non-sports markets, and also avoids getting stuck processing ancient unresolved sports markets first.
+
+      const candidateLimit = Math.max(batchSize * 500, 10_000)
+      const cutoffMs = Date.now() - Math.max(recheckHours, 0) * 60 * 60 * 1000
+      const windowMs = Math.max(recentDays, 1) * 24 * 60 * 60 * 1000
+      const minEventMs = Date.now() - windowMs
+      const maxEventMs = Date.now() + 24 * 60 * 60 * 1000 // allow small time-zone skew
+
+      const { data: candidateMarkets, error: candidateError } = await supabase
+        .from('markets')
+        .select('slug,updated_at,resolved,winning_outcome')
+        .not('slug', 'is', null)
+        .or('resolved.eq.false,winning_outcome.is.null')
+        .order('updated_at', { ascending: false, nullsLast: true })
+        .limit(candidateLimit)
+
+      if (candidateError) {
+        return new Response(JSON.stringify({ error: candidateError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const sportsSlugRegex =
+        /^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+
+      const seen = new Set<string>()
+      const orderedEventSlugs: string[] = []
+
+      for (const row of (candidateMarkets || [])) {
+        const slug = (row as any)?.slug
+        if (typeof slug !== 'string') continue
+
+        const updatedAt = (row as any)?.updated_at
+        if (typeof updatedAt === 'string' && updatedAt.length > 0 && recheckHours > 0) {
+          const t = Date.parse(updatedAt)
+          if (Number.isFinite(t) && t > cutoffMs) continue
+        }
+
+        const m = slug.match(sportsSlugRegex)
+        if (!m) continue
+
+        const [, league, teams, date] = m
+        const dateMs = Date.parse(`${date}T00:00:00Z`)
+        if (Number.isFinite(dateMs)) {
+          if (dateMs < minEventMs || dateMs > maxEventMs) continue
+        }
+
+        const eventSlug = `${league.toLowerCase()}-${teams}-${date}`
+        if (seen.has(eventSlug)) continue
+        seen.add(eventSlug)
+        orderedEventSlugs.push(eventSlug)
+        if (orderedEventSlugs.length >= batchSize) break
+      }
+
+      let eventsProcessed = 0
+      let marketsInEvents = 0
+      let resolvedUpdated = 0
+      let dbErrors = 0
+      const debugRows: any[] = []
+
+      for (const eventSlug of orderedEventSlugs) {
+        try {
+          const r = await syncEventBySlug(eventSlug)
+          eventsProcessed += 1
+          marketsInEvents += r.marketsInEvent
+          resolvedUpdated += r.resolvedUpdated
+          dbErrors += r.dbErrors || 0
+          if (debugEnabled && debugRows.length < 5 && Array.isArray(r.debug)) {
+            debugRows.push(...r.debug)
+          }
+        } catch (e) {
+          console.error(`Error syncing event ${eventSlug}:`, e)
+        }
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        mode: 'events_window',
+        days: recentDays,
+        eventsProcessed,
+        marketsInEvents,
+        resolvedUpdated,
+        dbErrors,
+        debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     } else if (mode === 'recent') {
       // PRIORITY MODE: Get markets that have trades in the last 7 days
       // These are the ones users actually care about
