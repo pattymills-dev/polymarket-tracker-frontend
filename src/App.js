@@ -552,6 +552,7 @@ setMarketStats({
           return {
             address: t.trader_address,
             total_volume: Number(t.total_buy_cost || 0),
+            total_buy_cost: Number(t.total_buy_cost || 0),
             total_bets: Number(t.resolved_markets || 0),
             resolved_markets: t.resolved_markets,
             wins: Number(t.wins || 0),
@@ -673,6 +674,7 @@ setMarketStats({
         const mappedTraders = data.map(t => ({
           address: t.address || t.trader_address,
           total_volume: Number(t.total_volume || t.total_buy_cost || 0),
+          total_buy_cost: Number(t.total_buy_cost || t.total_volume || 0),
           total_bets: Number(t.total_bets || t.resolved_markets || 0),
           resolved_markets: t.resolved_markets,
           wins: Number(t.wins || 0),
@@ -1647,7 +1649,7 @@ setMarketStats({
                       </div>
                       <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
                         {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
-                        {traderSortBy === 'hot_streak' && (isRetro ? '> RANKED BY WIN STREAK + ACCURACY' : '🔥 Ranked by winning streak + recent accuracy')}
+                        {traderSortBy === 'hot_streak' && (isRetro ? '> RANKED BY WIN STREAK + ACCURACY (EXCL. LOW ROI)' : '🔥 Ranked by winning streak + recent accuracy (excluding low-upside bets)')}
                         {traderSortBy === 'whale_volume' && (isRetro ? '> RANKED BY 30D VOLUME' : '💸 Ranked by 30-day volume')}
                       </p>
                     </div>
@@ -1683,6 +1685,12 @@ setMarketStats({
                       const openMarkets = exposure?.open_markets;
                       const showHotMetrics = (trader.current_streak != null || trader.recent_win_rate != null || trader.recent_markets != null) &&
                         (trader.current_streak || recentMarkets);
+                      const totalBuyCost = Number(trader.total_buy_cost ?? trader.total_volume ?? 0);
+                      const roiPct = totalBuyCost ? (Number(trader.total_pl || 0) / totalBuyCost) * 100 : null;
+                      const accuracyPct =
+                        trader.win_rate != null && Number.isFinite(Number(trader.win_rate))
+                          ? (Number(trader.win_rate) > 1 ? Number(trader.win_rate) : Number(trader.win_rate) * 100)
+                          : null;
                       return (
                         <div
                           key={trader.address}
@@ -1777,6 +1785,31 @@ setMarketStats({
                                   </p>
                                 </div>
                               </div>
+                              {(roiPct != null || accuracyPct != null) && (
+                                <div
+                                  className={isRetro ? 'mt-2 pt-2' : 'mt-2 pt-2'}
+                                  style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : { borderTop: '1px solid rgba(30, 41, 59, 0.5)' }}
+                                >
+                                  <p
+                                    className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                    style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                  >
+                                    ROI · Accuracy
+                                  </p>
+                                  <p
+                                    className={isRetro ? 'font-mono' : 'font-mono text-xs text-slate-100'}
+                                    style={isRetro ? { fontSize: '0.95rem', color: retroColors.text } : {}}
+                                  >
+                                    <span style={isRetro ? { color: roiPct != null && roiPct >= 0 ? retroColors.numbers : retroColors.loss } : {}}>
+                                      ROI {roiPct == null ? '—' : `${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(1)}%`}
+                                    </span>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
+                                    <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
+                                      Acc {accuracyPct == null ? '—' : `${Math.round(accuracyPct)}%`}
+                                    </span>
+                                  </p>
+                                </div>
+                              )}
                               {openExposure != null && (
                                 <div
                                   className={isRetro ? 'grid grid-cols-2 gap-3 mt-2 pt-2' : 'grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50'}
@@ -1898,7 +1931,7 @@ setMarketStats({
                     <>
                       <p>Showing hot streaks ranked by streak + recent win rate.</p>
                       <p className="mt-1">Click a trader to view details and watchlist.</p>
-                      <p className="mt-2 text-amber-400/70">💡 Recent win rate is based on the last 10 resolved markets.</p>
+                      <p className="mt-2 text-amber-400/70">💡 Recent win rate is based on the last 10 quality resolved markets (excludes low-upside 99c/100c bets).</p>
                     </>
                   ) : profitabilityTraders.length > 0 ? (
                     <>
