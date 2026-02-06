@@ -1725,6 +1725,14 @@ setMarketStats({
                                   <span style={isRetro ? { color: retroColors.numbers, fontWeight: 500 } : { color: 'rgb(52, 211, 153)' }}>{trader.wins || 0}W</span>
                                   <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
                                   <span style={isRetro ? { color: retroColors.loss, fontWeight: 500 } : { color: 'rgb(251, 113, 133)' }}>{trader.losses || 0}L</span>
+                                  {accuracyPct != null && (
+                                    <>
+                                      <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
+                                      <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
+                                        Win {Math.round(accuracyPct)}%
+                                      </span>
+                                    </>
+                                  )}
                                 </p>
                               </div>
                             </div>
@@ -1773,76 +1781,39 @@ setMarketStats({
                                     className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
                                     style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
                                   >
-                                    Record
+                                    ROI
                                   </p>
                                   <p
                                     className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
-                                    style={isRetro ? { fontSize: '1rem', fontWeight: 500 } : {}}
+                                    style={isRetro ? { fontSize: '1rem', fontWeight: 600, color: roiPct != null && roiPct >= 0 ? retroColors.numbers : retroColors.loss } : {}}
                                   >
-                                    <span style={isRetro ? { color: retroColors.numbers } : {}}>{trader.wins || 0}W</span>
-                                    <span style={isRetro ? { color: retroColors.textDim } : {}}>-</span>
-                                    <span style={isRetro ? { color: retroColors.loss } : {}}>{trader.losses || 0}L</span>
+                                    <span style={isRetro ? {} : { color: roiPct != null && roiPct >= 0 ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}>
+                                      {roiPct == null ? '—' : `${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(1)}%`}
+                                    </span>
                                   </p>
                                 </div>
                               </div>
-                              {(roiPct != null || accuracyPct != null) && (
+                              {openMarkets != null && Number(openMarkets) > 0 && (
                                 <div
                                   className={isRetro ? 'mt-2 pt-2' : 'mt-2 pt-2'}
                                   style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : { borderTop: '1px solid rgba(30, 41, 59, 0.5)' }}
                                 >
                                   <p
-                                    className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
-                                    style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
-                                  >
-                                    ROI · Accuracy
-                                  </p>
-                                  <p
                                     className={isRetro ? 'font-mono' : 'font-mono text-xs text-slate-100'}
                                     style={isRetro ? { fontSize: '0.95rem', color: retroColors.text } : {}}
                                   >
-                                    <span style={isRetro ? { color: roiPct != null && roiPct >= 0 ? retroColors.numbers : retroColors.loss } : {}}>
-                                      ROI {roiPct == null ? '—' : `${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(1)}%`}
+                                    <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>
+                                      Open
+                                    </span>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}>:</span>
+                                    <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
+                                      {' '}{openMarkets || 0} mkts
                                     </span>
                                     <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
                                     <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
-                                      Acc {accuracyPct == null ? '—' : `${Math.round(accuracyPct)}%`}
+                                      {formatCurrency(openExposure)}
                                     </span>
                                   </p>
-                                </div>
-                              )}
-                              {openExposure != null && (
-                                <div
-                                  className={isRetro ? 'grid grid-cols-2 gap-3 mt-2 pt-2' : 'grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50'}
-                                  style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : {}}
-                                >
-                                  <div>
-                                    <p
-                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
-                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
-                                    >
-                                      Open Exposure
-                                    </p>
-                                    <p
-                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
-                                      style={isRetro ? { fontSize: '1rem', fontWeight: 500 } : {}}
-                                    >
-                                      {formatCurrency(openExposure)}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p
-                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
-                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
-                                    >
-                                      Open Mkts
-                                    </p>
-                                    <p
-                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
-                                      style={isRetro ? { fontSize: '1rem', fontWeight: 500 } : {}}
-                                    >
-                                      {openMarkets || 0}
-                                    </p>
-                                  </div>
                                 </div>
                               )}
                               {showHotMetrics && (
@@ -1854,7 +1825,7 @@ setMarketStats({
                                     className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
                                     style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
                                   >
-                                    Streak · Recent
+                                    Streak · L10
                                   </p>
                                   <p
                                     className={isRetro ? 'font-mono' : 'font-mono text-xs text-slate-100'}
