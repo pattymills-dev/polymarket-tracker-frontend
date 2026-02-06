@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
       }
 
       const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
@@ -313,6 +313,7 @@ Deno.serve(async (req) => {
         marketsInEvents,
         resolvedUpdated,
         dbErrors,
+        eventSlugs: debugEnabled ? orderedEventSlugs : undefined,
         debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
       }), {
         status: 200,
@@ -341,7 +342,7 @@ Deno.serve(async (req) => {
       }
 
       const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
@@ -394,6 +395,7 @@ Deno.serve(async (req) => {
         marketsInEvents,
         resolvedUpdated,
         dbErrors,
+        eventSlugs: debugEnabled ? orderedEventSlugs : undefined,
         debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
       }), {
         status: 200,
@@ -415,7 +417,7 @@ Deno.serve(async (req) => {
         .select('slug,updated_at,resolved,winning_outcome')
         .not('slug', 'is', null)
         .or('resolved.eq.false,winning_outcome.is.null')
-        .order('updated_at', { ascending: false, nullsLast: true })
+        .order('updated_at', { ascending: true, nullsFirst: true })
         .limit(candidateLimit)
 
       if (candidateError) {
@@ -426,7 +428,7 @@ Deno.serve(async (req) => {
       }
 
       const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
@@ -486,6 +488,7 @@ Deno.serve(async (req) => {
         marketsInEvents,
         resolvedUpdated,
         dbErrors,
+        eventSlugs: debugEnabled ? orderedEventSlugs : undefined,
         debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
       }), {
         status: 200,
