@@ -8,6 +8,94 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function parseMaybeJson(value: any) {
+  if (value == null) return null
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value
+    }
+  }
+  return value
+}
+
+function computeResolutionDecision(gammaMarket: any) {
+  const outcomesRaw = parseMaybeJson(gammaMarket.outcomes)
+  const outcomePricesRaw = parseMaybeJson(gammaMarket.outcomePrices)
+  const outcomes = Array.isArray(outcomesRaw) ? outcomesRaw : null
+  const outcomePrices = Array.isArray(outcomePricesRaw)
+    ? outcomePricesRaw.map((value: any) => Number(value))
+    : null
+
+  const resolutionStatus = String(gammaMarket.umaResolutionStatus || '').toLowerCase()
+  const resolutionStatusesRaw = parseMaybeJson(gammaMarket.umaResolutionStatuses)
+  const resolutionStatuses = Array.isArray(resolutionStatusesRaw)
+    ? resolutionStatusesRaw.map((value: any) => String(value).toLowerCase())
+    : []
+
+  const isResolvedByStatus =
+    resolutionStatus === 'resolved' || resolutionStatuses.includes('resolved')
+
+  const isClosed = gammaMarket.closed === true
+
+  const hasOutcomePrices =
+    Array.isArray(outcomePrices) &&
+    outcomePrices.length > 0 &&
+    outcomePrices.some((value) => Number.isFinite(value))
+
+  // Only treat prices as a final resolution signal when they are effectively settled
+  // (one outcome ~1.0 and the rest ~0.0). Otherwise, outcomePrices are just market prices.
+  const looksSettledPrices = (() => {
+    if (!hasOutcomePrices) return false
+    const prices = outcomePrices as number[]
+    const max = Math.max(...prices)
+    const min = Math.min(...prices)
+    if (!(max >= 0.999 && min <= 0.001)) return false
+    return prices.every((p) => p >= 0.999 || p <= 0.001)
+  })()
+
+  const winningOutcomeRaw =
+    gammaMarket.winningOutcome ||
+    gammaMarket.winning_outcome ||
+    gammaMarket.resolvedOutcome ||
+    gammaMarket.resolution
+
+  let winningOutcome =
+    typeof winningOutcomeRaw === 'string' && winningOutcomeRaw.length > 0
+      ? winningOutcomeRaw
+      : null
+
+  if (!winningOutcome && looksSettledPrices && isClosed && Array.isArray(outcomes)) {
+    const maxPrice = Math.max(...outcomePrices!)
+    const winningIndexes = outcomePrices!.reduce<number[]>((acc, price, idx) => {
+      if (price === maxPrice) acc.push(idx)
+      return acc
+    }, [])
+
+    if (winningIndexes.length === 1) {
+      winningOutcome = outcomes[winningIndexes[0]]
+    }
+  }
+
+  const isResolved =
+    gammaMarket.resolved === true ||
+    isResolvedByStatus ||
+    Boolean(winningOutcomeRaw) ||
+    (looksSettledPrices && isClosed)
+
+  return {
+    outcomes,
+    outcomePrices,
+    isClosed,
+    isResolvedByStatus,
+    looksSettledPrices,
+    winningOutcomeRaw,
+    winningOutcome,
+    isResolved,
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -17,9 +105,10 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url)
     const batchSize = parseInt(url.searchParams.get('batch') || '50', 10)
-    const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'due' rechecks, 'all' does oldest first
+    const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'due' rechecks, 'events_recent' resolves sports events, 'all' does oldest first
     const forceFallback = url.searchParams.get('force_fallback') === '1'
     const marketIdParam = url.searchParams.get('market_id')
+    const eventSlugParam = url.searchParams.get('event_slug')
     const recentDays = parseInt(url.searchParams.get('days') || '7', 10)
     const recheckHours = parseInt(url.searchParams.get('recheck_hours') || '2', 10)
     const debugEnabled = url.searchParams.get('debug') === '1'
@@ -31,6 +120,107 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    const syncEventBySlug = async (eventSlug: string) => {
+      const eventUrl = `https://gamma-api.polymarket.com/events/slug/${eventSlug}`
+      const eventResp = await fetch(eventUrl, { headers: { 'Accept': 'application/json' } })
+      if (!eventResp.ok) {
+        throw new Error(`Gamma event fetch failed (${eventResp.status}) for ${eventSlug}`)
+      }
+      const gammaEvent: any = await eventResp.json()
+      const eventMarkets: any[] = Array.isArray(gammaEvent?.markets) ? gammaEvent.markets : []
+
+      const nowIso = new Date().toISOString()
+
+      const baseRows = eventMarkets
+        .filter((m: any) => typeof m?.conditionId === 'string' && m.conditionId.length > 0)
+        .map((m: any) => {
+          const row: any = { id: m.conditionId, updated_at: nowIso }
+          if (typeof m?.slug === 'string' && m.slug.length > 0) row.slug = m.slug
+          const q = m?.question ?? m?.title
+          if (typeof q === 'string' && q.length > 0) row.question = q
+          return row
+        })
+
+      // Ensure market rows exist and keep slugs/questions fresh (does not touch resolved fields).
+      for (let start = 0; start < baseRows.length; start += 150) {
+        const chunk = baseRows.slice(start, start + 150)
+        await supabase.from('markets').upsert(chunk, { onConflict: 'id' })
+      }
+
+      const resolvedRows: any[] = []
+      const debugRows: any[] = []
+
+      for (const m of eventMarkets) {
+        const id = m?.conditionId
+        if (typeof id !== 'string' || id.length === 0) continue
+
+        const decision = computeResolutionDecision(m)
+        if (debugEnabled && debugRows.length < 5) {
+          debugRows.push({
+            market: { id, slug: m?.slug ?? null },
+            gamma: {
+              slug: m?.slug ?? null,
+              closed: m?.closed ?? null,
+              active: m?.active ?? null,
+              umaResolutionStatus: m?.umaResolutionStatus ?? null,
+              umaResolutionStatuses: m?.umaResolutionStatuses ?? null,
+              outcomePrices: m?.outcomePrices ?? null,
+              outcomes: m?.outcomes ?? null,
+              winningOutcomeRaw: decision.winningOutcomeRaw ?? null,
+            },
+            decision: {
+              isClosed: decision.isClosed,
+              isResolvedByStatus: decision.isResolvedByStatus,
+              looksSettledPrices: decision.looksSettledPrices,
+              winningOutcome: decision.winningOutcome,
+              isResolved: decision.isResolved,
+            },
+          })
+        }
+
+        if (decision.isResolved && decision.winningOutcome) {
+          const resolvedAt =
+            m.closed_time ||
+            m.closedTime ||
+            m.resolvedTime ||
+            m.umaEndDate ||
+            nowIso
+
+          const row: any = {
+            id,
+            resolved: true,
+            resolved_at: resolvedAt,
+            winning_outcome: decision.winningOutcome,
+            updated_at: nowIso,
+          }
+          if (typeof m?.slug === 'string' && m.slug.length > 0) row.slug = m.slug
+          const q = m?.question ?? m?.title
+          if (typeof q === 'string' && q.length > 0) row.question = q
+          resolvedRows.push(row)
+        }
+      }
+
+      for (let start = 0; start < resolvedRows.length; start += 150) {
+        const chunk = resolvedRows.slice(start, start + 150)
+        await supabase.from('markets').upsert(chunk, { onConflict: 'id' })
+      }
+
+      return {
+        eventSlug,
+        marketsInEvent: eventMarkets.length,
+        resolvedUpdated: resolvedRows.length,
+        debug: debugRows,
+      }
+    }
+
+    if (eventSlugParam) {
+      const result = await syncEventBySlug(eventSlugParam)
+      return new Response(JSON.stringify({ ok: true, mode: 'event', ...result }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     let unresolvedMarkets: any[] = []
     let marketsError: any = null
@@ -44,6 +234,77 @@ Deno.serve(async (req) => {
 
       unresolvedMarkets = data || []
       marketsError = error
+    } else if (mode === 'events_recent') {
+      // Sports games often resolve after trading activity ends. This mode groups recent sports
+      // trade slugs into event slugs and resolves the entire event in one Gamma call.
+
+      const tradeSampleLimit = Math.max(batchSize * 200, 5000)
+      const tradeLookbackIso = new Date(Date.now() - recentDays * 24 * 60 * 60 * 1000).toISOString()
+
+      const { data: recentTrades, error: recentTradesError } = await supabase
+        .from('trades')
+        .select('market_slug,timestamp')
+        .not('market_slug', 'is', null)
+        .gte('timestamp', tradeLookbackIso)
+        .order('timestamp', { ascending: false })
+        .limit(tradeSampleLimit)
+
+      if (recentTradesError) {
+        return new Response(JSON.stringify({ error: recentTradesError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const sportsSlugRegex =
+        /^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+
+      const seen = new Set<string>()
+      const orderedEventSlugs: string[] = []
+
+      for (const t of (recentTrades || [])) {
+        const slug = (t as any)?.market_slug
+        if (typeof slug !== 'string') continue
+        const m = slug.match(sportsSlugRegex)
+        if (!m) continue
+        const [, league, teams, date] = m
+        const eventSlug = `${league.toLowerCase()}-${teams}-${date}`
+        if (seen.has(eventSlug)) continue
+        seen.add(eventSlug)
+        orderedEventSlugs.push(eventSlug)
+        if (orderedEventSlugs.length >= batchSize) break
+      }
+
+      let eventsProcessed = 0
+      let marketsInEvents = 0
+      let resolvedUpdated = 0
+      const debugRows: any[] = []
+
+      for (const eventSlug of orderedEventSlugs) {
+        try {
+          const r = await syncEventBySlug(eventSlug)
+          eventsProcessed += 1
+          marketsInEvents += r.marketsInEvent
+          resolvedUpdated += r.resolvedUpdated
+          if (debugEnabled && debugRows.length < 5 && Array.isArray(r.debug)) {
+            debugRows.push(...r.debug)
+          }
+        } catch (e) {
+          console.error(`Error syncing event ${eventSlug}:`, e)
+        }
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        mode: 'events_recent',
+        eventsProcessed,
+        marketsInEvents,
+        resolvedUpdated,
+        debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     } else if (mode === 'recent') {
       // PRIORITY MODE: Get markets that have trades in the last 7 days
       // These are the ones users actually care about
@@ -178,7 +439,7 @@ Deno.serve(async (req) => {
         .select('id, question, slug, resolved, winning_outcome')
         .or('resolved.eq.false,winning_outcome.is.null')
         .or(`updated_at.is.null,updated_at.lt.${cutoffIso}`)
-        .order('updated_at', { ascending: false, nullsFirst: true })
+        .order('updated_at', { ascending: true, nullsFirst: true })
         .limit(batchSize)
 
       unresolvedMarkets = data || []
@@ -261,78 +522,7 @@ Deno.serve(async (req) => {
             return { checked: true, updated: false }
           }
 
-          const parseMaybeJson = (value: any) => {
-            if (value == null) return null
-            if (typeof value === 'string') {
-              try {
-                return JSON.parse(value)
-              } catch {
-                return value
-              }
-            }
-            return value
-          }
-
-          const outcomesRaw = parseMaybeJson(gammaMarket.outcomes)
-          const outcomePricesRaw = parseMaybeJson(gammaMarket.outcomePrices)
-          const outcomes = Array.isArray(outcomesRaw) ? outcomesRaw : null
-          const outcomePrices = Array.isArray(outcomePricesRaw)
-            ? outcomePricesRaw.map((value: any) => Number(value))
-            : null
-
-          const resolutionStatus = String(gammaMarket.umaResolutionStatus || '').toLowerCase()
-          const resolutionStatusesRaw = parseMaybeJson(gammaMarket.umaResolutionStatuses)
-          const resolutionStatuses = Array.isArray(resolutionStatusesRaw)
-            ? resolutionStatusesRaw.map((value: any) => String(value).toLowerCase())
-            : []
-
-          const isResolvedByStatus =
-            resolutionStatus === 'resolved' || resolutionStatuses.includes('resolved')
-
-          const hasOutcomePrices =
-            Array.isArray(outcomePrices) &&
-            outcomePrices.length > 0 &&
-            outcomePrices.some((value) => Number.isFinite(value))
-
-          // Only treat prices as a final resolution signal when they are effectively settled
-          // (one outcome ~1.0 and the rest ~0.0). Otherwise, outcomePrices are just market prices.
-          const looksSettledPrices = (() => {
-            if (!hasOutcomePrices) return false
-            const prices = outcomePrices as number[]
-            const max = Math.max(...prices)
-            const min = Math.min(...prices)
-            if (!(max >= 0.999 && min <= 0.001)) return false
-            return prices.every((p) => p >= 0.999 || p <= 0.001)
-          })()
-
-          const winningOutcomeRaw =
-            gammaMarket.winningOutcome ||
-            gammaMarket.winning_outcome ||
-            gammaMarket.resolvedOutcome ||
-            gammaMarket.resolution
-
-          let winningOutcome =
-            typeof winningOutcomeRaw === 'string' && winningOutcomeRaw.length > 0
-              ? winningOutcomeRaw
-              : null
-
-          if (!winningOutcome && looksSettledPrices && Array.isArray(outcomes)) {
-            const maxPrice = Math.max(...outcomePrices!)
-            const winningIndexes = outcomePrices!.reduce<number[]>((acc, price, idx) => {
-              if (price === maxPrice) acc.push(idx)
-              return acc
-            }, [])
-
-            if (winningIndexes.length === 1) {
-              winningOutcome = outcomes[winningIndexes[0]]
-            }
-          }
-
-          const isResolved =
-            gammaMarket.resolved === true ||
-            isResolvedByStatus ||
-            Boolean(winningOutcomeRaw) ||
-            looksSettledPrices
+          const decision = computeResolutionDecision(gammaMarket)
 
           if (debugEnabled && debugRows.length < 5) {
             debugRows.push({
@@ -345,24 +535,26 @@ Deno.serve(async (req) => {
                 umaResolutionStatuses: gammaMarket.umaResolutionStatuses,
                 outcomePrices: gammaMarket.outcomePrices,
                 outcomes: gammaMarket.outcomes,
-                winningOutcomeRaw: winningOutcomeRaw ?? null,
+                winningOutcomeRaw: decision.winningOutcomeRaw ?? null,
               },
               decision: {
-                isResolvedByStatus,
-                looksSettledPrices,
-                winningOutcome,
-                isResolved,
+                isClosed: decision.isClosed,
+                isResolvedByStatus: decision.isResolvedByStatus,
+                looksSettledPrices: decision.looksSettledPrices,
+                winningOutcome: decision.winningOutcome,
+                isResolved: decision.isResolved,
               },
             })
           }
 
-          if (isResolved && winningOutcome) {
-            console.log(`Market ${market.slug || market.id} resolved: winner = ${winningOutcome}`)
+          if (decision.isResolved && decision.winningOutcome) {
+            console.log(`Market ${market.slug || market.id} resolved: winner = ${decision.winningOutcome}`)
 
             const resolvedAt =
               gammaMarket.closed_time ||
               gammaMarket.closedTime ||
               gammaMarket.resolvedTime ||
+              gammaMarket.umaEndDate ||
               new Date().toISOString()
 
             // Update market as resolved
@@ -371,7 +563,7 @@ Deno.serve(async (req) => {
               .update({
                 resolved: true,
                 resolved_at: resolvedAt,
-                winning_outcome: winningOutcome,
+                winning_outcome: decision.winningOutcome,
                 slug: market.slug || gammaMarket.slug || null,
                 question: market.question || gammaMarket.question || gammaMarket.title || null,
                 updated_at: new Date().toISOString()
@@ -386,7 +578,7 @@ Deno.serve(async (req) => {
             return { checked: true, updated: true }
           }
 
-          if (isResolved && !winningOutcome) {
+          if (decision.isResolved && !decision.winningOutcome) {
             console.log(
               `Market ${market.slug || market.id} appears resolved but has no winning outcome yet`
             )
