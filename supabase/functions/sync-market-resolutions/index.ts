@@ -1,7 +1,7 @@
 // Deno Edge Function to sync Polymarket market resolutions
 import { createClient } from 'supabase'
 
-console.log('sync-market-resolutions v4 starting')
+console.log('sync-market-resolutions v5 starting')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +21,7 @@ Deno.serve(async (req) => {
     const forceFallback = url.searchParams.get('force_fallback') === '1'
     const marketIdParam = url.searchParams.get('market_id')
     const recentDays = parseInt(url.searchParams.get('days') || '7', 10)
+    const debugEnabled = url.searchParams.get('debug') === '1'
 
     console.log(`Processing batch of ${batchSize} markets in ${mode} mode`)
 
@@ -191,6 +192,7 @@ Deno.serve(async (req) => {
     let updatedCount = 0
     let checkedCount = 0
     let errorCount = 0
+    const debugRows: any[] = []
 
     // Process markets in parallel batches of 10 to speed things up
     const parallelBatchSize = 10
@@ -265,6 +267,17 @@ Deno.serve(async (req) => {
             outcomePrices.length > 0 &&
             outcomePrices.some((value) => Number.isFinite(value))
 
+          // Only treat prices as a final resolution signal when they are effectively settled
+          // (one outcome ~1.0 and the rest ~0.0). Otherwise, outcomePrices are just market prices.
+          const looksSettledPrices = (() => {
+            if (!hasOutcomePrices) return false
+            const prices = outcomePrices as number[]
+            const max = Math.max(...prices)
+            const min = Math.min(...prices)
+            if (!(max >= 0.999 && min <= 0.001)) return false
+            return prices.every((p) => p >= 0.999 || p <= 0.001)
+          })()
+
           const winningOutcomeRaw =
             gammaMarket.winningOutcome ||
             gammaMarket.winning_outcome ||
@@ -276,7 +289,7 @@ Deno.serve(async (req) => {
               ? winningOutcomeRaw
               : null
 
-          if (!winningOutcome && hasOutcomePrices && Array.isArray(outcomes)) {
+          if (!winningOutcome && looksSettledPrices && Array.isArray(outcomes)) {
             const maxPrice = Math.max(...outcomePrices!)
             const winningIndexes = outcomePrices!.reduce<number[]>((acc, price, idx) => {
               if (price === maxPrice) acc.push(idx)
@@ -291,8 +304,30 @@ Deno.serve(async (req) => {
           const isResolved =
             gammaMarket.resolved === true ||
             isResolvedByStatus ||
-            ((gammaMarket.closed === true || gammaMarket.active === false) &&
-              (hasOutcomePrices || Boolean(winningOutcome)))
+            Boolean(winningOutcomeRaw) ||
+            looksSettledPrices
+
+          if (debugEnabled && debugRows.length < 5) {
+            debugRows.push({
+              market: { id: market.id, slug: market.slug },
+              gamma: {
+                slug: gammaMarket.slug,
+                closed: gammaMarket.closed,
+                active: gammaMarket.active,
+                umaResolutionStatus: gammaMarket.umaResolutionStatus,
+                umaResolutionStatuses: gammaMarket.umaResolutionStatuses,
+                outcomePrices: gammaMarket.outcomePrices,
+                outcomes: gammaMarket.outcomes,
+                winningOutcomeRaw: winningOutcomeRaw ?? null,
+              },
+              decision: {
+                isResolvedByStatus,
+                looksSettledPrices,
+                winningOutcome,
+                isResolved,
+              },
+            })
+          }
 
           if (isResolved && winningOutcome) {
             console.log(`Market ${market.slug || market.id} resolved: winner = ${winningOutcome}`)
@@ -373,7 +408,8 @@ Deno.serve(async (req) => {
       processed: checkedCount,
       updated: updatedCount,
       errors: errorCount,
-      total_queried: markets.length
+      total_queried: markets.length,
+      debug: debugEnabled ? debugRows : undefined,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
