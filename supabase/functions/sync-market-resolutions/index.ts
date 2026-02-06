@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url)
     const batchSize = parseInt(url.searchParams.get('batch') || '50', 10)
-    const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'due' rechecks, 'events_recent' resolves sports events, 'all' does oldest first
+    const mode = url.searchParams.get('mode') || 'recent' // recent|due|events_recent|events_due|all
     const forceFallback = url.searchParams.get('force_fallback') === '1'
     const marketIdParam = url.searchParams.get('market_id')
     const eventSlugParam = url.searchParams.get('event_slug')
@@ -297,6 +297,84 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         ok: true,
         mode: 'events_recent',
+        eventsProcessed,
+        marketsInEvents,
+        resolvedUpdated,
+        debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    } else if (mode === 'events_due') {
+      // Backfill mode for sports: scan unresolved sports markets directly (does not rely on trades.market_slug).
+      // This is important because historical trades may not have market_slug populated, while markets.slug exists.
+
+      const candidateLimit = Math.max(batchSize * 200, 5000)
+      const cutoffMs = Date.now() - Math.max(recheckHours, 0) * 60 * 60 * 1000
+
+      const { data: candidateMarkets, error: candidateError } = await supabase
+        .from('markets')
+        .select('slug,updated_at,resolved,winning_outcome')
+        .not('slug', 'is', null)
+        .or('resolved.eq.false,winning_outcome.is.null')
+        .order('updated_at', { ascending: true, nullsFirst: true })
+        .limit(candidateLimit)
+
+      if (candidateError) {
+        return new Response(JSON.stringify({ error: candidateError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const sportsSlugRegex =
+        /^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+
+      const seen = new Set<string>()
+      const orderedEventSlugs: string[] = []
+
+      for (const row of (candidateMarkets || [])) {
+        const slug = (row as any)?.slug
+        if (typeof slug !== 'string') continue
+
+        const updatedAt = (row as any)?.updated_at
+        if (typeof updatedAt === 'string' && updatedAt.length > 0 && recheckHours > 0) {
+          const t = Date.parse(updatedAt)
+          if (Number.isFinite(t) && t > cutoffMs) continue
+        }
+
+        const m = slug.match(sportsSlugRegex)
+        if (!m) continue
+        const [, league, teams, date] = m
+        const eventSlug = `${league.toLowerCase()}-${teams}-${date}`
+        if (seen.has(eventSlug)) continue
+        seen.add(eventSlug)
+        orderedEventSlugs.push(eventSlug)
+        if (orderedEventSlugs.length >= batchSize) break
+      }
+
+      let eventsProcessed = 0
+      let marketsInEvents = 0
+      let resolvedUpdated = 0
+      const debugRows: any[] = []
+
+      for (const eventSlug of orderedEventSlugs) {
+        try {
+          const r = await syncEventBySlug(eventSlug)
+          eventsProcessed += 1
+          marketsInEvents += r.marketsInEvent
+          resolvedUpdated += r.resolvedUpdated
+          if (debugEnabled && debugRows.length < 5 && Array.isArray(r.debug)) {
+            debugRows.push(...r.debug)
+          }
+        } catch (e) {
+          console.error(`Error syncing event ${eventSlug}:`, e)
+        }
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        mode: 'events_due',
         eventsProcessed,
         marketsInEvents,
         resolvedUpdated,

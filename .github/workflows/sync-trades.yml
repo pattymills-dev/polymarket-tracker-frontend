@@ -80,6 +80,22 @@ jobs:
             exit 1
           fi
 
+      - name: Sync sports event resolutions (due)
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=10&mode=events_due&recheck_hours=2&force_fallback=1")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (events_due): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: sync-resolutions (events_due) failed with status $http_code"
+            exit 1
+          fi
+
       - name: Recheck due market resolutions
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
