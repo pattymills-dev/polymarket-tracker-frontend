@@ -325,12 +325,19 @@ Deno.serve(async (req) => {
 
       const candidateLimit = Math.max(batchSize * 200, 5000)
       const cutoffMs = Date.now() - Math.max(recheckHours, 0) * 60 * 60 * 1000
+      const sportsSlugOr =
+        'slug.ilike.nba-%,slug.ilike.nhl-%,slug.ilike.mlb-%,slug.ilike.nfl-%,slug.ilike.cbb-%,' +
+        'slug.ilike.epl-%,slug.ilike.efl-%,slug.ilike.bun-%,slug.ilike.mls-%,' +
+        'slug.ilike.wta-%,slug.ilike.atp-%'
 
       const { data: candidateMarkets, error: candidateError } = await supabase
         .from('markets')
         .select('slug,updated_at,resolved,winning_outcome')
         .not('slug', 'is', null)
-        .or('resolved.eq.false,winning_outcome.is.null')
+        // Treat winning_outcome as the source of truth for "pending" (avoids OR nesting limits in PostgREST).
+        .is('winning_outcome', null)
+        // Filter down to sports slugs server-side; otherwise the limit can be consumed by non-sports markets.
+        .or(sportsSlugOr)
         .order('updated_at', { ascending: true, nullsFirst: true })
         .limit(candidateLimit)
 
@@ -411,12 +418,17 @@ Deno.serve(async (req) => {
       const windowMs = Math.max(recentDays, 1) * 24 * 60 * 60 * 1000
       const minEventMs = Date.now() - windowMs
       const maxEventMs = Date.now() + 24 * 60 * 60 * 1000 // allow small time-zone skew
+      const sportsSlugOr =
+        'slug.ilike.nba-%,slug.ilike.nhl-%,slug.ilike.mlb-%,slug.ilike.nfl-%,slug.ilike.cbb-%,' +
+        'slug.ilike.epl-%,slug.ilike.efl-%,slug.ilike.bun-%,slug.ilike.mls-%,' +
+        'slug.ilike.wta-%,slug.ilike.atp-%'
 
       const { data: candidateMarkets, error: candidateError } = await supabase
         .from('markets')
         .select('slug,updated_at,resolved,winning_outcome')
         .not('slug', 'is', null)
-        .or('resolved.eq.false,winning_outcome.is.null')
+        .is('winning_outcome', null)
+        .or(sportsSlugOr)
         .order('updated_at', { ascending: true, nullsFirst: true })
         .limit(candidateLimit)
 
