@@ -17,10 +17,11 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url)
     const batchSize = parseInt(url.searchParams.get('batch') || '50', 10)
-    const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'all' does oldest first
+    const mode = url.searchParams.get('mode') || 'recent' // 'recent' prioritizes traded markets, 'due' rechecks, 'all' does oldest first
     const forceFallback = url.searchParams.get('force_fallback') === '1'
     const marketIdParam = url.searchParams.get('market_id')
     const recentDays = parseInt(url.searchParams.get('days') || '7', 10)
+    const recheckHours = parseInt(url.searchParams.get('recheck_hours') || '2', 10)
     const debugEnabled = url.searchParams.get('debug') === '1'
 
     console.log(`Processing batch of ${batchSize} markets in ${mode} mode`)
@@ -85,6 +86,14 @@ Deno.serve(async (req) => {
 
           for (let start = 0; start < orderedMarketIds.length; start += chunkSize) {
             const chunk = orderedMarketIds.slice(start, start + chunkSize)
+
+            // Ensure a markets row exists for each conditionId so resolution sync can update it.
+            // This prevents "pending forever" when trades exist but the markets table is missing rows.
+            const placeholders = chunk.map((id) => ({ id, question: id }))
+            await supabase
+              .from('markets')
+              .upsert(placeholders, { onConflict: 'id', ignoreDuplicates: true })
+
             const { data: chunkMarkets, error: chunkError } = await supabase
               .from('markets')
               .select('id, question, slug, resolved, winning_outcome')
@@ -156,6 +165,24 @@ Deno.serve(async (req) => {
           })
         }
       }
+    } else if (mode === 'due') {
+      // RECHECK MODE: Markets can close, stop trading, and only become "resolved" later (UMA).
+      // If we only prioritize recently-traded markets, sports games can stay pending for a long time.
+      // We treat `updated_at` as "last checked" and re-check markets that haven't been checked
+      // in `recheckHours` (default 2 hours).
+
+      const cutoffIso = new Date(Date.now() - recheckHours * 60 * 60 * 1000).toISOString()
+
+      const { data, error } = await supabase
+        .from('markets')
+        .select('id, question, slug, resolved, winning_outcome')
+        .or('resolved.eq.false,winning_outcome.is.null')
+        .or(`updated_at.is.null,updated_at.lt.${cutoffIso}`)
+        .order('updated_at', { ascending: false, nullsFirst: true })
+        .limit(batchSize)
+
+      unresolvedMarkets = data || []
+      marketsError = error
     } else {
       // ALL MODE: Process oldest unresolved markets first (for backfill)
       const { data, error } = await supabase

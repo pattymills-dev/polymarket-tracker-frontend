@@ -70,12 +70,12 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=200&mode=all&force_fallback=1")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=200&mode=due&recheck_hours=2&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
-          echo "Response (backfill): $body"
+          echo "Response (due): $body"
           echo "HTTP Status: $http_code"
           if [ "$http_code" -ge 400 ]; then
-            echo "Error: sync-resolutions (backfill) failed with status $http_code"
+            echo "Error: sync-resolutions (due) failed with status $http_code"
             exit 1
           fi
