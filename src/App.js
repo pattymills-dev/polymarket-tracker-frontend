@@ -43,6 +43,7 @@ const PolymarketTracker = () => {
   const [traderTrades, setTraderTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
   const [traderTradesDiag, setTraderTradesDiag] = useState(null);
+  const [traderTradesLimit, setTraderTradesLimit] = useState(100);
 
   // Supabase Configuration
   const SUPABASE_URL =
@@ -461,13 +462,14 @@ setMarketStats({
     }
   };
 
-  const fetchTraderTrades = async (address) => {
+  const fetchTraderTrades = async (address, limit = 100) => {
     setLoadingTrades(true);
     setTraderTradesDiag(null);
+    setTraderTradesLimit(limit);
     try {
       // Fetch trades first
       const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/trades?trader_address=eq.${address}&order=timestamp.desc&limit=100`,
+        `${SUPABASE_URL}/rest/v1/trades?trader_address=eq.${address}&order=timestamp.desc&limit=${limit}`,
         { headers }
       );
       const trades = await response.json();
@@ -1696,7 +1698,7 @@ setMarketStats({
                           } : {}}
                           onClick={() => {
                             setSelectedTrader(trader);
-                            fetchTraderTrades(trader.address);
+                            fetchTraderTrades(trader.address, 100);
                           }}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -1951,6 +1953,7 @@ setMarketStats({
                   onClick={() => {
                     setSelectedTrader(null);
                     setTraderTrades([]);
+                    setTraderTradesLimit(100);
                   }}
                   className={isRetro ? '' : 'text-slate-400 hover:text-slate-200 text-2xl leading-none'}
                   style={isRetro ? { color: retroColors.textDim, fontSize: '1.5rem', lineHeight: 1 } : {}}
@@ -2051,8 +2054,41 @@ setMarketStats({
                 >
                   <Activity className="w-4 h-4" style={isRetro ? { color: retroColors.textDim } : {}} />
                   RECENT TRADES
-                  <span style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem', fontWeight: 400 } : {}}>(last 100)</span>
+                  <span style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem', fontWeight: 400 } : {}}>
+                    (last {traderTradesLimit})
+                  </span>
                 </h4>
+
+                {(() => {
+                  const exposure = selectedTrader?.address
+                    ? openExposureMap[String(selectedTrader.address).toLowerCase()]
+                    : null;
+                  const openMarkets = Number(exposure?.open_markets || 0);
+                  const pendingInLoaded = Array.isArray(traderTrades)
+                    ? traderTrades.filter((t) => !t.market_resolved).length
+                    : 0;
+
+                  if (!openMarkets || loadingTrades) return null;
+                  if (pendingInLoaded > 0) return null;
+
+                  return (
+                    <div
+                      className={isRetro ? '' : 'mb-3 text-xs text-amber-400/80'}
+                      style={isRetro ? { color: retroColors.warn, fontSize: '0.9rem', marginBottom: '0.75rem' } : {}}
+                    >
+                      Trader has {openMarkets} open market(s) (>= $1k) but none appear in the last {traderTradesLimit} trades.
+                      {' '}
+                      <button
+                        onClick={() => fetchTraderTrades(selectedTrader.address, 500)}
+                        className={isRetro ? '' : 'underline hover:text-amber-300'}
+                        style={isRetro ? { color: retroColors.textBright, textDecoration: 'underline' } : {}}
+                      >
+                        Load last 500
+                      </button>
+                      .
+                    </div>
+                  );
+                })()}
 
                 {traderTradesDiag ? (
                   <div
@@ -2201,6 +2237,7 @@ setMarketStats({
                 onClick={() => {
                   toggleWatchTrader(selectedTrader.address);
                   setSelectedTrader(null);
+                  setTraderTradesLimit(100);
                 }}
                 className={isRetro ? '' : `w-full px-4 py-3 rounded-md font-semibold transition-colors border ${
                   watchedTraders.includes(selectedTrader.address)
