@@ -131,6 +131,7 @@ Deno.serve(async (req) => {
       const eventMarkets: any[] = Array.isArray(gammaEvent?.markets) ? gammaEvent.markets : []
 
       const nowIso = new Date().toISOString()
+      let dbErrors = 0
 
       const baseRows = eventMarkets
         .filter((m: any) => typeof m?.conditionId === 'string' && m.conditionId.length > 0)
@@ -145,7 +146,11 @@ Deno.serve(async (req) => {
       // Ensure market rows exist and keep slugs/questions fresh (does not touch resolved fields).
       for (let start = 0; start < baseRows.length; start += 150) {
         const chunk = baseRows.slice(start, start + 150)
-        await supabase.from('markets').upsert(chunk, { onConflict: 'id' })
+        const { error } = await supabase.from('markets').upsert(chunk, { onConflict: 'id' })
+        if (error) {
+          dbErrors += 1
+          console.error(`DB upsert error (baseRows) for event ${eventSlug}:`, error)
+        }
       }
 
       const resolvedRows: any[] = []
@@ -203,13 +208,18 @@ Deno.serve(async (req) => {
 
       for (let start = 0; start < resolvedRows.length; start += 150) {
         const chunk = resolvedRows.slice(start, start + 150)
-        await supabase.from('markets').upsert(chunk, { onConflict: 'id' })
+        const { error } = await supabase.from('markets').upsert(chunk, { onConflict: 'id' })
+        if (error) {
+          dbErrors += 1
+          console.error(`DB upsert error (resolvedRows) for event ${eventSlug}:`, error)
+        }
       }
 
       return {
         eventSlug,
         marketsInEvent: eventMarkets.length,
         resolvedUpdated: resolvedRows.length,
+        dbErrors,
         debug: debugRows,
       }
     }
@@ -278,6 +288,7 @@ Deno.serve(async (req) => {
       let eventsProcessed = 0
       let marketsInEvents = 0
       let resolvedUpdated = 0
+      let dbErrors = 0
       const debugRows: any[] = []
 
       for (const eventSlug of orderedEventSlugs) {
@@ -286,6 +297,7 @@ Deno.serve(async (req) => {
           eventsProcessed += 1
           marketsInEvents += r.marketsInEvent
           resolvedUpdated += r.resolvedUpdated
+          dbErrors += r.dbErrors || 0
           if (debugEnabled && debugRows.length < 5 && Array.isArray(r.debug)) {
             debugRows.push(...r.debug)
           }
@@ -300,6 +312,7 @@ Deno.serve(async (req) => {
         eventsProcessed,
         marketsInEvents,
         resolvedUpdated,
+        dbErrors,
         debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
       }), {
         status: 200,
@@ -356,6 +369,7 @@ Deno.serve(async (req) => {
       let eventsProcessed = 0
       let marketsInEvents = 0
       let resolvedUpdated = 0
+      let dbErrors = 0
       const debugRows: any[] = []
 
       for (const eventSlug of orderedEventSlugs) {
@@ -364,6 +378,7 @@ Deno.serve(async (req) => {
           eventsProcessed += 1
           marketsInEvents += r.marketsInEvent
           resolvedUpdated += r.resolvedUpdated
+          dbErrors += r.dbErrors || 0
           if (debugEnabled && debugRows.length < 5 && Array.isArray(r.debug)) {
             debugRows.push(...r.debug)
           }
@@ -378,6 +393,7 @@ Deno.serve(async (req) => {
         eventsProcessed,
         marketsInEvents,
         resolvedUpdated,
+        dbErrors,
         debug: debugEnabled ? debugRows.slice(0, 5) : undefined,
       }), {
         status: 200,
