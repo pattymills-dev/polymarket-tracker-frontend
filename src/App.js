@@ -473,20 +473,33 @@ setMarketStats({
       // Get unique market IDs from trades
       const marketIds = [...new Set(trades.map(t => t.market_id).filter(Boolean))];
 
-      // Fetch market resolution data separately
-      const marketsResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/markets?id=in.(${marketIds.join(',')})&select=id,resolved,winning_outcome`,
-        { headers }
-      );
-      const markets = await marketsResponse.json();
+      // Fetch market resolution data separately.
+      // IMPORTANT: chunk requests to avoid overly long URLs for active traders (can otherwise fail silently and mark everything as pending).
+      const markets = [];
+      const chunkSize = 40;
+      for (let start = 0; start < marketIds.length; start += chunkSize) {
+        const chunk = marketIds.slice(start, start + chunkSize);
+        const url = `${SUPABASE_URL}/rest/v1/markets?id=in.(${chunk.join(',')})&select=id,resolved,winning_outcome`;
+        const marketsResponse = await fetch(url, { headers });
+        const data = await marketsResponse.json();
+
+        if (!marketsResponse.ok) {
+          console.error('Error fetching markets:', { status: marketsResponse.status, body: data });
+          continue;
+        }
+        if (Array.isArray(data)) {
+          markets.push(...data);
+        }
+      }
       const marketMap = new Map((Array.isArray(markets) ? markets : []).map(m => [m.id, m]));
 
       // Merge market resolution data into trades
       const tradesWithResolution = trades.map(trade => {
         const market = marketMap.get(trade.market_id);
+        const marketResolved = Boolean(market?.resolved) || market?.winning_outcome != null;
         return {
           ...trade,
-          market_resolved: market?.resolved || false,
+          market_resolved: marketResolved,
           winning_outcome: market?.winning_outcome || null
         };
       });
