@@ -418,17 +418,25 @@ Deno.serve(async (req) => {
       const windowMs = Math.max(recentDays, 1) * 24 * 60 * 60 * 1000
       const minEventMs = Date.now() - windowMs
       const maxEventMs = Date.now() + 24 * 60 * 60 * 1000 // allow small time-zone skew
-      const sportsSlugOr =
-        'slug.ilike.nba-%,slug.ilike.nhl-%,slug.ilike.mlb-%,slug.ilike.nfl-%,slug.ilike.cbb-%,' +
-        'slug.ilike.epl-%,slug.ilike.efl-%,slug.ilike.bun-%,slug.ilike.mls-%,' +
-        'slug.ilike.wta-%,slug.ilike.atp-%'
+      const supportedLeagues = ['nba', 'nhl', 'mlb', 'nfl', 'cbb', 'epl', 'efl', 'bun', 'mls', 'wta', 'atp']
+
+      // Build a narrow server-side filter that matches sports slugs for the last `days` calendar dates.
+      // Example condition: slug.ilike.nba-%-2026-02-05%
+      const dateStrings: string[] = []
+      for (let i = 0; i < Math.max(recentDays, 1); i += 1) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+        dateStrings.push(d.toISOString().slice(0, 10))
+      }
+      const windowSlugOr = supportedLeagues
+        .flatMap((league) => dateStrings.map((date) => `slug.ilike.${league}-%-${date}%`))
+        .join(',')
 
       const { data: candidateMarkets, error: candidateError } = await supabase
         .from('markets')
         .select('slug,updated_at,resolved,winning_outcome')
         .not('slug', 'is', null)
         .is('winning_outcome', null)
-        .or(sportsSlugOr)
+        .or(windowSlugOr)
         .order('updated_at', { ascending: true, nullsFirst: true })
         .limit(candidateLimit)
 
