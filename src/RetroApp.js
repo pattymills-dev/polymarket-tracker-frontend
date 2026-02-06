@@ -15,14 +15,19 @@ const RetroApp = () => {
     process.env.REACT_APP_SUPABASE_ANON_KEY ||
     '';
 
-  const headers = useMemo(
-    () => ({
-      Authorization: `Bearer ${SUPABASE_PUBLIC_KEY}`,
+  const headers = useMemo(() => {
+    const h = {
       apikey: SUPABASE_PUBLIC_KEY,
       'Content-Type': 'application/json'
-    }),
-    [SUPABASE_PUBLIC_KEY]
-  );
+    };
+
+    // Legacy anon keys are JWTs; publishable keys are `sb_*` and must not be sent as Authorization bearer tokens.
+    if (SUPABASE_PUBLIC_KEY && !SUPABASE_PUBLIC_KEY.startsWith('sb_')) {
+      h.Authorization = `Bearer ${SUPABASE_PUBLIC_KEY}`;
+    }
+
+    return h;
+  }, [SUPABASE_PUBLIC_KEY]);
 
   useEffect(() => {
     if (!SUPABASE_PUBLIC_KEY) {

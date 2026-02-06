@@ -42,6 +42,7 @@ const PolymarketTracker = () => {
   const [selectedTrader, setSelectedTrader] = useState(null);
   const [traderTrades, setTraderTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
+  const [traderTradesDiag, setTraderTradesDiag] = useState(null);
 
   // Supabase Configuration
   const SUPABASE_URL =
@@ -51,14 +52,19 @@ const PolymarketTracker = () => {
     process.env.REACT_APP_SUPABASE_ANON_KEY ||
     '';
 
-  const headers = useMemo(
-    () => ({
-      Authorization: `Bearer ${SUPABASE_PUBLIC_KEY}`,
+  const headers = useMemo(() => {
+    const h = {
       apikey: SUPABASE_PUBLIC_KEY,
       'Content-Type': 'application/json'
-    }),
-    [SUPABASE_PUBLIC_KEY]
-  );
+    };
+
+    // Legacy anon/service_role keys are JWTs; publishable/secret keys are `sb_*` and must not be sent as Authorization bearer tokens.
+    if (SUPABASE_PUBLIC_KEY && !SUPABASE_PUBLIC_KEY.startsWith('sb_')) {
+      h.Authorization = `Bearer ${SUPABASE_PUBLIC_KEY}`;
+    }
+
+    return h;
+  }, [SUPABASE_PUBLIC_KEY]);
 
   useEffect(() => {
     if (!SUPABASE_PUBLIC_KEY) {
@@ -457,6 +463,7 @@ setMarketStats({
 
   const fetchTraderTrades = async (address) => {
     setLoadingTrades(true);
+    setTraderTradesDiag(null);
     try {
       // Fetch trades first
       const response = await fetch(
@@ -476,6 +483,7 @@ setMarketStats({
       // Fetch market resolution data separately.
       // IMPORTANT: chunk requests to avoid overly long URLs for active traders (can otherwise fail silently and mark everything as pending).
       const markets = [];
+      const marketFetchErrors = [];
       const chunkSize = 40;
       for (let start = 0; start < marketIds.length; start += chunkSize) {
         const chunk = marketIds.slice(start, start + chunkSize);
@@ -485,6 +493,7 @@ setMarketStats({
 
         if (!marketsResponse.ok) {
           console.error('Error fetching markets:', { status: marketsResponse.status, body: data });
+          marketFetchErrors.push({ status: marketsResponse.status });
           continue;
         }
         if (Array.isArray(data)) {
@@ -492,6 +501,14 @@ setMarketStats({
         }
       }
       const marketMap = new Map((Array.isArray(markets) ? markets : []).map(m => [m.id, m]));
+
+      if (marketFetchErrors.length > 0 || marketMap.size < marketIds.length) {
+        setTraderTradesDiag({
+          marketsRequested: marketIds.length,
+          marketsReturned: marketMap.size,
+          marketFetchErrors,
+        });
+      }
 
       // Merge market resolution data into trades
       const tradesWithResolution = trades.map(trade => {
@@ -2036,6 +2053,19 @@ setMarketStats({
                   RECENT TRADES
                   <span style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem', fontWeight: 400 } : {}}>(last 100)</span>
                 </h4>
+
+                {traderTradesDiag ? (
+                  <div
+                    className={isRetro ? '' : 'mb-3 text-xs text-amber-400/80'}
+                    style={isRetro ? { color: retroColors.warn, fontSize: '0.9rem', marginBottom: '0.75rem' } : {}}
+                  >
+                    Resolution lookup returned {traderTradesDiag.marketsReturned}/{traderTradesDiag.marketsRequested} markets
+                    {Array.isArray(traderTradesDiag.marketFetchErrors) && traderTradesDiag.marketFetchErrors.length > 0
+                      ? ` (${traderTradesDiag.marketFetchErrors.length} request error(s))`
+                      : ''}.
+                    {' '}Some trades may show (Pending) even if resolved upstream.
+                  </div>
+                ) : null}
 
                 {loadingTrades ? (
                   <div className="text-center py-8">
