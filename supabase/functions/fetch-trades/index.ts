@@ -156,6 +156,12 @@ serve(async (req) => {
     const WHALE_THRESHOLD = 10_000;
     const MEGA_WHALE_THRESHOLD = 50_000;
 
+    // Only alert "copyable" traders if their realized ROI is meaningfully positive.
+    // This avoids spamming users with low-edge, high-volume traders that barely grind a profit.
+    const MIN_COPYABLE_TRADER_ROI = 0.10; // 10% realized ROI over the rolling window
+    // Also require some size on the trade itself for copyable alerts to cut noise.
+    const COPYABLE_ALERT_MIN_TRADE_SIZE = 5_000;
+
     // Suppress "penny scrape" alerts (e.g. BUY @ 99-100c, SELL @ 0-1c).
     // This is the max-ROI on the trade (profit/risk) if the bet goes the trader's way.
     // 0.15 => require at least ~15% max ROI to qualify for alerts/Telegram.
@@ -452,12 +458,15 @@ serve(async (req) => {
             sent: false,
           });
         }
-        // Copyable alert (>= $1k) - only top 20 by copyability score (if not already a top trader)
-        else if (isCopyable && !isTopTrader && r.amount >= MIN_TRADE_SIZE) {
+        // Copyable alert - only top 20 by copyability score (if not already a top trader)
+        // Gate by trader ROI + trade size to keep Telegram signal high.
+        else if (isCopyable && !isTopTrader && r.amount >= COPYABLE_ALERT_MIN_TRADE_SIZE) {
+          const copyableTraderRoi = safeNumber(copyableInfo?.realized_roi);
+          if (copyableTraderRoi == null || copyableTraderRoi < MIN_COPYABLE_TRADER_ROI) {
+            continue;
+          }
           const record = formatRecord(copyableInfo);
-          const roiPct = typeof copyableInfo?.realized_roi === "number"
-            ? Math.round(copyableInfo.realized_roi * 100)
-            : null;
+          const roiPct = Math.round(copyableTraderRoi * 100);
           const resolvedCount = copyableInfo?.resolved_trades_count ?? null;
           alertRows.push({
             type: "copyable",
@@ -471,7 +480,7 @@ serve(async (req) => {
             side: r.side || 'BUY',
             price: r.price,
             amount: r.amount,
-            message: `📈 COPYABLE #${copyableInfo?.rank || '?'}${record}${roiPct != null ? ` (ROI ${roiPct}%` : ''}${resolvedCount != null ? ` · ${resolvedCount} resolved` : ''}${roiPct != null ? ')' : ''}: $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
+            message: `📈 COPYABLE #${copyableInfo?.rank || '?'}${record} (ROI ${roiPct}%${resolvedCount != null ? ` · ${resolvedCount} resolved` : ''}): $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
             sent: false,
           });
         }
