@@ -9,9 +9,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 const BOOT_SEQUENCE = [
   '> INITIALIZING SONAR ARRAY...',
   '> SCANNING POLYMARKET FEEDS...',
+  '> NORMALIZING TRADE FLOW...',
+  '> FILTERING EXTREME PROBABILITIES...',
   '> WHALE DETECTION ONLINE...',
-  '> TRACKING ENABLED...',
-  '',
+  '> RESOLUTION SYNC ARMED...',
+  '> ALERT CHANNELS ARMED...',
+  '> TRACKING ENABLED.',
+  '> WARMING CACHE LAYERS...',
+  '> TARGET ACQUISITION READY...',
+  '> STANDING BY...',
 ];
 const MESSAGE = 'follow the white whale.';
 const BOOT_LINE_DELAY = 280; // ms per boot line
@@ -68,6 +74,12 @@ const SonarInterstitial = ({ onComplete }) => {
       onComplete();
       return;
     }
+
+    // Reset in case this component is ever remounted quickly.
+    setBootLines([]);
+    setPhase('boot');
+    setDisplayedText('');
+    setIsComplete(false);
 
     let lineIndex = 0;
     const bootInterval = setInterval(() => {
@@ -374,7 +386,7 @@ const SonarInterstitial = ({ onComplete }) => {
         })}
       </svg>
 
-      {/* Boot sequence - absolutely positioned */}
+      {/* Center stage: fixed height prevents "recentering" when switching phases */}
       <div
         style={{
           position: 'absolute',
@@ -384,23 +396,28 @@ const SonarInterstitial = ({ onComplete }) => {
           zIndex: 10,
           textAlign: 'center',
           padding: '0 1.5rem',
-          maxWidth: '600px',
-          width: '100%',
-          opacity: phase === 'boot' ? 1 : 0,
-          transition: 'opacity 0.3s ease-out',
-          pointerEvents: phase === 'boot' ? 'auto' : 'none',
+          width: 'min(680px, calc(100% - 3rem))',
+          height: 'min(520px, 70vh)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '1rem',
         }}
       >
+        {/* Boot text stays on-screen (dims) while the message types in */}
         <div
           style={{
             fontSize: 'clamp(0.9rem, 2.5vw, 1.1rem)',
             color: colors.sonarGreenDim,
             letterSpacing: '0.05em',
             lineHeight: 1.8,
+            opacity: phase === 'boot' ? 1 : 0.35,
+            transition: 'opacity 0.35s ease-out',
           }}
         >
           {bootLines.map((line, idx) => (
-            <div key={idx} style={{ opacity: line ? 0.7 : 0, minHeight: '1.8em' }}>
+            <div key={idx} style={{ opacity: 0.7, minHeight: '1.8em' }}>
               {line}
             </div>
           ))}
@@ -408,36 +425,31 @@ const SonarInterstitial = ({ onComplete }) => {
             <span style={{ opacity: showCursor ? 0.7 : 0 }}>_</span>
           )}
         </div>
-      </div>
 
-      {/* Main message - absolutely positioned */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          zIndex: 10,
-          textAlign: 'center',
-          padding: '0 1.5rem',
-          width: '100%',
-          opacity: phase === 'message' ? 1 : 0,
-          transition: 'opacity 0.3s ease-in',
-          pointerEvents: phase === 'message' ? 'auto' : 'none',
-        }}
-      >
+        {/* Main message */}
         <div
           style={{
-            fontSize: 'clamp(1.6rem, 6vw, 2.8rem)',
-            color: colors.sonarGreen,
-            letterSpacing: '0.12em',
-            textShadow: `0 0 15px rgba(79, 184, 120, 0.3)`,
+            minHeight: '3.2em',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: phase === 'message' ? 1 : 0,
+            transition: 'opacity 0.25s ease-in',
           }}
         >
-          {displayedText}
-          {phase === 'message' && !isComplete && (
-            <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
-          )}
+          <div
+            style={{
+              fontSize: 'clamp(1.6rem, 6vw, 2.6rem)',
+              color: colors.sonarGreen,
+              letterSpacing: '0.10em',
+              textShadow: `0 0 15px rgba(79, 184, 120, 0.3)`,
+            }}
+          >
+            {displayedText}
+            {phase === 'message' && !isComplete && (
+              <span style={{ opacity: showCursor ? 1 : 0, marginLeft: '2px' }}>_</span>
+            )}
+          </div>
         </div>
       </div>
 

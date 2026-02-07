@@ -17,7 +17,8 @@ const ThemedApp = () => {
     if (isRetro) {
       // Always show interstitial on load for Below Deck mode
       setShowInterstitial(true);
-      setAppReady(false);
+      // Mount the app behind the interstitial so the transition feels continuous.
+      setAppReady(true);
     } else {
       // Bridge View mode - show app directly
       setShowInterstitial(false);
@@ -30,15 +31,20 @@ const ThemedApp = () => {
     setAppReady(true);
   };
 
-  // Show combined boot + sonar interstitial (Below Deck mode only)
-  if (isRetro && showInterstitial) {
-    return <SonarInterstitial onComplete={handleInterstitialComplete} />;
+  // Below Deck mode: render the app behind the interstitial so the fade-out reveals it.
+  if (isRetro) {
+    return (
+      <>
+        <App />
+        {showInterstitial ? (
+          <SonarInterstitial onComplete={handleInterstitialComplete} />
+        ) : null}
+      </>
+    );
   }
 
-  // Show main app
-  if (appReady) {
-    return <App />;
-  }
+  // Bridge View mode - show main app
+  if (appReady) return <App />;
 
   // Fallback loading
   return null;
