@@ -158,8 +158,12 @@ serve(async (req) => {
 
     // Suppress "penny scrape" alerts (e.g. BUY @ 99-100c, SELL @ 0-1c).
     // This is the max-ROI on the trade (profit/risk) if the bet goes the trader's way.
-    // 0.10 => require at least ~10% max ROI to qualify for alerts/Telegram.
-    const MIN_ALERT_MAX_ROI = 0.10;
+    // 0.15 => require at least ~15% max ROI to qualify for alerts/Telegram.
+    const MIN_ALERT_MAX_ROI = 0.15;
+    // Hard cut: exclude extreme entry prices entirely (regardless of ROI).
+    // This removes "penny stackers" in both directions (>=95c and <=5c).
+    const ALERT_PRICE_MAX = 0.95;
+    const ALERT_PRICE_MIN = 0.05;
 
     let fetchedTotal = 0;
     let upsertedTrades = 0;
@@ -181,6 +185,7 @@ serve(async (req) => {
     let droppedInvalidAmount = 0;
     let droppedBelowMin = 0;
     let suppressedLowRoiAlerts = 0;
+    let suppressedExtremePriceAlerts = 0;
     let dedupedCount = 0;
 
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -359,20 +364,20 @@ serve(async (req) => {
         .select("trader_address, rank, total_pl, wins, losses, resolved_markets, win_rate")
         .lte("rank", 20);  // Only alert for top 20 by P/L
 
-      const { data: hotStreaks } = await supabase
-        .from("hot_streaks")
-        .select("trader_address, rank, total_pl, wins, losses, resolved_markets, win_rate")
-        .lte("rank", 20);  // Only alert for top 20 by win rate
+      const { data: copyable } = await supabase
+        .from("copyable_traders")
+        .select("trader_address, rank, copy_score, realized_roi, realized_pl, resolved_trades_count, wins, losses")
+        .lte("rank", 20);  // Only alert for top 20 by copyability score
 
       const { data: watchlist } = await supabase
         .from("watchlist")
         .select("trader_address");
 
       const topTraderAddresses = new Set((topTraders || []).map((t: any) => t.trader_address?.toLowerCase()));
-      const hotStreakAddresses = new Set((hotStreaks || []).map((t: any) => t.trader_address?.toLowerCase()));
+      const copyableAddresses = new Set((copyable || []).map((t: any) => t.trader_address?.toLowerCase()));
       const watchlistAddresses = new Set((watchlist || []).map((t: any) => t.trader_address?.toLowerCase()));
       const topTraderMap = new Map((topTraders || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
-      const hotStreakMap = new Map((hotStreaks || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
+      const copyableMap = new Map((copyable || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
 
       // Batch check for Isolated Contact - collect candidates first, then check in one query
       // A trade is "isolated contact" if:
@@ -395,6 +400,13 @@ serve(async (req) => {
       for (const r of rows) {
         if (typeof r.amount !== "number") continue;
 
+        // Skip alerting on extreme entry prices entirely (even if ROI looks high).
+        const priceNum = safeNumber(r.price);
+        if (priceNum != null && (priceNum >= ALERT_PRICE_MAX || priceNum <= ALERT_PRICE_MIN)) {
+          suppressedExtremePriceAlerts += 1;
+          continue;
+        }
+
         // Skip alerting on "penny scrape" trades.
         // We still store the trade itself; this only suppresses alerts + Telegram noise.
         const roi = computeMaxRoi(r.side || "BUY", r.price);
@@ -405,10 +417,10 @@ serve(async (req) => {
 
         const traderLower = r.trader_address?.toLowerCase();
         const isTopTrader = topTraderAddresses.has(traderLower);
-        const isHotStreak = hotStreakAddresses.has(traderLower);
+        const isCopyable = copyableAddresses.has(traderLower);
         const isWatchlist = watchlistAddresses.has(traderLower);
         const topTraderInfo = topTraderMap.get(traderLower);
-        const hotStreakInfo = hotStreakMap.get(traderLower);
+        const copyableInfo = copyableMap.get(traderLower);
 
         // Format bet direction for display (e.g., "BUY Yes @ 65¢" or "SELL No @ 35¢")
         const betDirection = r.outcome ? `${r.side || 'BUY'} ${r.outcome}${r.price ? ` @ ${Math.round(r.price * 100)}¢` : ''}` : '';
@@ -440,13 +452,16 @@ serve(async (req) => {
             sent: false,
           });
         }
-        // Hot streak alert (>= $5k) - only top 20 by win rate (if not already a top trader)
-        else if (isHotStreak && !isTopTrader && r.amount >= MIN_TRADE_SIZE) {
-          const record = formatRecord(hotStreakInfo);
-          const winRate = Math.round(hotStreakInfo?.win_rate || 0);
+        // Copyable alert (>= $1k) - only top 20 by copyability score (if not already a top trader)
+        else if (isCopyable && !isTopTrader && r.amount >= MIN_TRADE_SIZE) {
+          const record = formatRecord(copyableInfo);
+          const roiPct = typeof copyableInfo?.realized_roi === "number"
+            ? Math.round(copyableInfo.realized_roi * 100)
+            : null;
+          const resolvedCount = copyableInfo?.resolved_trades_count ?? null;
           alertRows.push({
-            type: "hot_streak",
-            alert_source: "hot_streak",
+            type: "copyable",
+            alert_source: "copyable",
             trade_hash: r.tx_hash,
             trader_address: r.trader_address,
             market_id: r.market_id,
@@ -456,7 +471,7 @@ serve(async (req) => {
             side: r.side || 'BUY',
             price: r.price,
             amount: r.amount,
-            message: `🔥 HOT STREAK #${hotStreakInfo?.rank || '?'}${record} (${winRate}% win rate): $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
+            message: `📈 COPYABLE #${copyableInfo?.rank || '?'}${record}${roiPct != null ? ` (ROI ${roiPct}%` : ''}${resolvedCount != null ? ` · ${resolvedCount} resolved` : ''}${roiPct != null ? ')' : ''}: $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
             sent: false,
           });
         }
@@ -498,7 +513,7 @@ serve(async (req) => {
         }
 
         // Collect candidates for Isolated Contact (will batch check after loop)
-        if (r.amount >= MIN_TRADE_SIZE && !isTopTrader && !isHotStreak && !isWatchlist && r.amount < WHALE_THRESHOLD) {
+        if (r.amount >= MIN_TRADE_SIZE && !isTopTrader && !isCopyable && !isWatchlist && r.amount < WHALE_THRESHOLD) {
           isolatedContactCandidates.push({ trade: r, betDirection });
         }
       }
@@ -571,7 +586,7 @@ serve(async (req) => {
             // Send Telegram only for high-priority alerts that were actually inserted
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'top_trader' || alert.type === 'hot_streak' || alert.type === 'watchlist' || alert.type === 'mega_whale' || alert.type === 'isolated_contact')) {
+                  (alert.type === 'top_trader' || alert.type === 'copyable' || alert.type === 'watchlist' || alert.type === 'mega_whale' || alert.type === 'isolated_contact')) {
                 const meta = tradeMetaByHash.get(alert.trade_hash) ?? null;
                 await sendTelegramAlert(alert, meta);
               }
@@ -630,6 +645,7 @@ serve(async (req) => {
             droppedInvalidAmount,
             droppedBelowMin,
             suppressedLowRoiAlerts,
+            suppressedExtremePriceAlerts,
             dedupedCount,
             apiFilters: {
               takerOnly: false,
@@ -638,6 +654,8 @@ serve(async (req) => {
             },
             alertFilters: {
               minAlertMaxRoi: MIN_ALERT_MAX_ROI,
+              excludedPriceGte: ALERT_PRICE_MAX,
+              excludedPriceLte: ALERT_PRICE_MIN,
             },
           }
           : undefined,

@@ -22,7 +22,6 @@ const PolymarketTracker = () => {
   const [largeBets, setLargeBets] = useState([]);
   const [recentTrades, setRecentTrades] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
-  const [hotStreakTraders, setHotStreakTraders] = useState([]);
   const [whaleVolumeTraders, setWhaleVolumeTraders] = useState([]);
   const [watchedTraders, setWatchedTraders] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -34,7 +33,7 @@ const PolymarketTracker = () => {
   const [minBetSize] = useState(5000); // UI filter for large bets (DB now stores >= $1k)
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
-  const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'total_pl', 'hot_streak' - simplified sort options
+  const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'total_pl', 'copyable', 'whale_volume'
   const [showAlerts, setShowAlerts] = useState(false);
   const [showTipJar, setShowTipJar] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
@@ -283,7 +282,7 @@ const formatBetPosition = (marketTitle, outcome) => {
      const FEED_LIMIT = 500;
      const MIN_TRADE_AMOUNT = 5000; // Only fetch trades >= $5k for large bets
      const STATS_MIN_AMOUNT = 5000; // High-level stats should match large bets section
-     const SMART_MONEY_MIN_AMOUNT = 1000; // Use >= $1k trades for smart money/hot streak fallback
+    const SMART_MONEY_MIN_AMOUNT = 1000; // Use >= $1k trades for smart money fallback
      const SMART_MONEY_LIMIT = 1000;
      const sevenDaysIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -418,7 +417,7 @@ setMarketStats({
     const interval = setInterval(() => {
       fetchData();
       fetchProfitability();
-      fetchHotStreaks();
+      fetchCopyableTraders();
       fetchWhaleVolumeTraders();
       fetchOpenExposure();
     }, 60000);
@@ -532,56 +531,6 @@ setMarketStats({
     }
   };
 
-  const fetchHotStreaks = async () => {
-    try {
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/hot_streaks?order=rank.asc&limit=50`,
-        { headers }
-      );
-      const data = await response.json();
-
-      if (response.ok && Array.isArray(data)) {
-        const mapped = data.map((t) => {
-          const recentRate =
-            typeof t.recent_win_rate === 'number'
-              ? t.recent_win_rate
-              : typeof t.win_rate === 'number'
-                ? t.win_rate / 100
-                : 0;
-
-          return {
-            address: t.trader_address,
-            total_volume: Number(t.total_buy_cost || 0),
-            total_buy_cost: Number(t.total_buy_cost || 0),
-            total_bets: Number(t.resolved_markets || 0),
-            resolved_markets: t.resolved_markets,
-            wins: Number(t.wins || 0),
-            losses: Number(t.losses || 0),
-            win_rate: typeof t.win_rate === 'number' ? t.win_rate / 100 : 0,
-            profit_wins: t.profit_wins,
-            profit_losses: t.profit_losses,
-            profitability_rate: 0, // ensure profitability layout renders
-            total_pl: Number(t.total_pl || 0),
-            avg_bet_size: Number(t.total_buy_cost || 0) / (t.resolved_markets || 1),
-            unique_markets: t.resolved_markets,
-            last_activity: t.last_resolved_at || Date.now(),
-            current_streak: Number(t.current_streak || 0),
-            recent_win_rate: recentRate,
-            recent_markets: Number(t.recent_markets || 0),
-            last_resolved_at: t.last_resolved_at || null,
-          };
-        });
-        setHotStreakTraders(mapped);
-      } else {
-        console.error('Hot streaks error:', data);
-        setHotStreakTraders([]);
-      }
-    } catch (error) {
-      console.error('Error fetching hot streaks:', error);
-      setHotStreakTraders([]);
-    }
-  };
-
   const fetchWhaleVolumeTraders = async () => {
     try {
       const response = await fetch(
@@ -645,6 +594,7 @@ setMarketStats({
 
   // Fetch trader profitability data
   const [profitabilityTraders, setProfitabilityTraders] = useState([]);
+  const [copyableTraders, setCopyableTraders] = useState([]);
 
   const fetchProfitability = async () => {
     try {
@@ -702,9 +652,43 @@ setMarketStats({
     }
   };
 
+  const fetchCopyableTraders = async () => {
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/copyable_traders?order=rank.asc&limit=50`,
+        { headers }
+      );
+      const data = await response.json();
+
+      if (response.ok && Array.isArray(data)) {
+        const mapped = data.map((t) => ({
+          address: t.trader_address,
+          // Reuse the existing card layout by mapping into familiar fields.
+          total_pl: Number(t.realized_pl || 0),
+          total_buy_cost: Number(t.resolved_notional || 0),
+          resolved_markets: Number(t.resolved_trades_count || 0),
+          wins: Number(t.wins || 0),
+          losses: Number(t.losses || 0),
+          win_rate: typeof t.win_rate === 'number' ? t.win_rate : 0,
+          median_trade_notional: Number(t.median_trade_notional || 0),
+          copy_score: Number(t.copy_score || 0),
+          // Ensure profitability layout renders (this check is `!== undefined`)
+          profitability_rate: 0,
+        }));
+        setCopyableTraders(mapped);
+      } else {
+        console.error('Copyable traders error:', data);
+        setCopyableTraders([]);
+      }
+    } catch (error) {
+      console.error('Error fetching copyable traders:', error);
+      setCopyableTraders([]);
+    }
+  };
+
   useEffect(() => {
     fetchProfitability();
-    fetchHotStreaks();
+    fetchCopyableTraders();
     fetchWhaleVolumeTraders();
     fetchOpenExposure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -786,7 +770,7 @@ setMarketStats({
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
     const hasResolvedTraders = profitabilityTraders.length >= 5;
-    const isHot = traderSortBy === 'hot_streak';
+    const isCopyable = traderSortBy === 'copyable';
     const isWhale = traderSortBy === 'whale_volume';
 
     // Top Performers: by P/L
@@ -796,8 +780,8 @@ setMarketStats({
         ? recentActiveTraders
         : topTraders || [];
 
-    if (isHot) {
-      tradersToShow = hotStreakTraders;
+    if (isCopyable) {
+      tradersToShow = copyableTraders;
     }
     if (isWhale) {
       tradersToShow = whaleVolumeTraders;
@@ -809,20 +793,9 @@ setMarketStats({
     }
 
     // Apply sorting
-    if (hasResolvedTraders && !isHot && !isWhale) {
+    if (hasResolvedTraders && !isCopyable && !isWhale) {
       tradersToShow = [...tradersToShow].sort((a, b) => {
-        if (traderSortBy === 'hot_streak') {
-          // Hot streak = prioritize current streak, then recent win rate, then recent market count
-          const aRecentRate = a.recent_win_rate || a.win_rate || 0;
-          const bRecentRate = b.recent_win_rate || b.win_rate || 0;
-          const aRecentMarkets = a.recent_markets || a.resolved_markets || 0;
-          const bRecentMarkets = b.recent_markets || b.resolved_markets || 0;
-          return (
-            (b.current_streak || 0) - (a.current_streak || 0) ||
-            bRecentRate - aRecentRate ||
-            bRecentMarkets - aRecentMarkets
-          );
-        } else if (traderSortBy === 'total_pl') {
+        if (traderSortBy === 'total_pl') {
           return (b.total_pl || 0) - (a.total_pl || 0);
         }
         return 0;
@@ -830,7 +803,7 @@ setMarketStats({
     }
 
     return tradersToShow;
-  }, [profitabilityTraders, recentActiveTraders, topTraders, hotStreakTraders, whaleVolumeTraders, searchAddress, traderSortBy]);
+  }, [profitabilityTraders, copyableTraders, recentActiveTraders, topTraders, whaleVolumeTraders, searchAddress, traderSortBy]);
 
   // SONAR TERMINAL PALETTE - Unified token system
   // Desaturated phosphor green, NOT neon/LED. Brightest reserved for numbers only.
@@ -1148,6 +1121,13 @@ setMarketStats({
                 </div>
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? '' : 'bg-lime-500/15 text-lime-200 border-lime-500/40'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.text}`, color: retroColors.text } : {}}>COPYABLE</span>
+                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Ranked by ROI potential (excludes extreme-price trades)</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
                     isRetro ? '' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
                   }`}
                   style={isRetro ? { border: `1px solid ${retroColors.text}`, color: retroColors.text } : {}}>WATCHLIST</span>
@@ -1181,12 +1161,13 @@ setMarketStats({
               <p className="text-sm" style={isRetro ? { color: retroColors.textDim } : {}}>
                 {isRetro
                   ? '> NO SIGNALS DETECTED. MONITORING...'
-                  : 'No alerts yet. They\'ll appear when top traders, watchlist traders, or whales make trades.'}
+                  : 'No alerts yet. They\'ll appear when top traders, copyable traders, watchlist traders, or whales make trades.'}
               </p>
             ) : (
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                 {alerts.slice(0, 20).map((alert, idx) => {
                   const isTopTrader = alert.type === 'top_trader';
+                  const isCopyable = alert.type === 'copyable';
                   const isWatchlist = alert.type === 'watchlist';
                   const isMega = alert.type === 'mega_whale';
                   const isIsolatedContact = alert.type === 'isolated_contact';
@@ -1194,7 +1175,9 @@ setMarketStats({
                   // Dynamic styling based on alert type
                   const borderClass = isTopTrader
                     ? 'border-emerald-500/40 bg-emerald-500/5 shadow-emerald-500/20'
-                    : isWatchlist
+                    : isCopyable
+                      ? 'border-lime-500/30 bg-lime-500/5 shadow-lime-500/10'
+                      : isWatchlist
                       ? 'border-cyan-500/40 bg-cyan-500/5 shadow-cyan-500/20'
                       : isMega
                         ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
@@ -1204,7 +1187,9 @@ setMarketStats({
 
                   const badgeClass = isTopTrader
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                    : isWatchlist
+                    : isCopyable
+                      ? 'bg-lime-500/15 text-lime-200 border-lime-500/40'
+                      : isWatchlist
                       ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
                       : isMega
                         ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
@@ -1214,7 +1199,9 @@ setMarketStats({
 
                   const badgeText = isTopTrader
                     ? '🏆 TOP TRADER'
-                    : isWatchlist
+                    : isCopyable
+                      ? '📈 COPYABLE'
+                      : isWatchlist
                       ? '👀 WATCHLIST'
                       : isMega
                         ? '🐋 MEGA WHALE'
@@ -1250,7 +1237,9 @@ setMarketStats({
                   // Retro-specific badge colors
                   const retroBadgeBorder = isTopTrader
                     ? retroColors.text
-                    : isWatchlist
+                    : isCopyable
+                      ? retroColors.text
+                      : isWatchlist
                       ? retroColors.text
                       : isMega
                         ? retroColors.warn
@@ -1261,7 +1250,9 @@ setMarketStats({
                   // Retro badge text (no emojis)
                   const retroBadgeText = isTopTrader
                     ? 'TOP TRADER'
-                    : isWatchlist
+                    : isCopyable
+                      ? 'COPYABLE'
+                      : isWatchlist
                       ? 'WATCHLIST'
                       : isMega
                         ? 'MEGA WHALE'
@@ -1554,15 +1545,21 @@ setMarketStats({
                     {isRetro
                       ? (traderSortBy === 'whale_volume'
                         ? 'TOP SPENDERS'
-                        : (profitabilityTraders.length >= 5 ? 'TOP PERFORMERS' : 'SMART MONEY'))
+                        : traderSortBy === 'copyable'
+                          ? 'HIGH ROI / COPYABLE'
+                          : (profitabilityTraders.length >= 5 ? 'TOP PERFORMERS' : 'SMART MONEY'))
                       : (traderSortBy === 'whale_volume'
                         ? 'Top Spenders'
-                        : (profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)'))}
+                        : traderSortBy === 'copyable'
+                          ? 'High ROI / Copyable Traders'
+                          : (profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)'))}
                     {isRetro && (
                       <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>
                         {traderSortBy === 'whale_volume'
                           ? 'VOLUME (30D)'
-                          : (profitabilityTraders.length >= 5 ? 'RESOLVED (ALL-TIME)' : '7D')}
+                          : traderSortBy === 'copyable'
+                            ? '30D ROI'
+                            : (profitabilityTraders.length >= 5 ? 'RESOLVED (ALL-TIME)' : '7D')}
                       </span>
                     )}
                   </h2>
@@ -1609,23 +1606,23 @@ setMarketStats({
                           {isRetro ? 'P/L' : 'Total P/L'}
                         </button>
                         <button
-                          onClick={() => setTraderSortBy('hot_streak')}
+                          onClick={() => setTraderSortBy('copyable')}
                           className={`px-3 py-1.5 rounded transition-colors ${
                             isRetro
                               ? ''
-                              : (traderSortBy === 'hot_streak'
+                              : (traderSortBy === 'copyable'
                                 ? 'bg-cyan-600 text-white'
                                 : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
                           }`}
                           style={isRetro ? {
-                            backgroundColor: traderSortBy === 'hot_streak' ? 'rgba(184, 160, 80, 0.9)' : retroColors.bg,
-                            color: traderSortBy === 'hot_streak' ? retroColors.bg : retroColors.textDim,
-                            border: `1px solid ${traderSortBy === 'hot_streak' ? 'rgba(184, 160, 80, 0.7)' : retroColors.borderEtched}`,
+                            backgroundColor: traderSortBy === 'copyable' ? retroColors.text : retroColors.bg,
+                            color: traderSortBy === 'copyable' ? retroColors.bg : retroColors.textDim,
+                            border: `1px solid ${traderSortBy === 'copyable' ? retroColors.text : retroColors.borderEtched}`,
                             fontSize: '0.9rem'
                           } : {}}
-                          title="Traders on a hot streak - high recent win rate and consecutive wins"
+                          title="Ranked by copyability score: ROI potential + meaningful size + evidence (excludes extreme-price trades)"
                         >
-                          {isRetro ? '🔥 HOT' : '🔥 Hot Streak'}
+                          {isRetro ? '📈 ROI' : '📈 Copyable'}
                         </button>
                         <button
                           onClick={() => setTraderSortBy('whale_volume')}
@@ -1649,7 +1646,7 @@ setMarketStats({
                       </div>
                       <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
                         {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
-                        {traderSortBy === 'hot_streak' && (isRetro ? '> RANKED BY WIN STREAK + ACCURACY (EXCL. LOW ROI)' : '🔥 Ranked by winning streak + recent accuracy (excluding low-upside bets)')}
+                        {traderSortBy === 'copyable' && (isRetro ? '> RANKED BY ROI POTENTIAL (EXCL. EXTREME-PRICE TRADES)' : '📈 Ranked by ROI potential (excludes extreme-price trades)')}
                         {traderSortBy === 'whale_volume' && (isRetro ? '> RANKED BY 30D VOLUME' : '💸 Ranked by 30-day volume')}
                       </p>
                     </div>
@@ -1659,8 +1656,8 @@ setMarketStats({
 
                 {visibleTraders.length === 0 ? (
                   <p className="text-sm text-center py-8" style={isRetro ? { color: retroColors.textDim } : {}}>
-                    {traderSortBy === 'hot_streak'
-                      ? (isRetro ? '> NO HOT STREAK DATA YET' : 'No hot streak data yet')
+                    {traderSortBy === 'copyable'
+                      ? (isRetro ? '> NO COPYABLE DATA YET' : 'No copyable traders yet')
                       : traderSortBy === 'whale_volume'
                         ? (isRetro ? '> NO VOLUME DATA YET' : 'No volume data yet')
                         : (isRetro ? '> NO TRADER DATA YET' : 'No trader data yet')}
@@ -1725,7 +1722,7 @@ setMarketStats({
                                   <span style={isRetro ? { color: retroColors.numbers, fontWeight: 500 } : { color: 'rgb(52, 211, 153)' }}>{trader.wins || 0}W</span>
                                   <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
                                   <span style={isRetro ? { color: retroColors.loss, fontWeight: 500 } : { color: 'rgb(251, 113, 133)' }}>{trader.losses || 0}L</span>
-                                  {accuracyPct != null && (
+                                  {accuracyPct != null && traderSortBy !== 'copyable' && (
                                     <>
                                       <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
                                       <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
@@ -1767,7 +1764,7 @@ setMarketStats({
                                     className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
                                     style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
                                   >
-                                    Total P/L
+                                    {traderSortBy === 'copyable' ? 'Realized P/L (30D)' : 'Total P/L'}
                                   </p>
                                   <p
                                     className={isRetro ? 'font-mono' : `font-bold font-mono text-sm ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
@@ -1781,7 +1778,7 @@ setMarketStats({
                                     className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
                                     style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
                                   >
-                                    ROI
+                                    {traderSortBy === 'copyable' ? 'ROI (30D)' : 'ROI'}
                                   </p>
                                   <p
                                     className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
@@ -1793,6 +1790,41 @@ setMarketStats({
                                   </p>
                                 </div>
                               </div>
+                              {traderSortBy === 'copyable' && (
+                                <div
+                                  className={isRetro ? 'grid grid-cols-2 gap-3 mt-2 pt-2' : 'grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50'}
+                                  style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : {}}
+                                >
+                                  <div>
+                                    <p
+                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                    >
+                                      Median Bet
+                                    </p>
+                                    <p
+                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
+                                      style={isRetro ? { fontSize: '1rem', fontWeight: 600, color: retroColors.text } : {}}
+                                    >
+                                      {formatCurrency(trader.median_trade_notional || 0)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p
+                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
+                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
+                                    >
+                                      Resolved Trades
+                                    </p>
+                                    <p
+                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
+                                      style={isRetro ? { fontSize: '1rem', fontWeight: 600, color: retroColors.text } : {}}
+                                    >
+                                      {trader.resolved_markets || 0}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
                               {openMarkets != null && Number(openMarkets) > 0 && (
                                 <div
                                   className={isRetro ? 'mt-2 pt-2' : 'mt-2 pt-2'}
@@ -1898,11 +1930,11 @@ setMarketStats({
                 )}
 
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500">
-                  {traderSortBy === 'hot_streak' && hotStreakTraders.length > 0 ? (
+                  {traderSortBy === 'copyable' && copyableTraders.length > 0 ? (
                     <>
-                      <p>Showing hot streaks ranked by streak + recent win rate.</p>
+                      <p>Ranked by ROI potential (excludes extreme-price trades).</p>
+                      <p className="mt-1">Realized P/L and ROI are resolved BUYs only (v1 approximation).</p>
                       <p className="mt-1">Click a trader to view details and watchlist.</p>
-                      <p className="mt-2 text-amber-400/70">💡 Recent win rate is based on the last 10 quality resolved markets (excludes low-upside 99c/100c bets).</p>
                     </>
                   ) : profitabilityTraders.length > 0 ? (
                     <>
