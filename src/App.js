@@ -1675,6 +1675,9 @@ setMarketStats({
                       const recentWins = recentRatePct != null && recentMarkets
                         ? Math.round((recentRatePct / 100) * recentMarkets)
                         : null;
+                      const resolvedCount = Number(trader.resolved_markets || 0);
+                      const confidenceLevel = resolvedCount >= 30 ? 3 : resolvedCount >= 15 ? 2 : resolvedCount >= 10 ? 1 : 0;
+                      const confidenceDots = `${'●'.repeat(confidenceLevel)}${'○'.repeat(Math.max(0, 3 - confidenceLevel))}` || '○○○';
                       const exposure = trader.address
                         ? openExposureMap[String(trader.address).toLowerCase()]
                         : null;
@@ -1718,19 +1721,44 @@ setMarketStats({
                                 <p className="font-mono text-sm truncate" style={isRetro ? { color: retroColors.text, fontSize: '1rem' } : {}}>
                                   {trader.address?.slice(0, 10)}…{trader.address?.slice(-4)}
                                 </p>
-                                <p className="text-xs mt-1 font-mono" style={isRetro ? { fontSize: '0.95rem' } : {}}>
-                                  <span style={isRetro ? { color: retroColors.numbers, fontWeight: 500 } : { color: 'rgb(52, 211, 153)' }}>{trader.wins || 0}W</span>
-                                  <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
-                                  <span style={isRetro ? { color: retroColors.loss, fontWeight: 500 } : { color: 'rgb(251, 113, 133)' }}>{trader.losses || 0}L</span>
-                                  {accuracyPct != null && traderSortBy !== 'copyable' && (
-                                    <>
-                                      <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
-                                      <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
-                                        Win {Math.round(accuracyPct)}%
-                                      </span>
-                                    </>
-                                  )}
-                                </p>
+                                {traderSortBy === 'copyable' ? (
+                                  <p className="text-xs mt-1 font-mono" style={isRetro ? { fontSize: '0.95rem' } : {}}>
+                                    <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>
+                                      Median bet:
+                                    </span>
+                                    <span style={isRetro ? { color: retroColors.textBright, fontWeight: 500 } : { color: 'rgb(226, 232, 240)' }}>
+                                      {' '}{trader.median_trade_notional ? formatCurrency(trader.median_trade_notional) : '—'}
+                                    </span>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
+                                    <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>
+                                      Record:
+                                    </span>
+                                    <span style={isRetro ? { color: retroColors.textBright, fontWeight: 500 } : { color: 'rgb(226, 232, 240)' }}>
+                                      {' '}{trader.wins || 0}W–{trader.losses || 0}L
+                                    </span>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
+                                    <span
+                                      title={`Sample: ${resolvedCount} resolved (30D)`}
+                                      style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}
+                                    >
+                                      {confidenceDots}
+                                    </span>
+                                  </p>
+                                ) : (
+                                  <p className="text-xs mt-1 font-mono" style={isRetro ? { fontSize: '0.95rem' } : {}}>
+                                    <span style={isRetro ? { color: retroColors.numbers, fontWeight: 500 } : { color: 'rgb(52, 211, 153)' }}>{trader.wins || 0}W</span>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
+                                    <span style={isRetro ? { color: retroColors.loss, fontWeight: 500 } : { color: 'rgb(251, 113, 133)' }}>{trader.losses || 0}L</span>
+                                    {accuracyPct != null && traderSortBy !== 'copyable' && (
+                                      <>
+                                        <span style={isRetro ? { color: retroColors.textMuted } : {}}> · </span>
+                                        <span style={isRetro ? { color: retroColors.textBright } : { color: 'rgb(226, 232, 240)' }}>
+                                          Win {Math.round(accuracyPct)}%
+                                        </span>
+                                      </>
+                                    )}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
@@ -1767,8 +1795,8 @@ setMarketStats({
                                     {traderSortBy === 'copyable' ? 'Realized P/L (30D)' : 'Total P/L'}
                                   </p>
                                   <p
-                                    className={isRetro ? 'font-mono' : `font-bold font-mono text-sm ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
-                                    style={isRetro ? { color: trader.total_pl >= 0 ? retroColors.numbers : retroColors.loss, fontWeight: 600, fontSize: '1rem' } : {}}
+                                    className={isRetro ? 'font-mono' : `font-bold font-mono ${traderSortBy === 'copyable' ? 'text-base' : 'text-sm'} ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
+                                    style={isRetro ? { color: trader.total_pl >= 0 ? retroColors.numbers : retroColors.loss, fontWeight: 600, fontSize: traderSortBy === 'copyable' ? '1.1rem' : '1rem' } : {}}
                                   >
                                     {trader.total_pl >= 0 ? '+' : ''}{formatCurrency(trader.total_pl)}
                                   </p>
@@ -1781,8 +1809,8 @@ setMarketStats({
                                     {traderSortBy === 'copyable' ? 'ROI (30D)' : 'ROI'}
                                   </p>
                                   <p
-                                    className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
-                                    style={isRetro ? { fontSize: '1rem', fontWeight: 600, color: roiPct != null && roiPct >= 0 ? retroColors.numbers : retroColors.loss } : {}}
+                                    className={isRetro ? 'font-mono' : `font-bold text-slate-100 font-mono ${traderSortBy === 'copyable' ? 'text-base' : 'text-sm'}`}
+                                    style={isRetro ? { fontSize: traderSortBy === 'copyable' ? '1.1rem' : '1rem', fontWeight: 600, color: roiPct != null && roiPct >= 0 ? retroColors.numbers : retroColors.loss } : {}}
                                   >
                                     <span style={isRetro ? {} : { color: roiPct != null && roiPct >= 0 ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}>
                                       {roiPct == null ? '—' : `${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(1)}%`}
@@ -1790,42 +1818,7 @@ setMarketStats({
                                   </p>
                                 </div>
                               </div>
-                              {traderSortBy === 'copyable' && (
-                                <div
-                                  className={isRetro ? 'grid grid-cols-2 gap-3 mt-2 pt-2' : 'grid grid-cols-2 gap-2 text-sm mt-2 pt-2 border-t border-slate-800/50'}
-                                  style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : {}}
-                                >
-                                  <div>
-                                    <p
-                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
-                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
-                                    >
-                                      Median Bet
-                                    </p>
-                                    <p
-                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
-                                      style={isRetro ? { fontSize: '1rem', fontWeight: 600, color: retroColors.text } : {}}
-                                    >
-                                      {formatCurrency(trader.median_trade_notional || 0)}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p
-                                      className={isRetro ? '' : 'text-[10px] text-slate-500 uppercase tracking-wide'}
-                                      style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
-                                    >
-                                      Resolved Trades
-                                    </p>
-                                    <p
-                                      className={isRetro ? 'font-mono' : 'font-bold text-slate-100 font-mono text-sm'}
-                                      style={isRetro ? { fontSize: '1rem', fontWeight: 600, color: retroColors.text } : {}}
-                                    >
-                                      {trader.resolved_markets || 0}
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-                              {openMarkets != null && Number(openMarkets) > 0 && (
+                              {traderSortBy !== 'copyable' && openMarkets != null && Number(openMarkets) > 0 && (
                                 <div
                                   className={isRetro ? 'mt-2 pt-2' : 'mt-2 pt-2'}
                                   style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : { borderTop: '1px solid rgba(30, 41, 59, 0.5)' }}
@@ -1848,7 +1841,7 @@ setMarketStats({
                                   </p>
                                 </div>
                               )}
-                              {showHotMetrics && (
+                              {traderSortBy !== 'copyable' && showHotMetrics && (
                                 <div
                                   className={isRetro ? 'mt-2 pt-2' : 'mt-2 pt-2'}
                                   style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : { borderTop: '1px solid rgba(30, 41, 59, 0.5)' }}

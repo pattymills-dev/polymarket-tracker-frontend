@@ -1,8 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
+import { ThemeProvider } from './ThemeContext';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+test('renders loading state', () => {
+  render(
+    <ThemeProvider>
+      <App />
+    </ThemeProvider>
+  );
+  expect(screen.getByText(/loading activity/i)).toBeInTheDocument();
 });
