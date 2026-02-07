@@ -7,17 +7,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 // Constants moved outside component to avoid dependency warnings
 const BOOT_SEQUENCE = [
-  '> INITIALIZING SONAR ARRAY...',
-  '> SCANNING POLYMARKET FEEDS...',
-  '> NORMALIZING TRADE FLOW...',
-  '> FILTERING EXTREME PROBABILITIES...',
-  '> WHALE DETECTION ONLINE...',
-  '> RESOLUTION SYNC ARMED...',
-  '> ALERT CHANNELS ARMED...',
-  '> TRACKING ENABLED.',
-  '> WARMING CACHE LAYERS...',
-  '> TARGET ACQUISITION READY...',
-  '> STANDING BY...',
+  'Powering sensor grid',
+  'Calibrating depth channels',
+  'Resolving market noise',
+  'Identifying dominant actors',
+  'Flagging anomalous signals',
+  'Target acquired',
 ];
 const MESSAGE = 'follow the white whale.';
 const BOOT_LINE_DELAY = 280; // ms per boot line
@@ -159,7 +154,8 @@ const SonarInterstitial = ({ onComplete }) => {
     : 600;
   const sonarSize = viewportSize;
   const center = sonarSize / 2;
-  const outerRadius = sonarSize * 0.45;
+  // Slightly larger sweep/rings for a fuller-screen feel.
+  const outerRadius = sonarSize * 0.47;
   const innerRadius1 = sonarSize * 0.32;
   const innerRadius2 = sonarSize * 0.18;
   const innerRadius3 = sonarSize * 0.08;
@@ -347,12 +343,12 @@ const SonarInterstitial = ({ onComplete }) => {
           </linearGradient>
         </defs>
 
-        {/* Sweep wedge - 50 degree trailing arc */}
+        {/* Sweep wedge */}
         <path
           d={`
             M ${center} ${center}
             L ${center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius} ${center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
-            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 50) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 50) * Math.PI) / 180) * outerRadius}
+            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 65) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 65) * Math.PI) / 180) * outerRadius}
             Z
           `}
           fill="url(#sweepGrad)"
@@ -386,7 +382,7 @@ const SonarInterstitial = ({ onComplete }) => {
         })}
       </svg>
 
-      {/* Center stage: fixed height prevents "recentering" when switching phases */}
+      {/* Center stage (fixed size prevents layout shift) */}
       <div
         style={{
           position: 'absolute',
@@ -394,45 +390,54 @@ const SonarInterstitial = ({ onComplete }) => {
           left: '50%',
           transform: 'translate(-50%, -50%)',
           zIndex: 10,
-          textAlign: 'center',
-          padding: '0 1.5rem',
           width: 'min(680px, calc(100% - 3rem))',
-          height: 'min(520px, 70vh)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          gap: '1rem',
+          height: 'min(420px, 55vh)',
+          pointerEvents: 'none',
         }}
       >
-        {/* Boot text stays on-screen (dims) while the message types in */}
+        {/* Boot layer */}
         <div
           style={{
-            fontSize: 'clamp(0.9rem, 2.5vw, 1.1rem)',
-            color: colors.sonarGreenDim,
-            letterSpacing: '0.05em',
-            lineHeight: 1.8,
-            opacity: phase === 'boot' ? 1 : 0.35,
-            transition: 'opacity 0.35s ease-out',
-          }}
-        >
-          {bootLines.map((line, idx) => (
-            <div key={idx} style={{ opacity: 0.7, minHeight: '1.8em' }}>
-              {line}
-            </div>
-          ))}
-          {phase === 'boot' && (
-            <span style={{ opacity: showCursor ? 0.7 : 0 }}>_</span>
-          )}
-        </div>
-
-        {/* Main message */}
-        <div
-          style={{
-            minHeight: '3.2em',
+            position: 'absolute',
+            inset: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            textAlign: 'center',
+            padding: '0 1.5rem',
+            opacity: phase === 'boot' ? 1 : 0,
+            transition: 'opacity 0.35s ease-out',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 'clamp(0.9rem, 2.5vw, 1.1rem)',
+              color: colors.sonarGreenDim,
+              letterSpacing: '0.05em',
+              lineHeight: 1.8,
+            }}
+          >
+            {bootLines.map((line, idx) => (
+              <div key={idx} style={{ opacity: 0.7, minHeight: '1.8em' }}>
+                {line}
+              </div>
+            ))}
+            {phase === 'boot' && (
+              <span style={{ opacity: showCursor ? 0.7 : 0 }}>_</span>
+            )}
+          </div>
+        </div>
+
+        {/* Message layer */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: '0 1.5rem',
             opacity: phase === 'message' ? 1 : 0,
             transition: 'opacity 0.25s ease-in',
           }}
@@ -460,7 +465,8 @@ const SonarInterstitial = ({ onComplete }) => {
           bottom: '1.5rem',
           fontSize: '0.85rem',
           color: colors.sonarGreenDim,
-          opacity: 0.35,
+          opacity: phase === 'boot' ? 0.35 : 0,
+          transition: 'opacity 0.35s ease-out',
           letterSpacing: '0.06em',
         }}
       >
