@@ -599,50 +599,36 @@ setMarketStats({
   const fetchProfitability = async () => {
     try {
       const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/rpc/calculate_trader_performance`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ min_resolved_markets: 2 })  // Require at least 2 resolved markets for meaningful stats
-        }
+        `${SUPABASE_URL}/rest/v1/trader_rankings?top_performer_rank_all_time=not.is.null&order=top_performer_rank_all_time.asc&limit=50`,
+        { headers }
       );
-
       const data = await response.json();
-      console.log('Profitability API response:', {
-        status: response.status,
-        ok: response.ok,
-        dataLength: Array.isArray(data) ? data.length : 'not array',
-        sampleData: Array.isArray(data) ? data.slice(0, 3) : data,
-        firstTraderWins: data[0]?.wins,
-        firstTraderLosses: data[0]?.losses,
-        firstTraderWinRate: data[0]?.win_rate
-      });
 
       if (response.ok && Array.isArray(data)) {
-        // Map to match the existing trader card structure
-        // Note: SQL function returns 'address' directly now, not 'trader_address'
-        const mappedTraders = data.map(t => ({
-          address: t.address || t.trader_address,
-          total_volume: Number(t.total_volume || t.total_buy_cost || 0),
-          total_buy_cost: Number(t.total_buy_cost || t.total_volume || 0),
-          total_bets: Number(t.total_bets || t.resolved_markets || 0),
-          resolved_markets: t.resolved_markets,
-          wins: Number(t.wins || 0),
-          losses: Number(t.losses || 0),
-          win_rate: Number(t.win_rate || 0),
-          profit_wins: t.profit_wins,
-          profit_losses: t.profit_losses,
-          profitability_rate: Number(t.profitability_rate || 0),
-          total_pl: Number(t.total_pl || 0),
-          avg_bet_size: Number(t.total_volume || 0) / (t.total_bets || 1),
-          unique_markets: t.resolved_markets,
-          last_activity: t.last_activity || Date.now(),
-          current_streak: Number(t.current_streak || 0),
-          recent_win_rate: Number(t.recent_win_rate || 0),
-          recent_markets: Number(t.recent_markets || 0),
-          last_resolved_at: t.last_resolved_at || null
-        }));
-        console.log('Mapped profitability traders:', mappedTraders.length, mappedTraders);
+        const mappedTraders = data.map(t => {
+          const wins = Number(t.wins_all_time || 0);
+          const losses = Number(t.losses_all_time || 0);
+          const resolved = Number(t.resolved_markets_all_time || 0);
+          return {
+            address: t.trader_address,
+            total_volume: Number(t.total_buy_cost_all_time || 0),
+            total_buy_cost: Number(t.total_buy_cost_all_time || 0),
+            total_bets: resolved,
+            resolved_markets: resolved,
+            wins,
+            losses,
+            win_rate: resolved > 0 ? wins / resolved : 0,
+            profitability_rate: 0,
+            total_pl: Number(t.realized_pl_all_time || 0),
+            avg_bet_size: resolved > 0 ? Number(t.total_buy_cost_all_time || 0) / resolved : 0,
+            unique_markets: resolved,
+            last_activity: Date.now(),
+            current_streak: 0,
+            recent_win_rate: 0,
+            recent_markets: 0,
+            last_resolved_at: null
+          };
+        });
         setProfitabilityTraders(mappedTraders);
       } else {
         console.error('Profitability API error:', data);
@@ -655,26 +641,29 @@ setMarketStats({
   const fetchCopyableTraders = async () => {
     try {
       const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/copyable_traders?order=rank.asc&limit=50`,
+        `${SUPABASE_URL}/rest/v1/trader_rankings?copyable_rank_30d=not.is.null&order=copyable_rank_30d.asc&limit=50`,
         { headers }
       );
       const data = await response.json();
 
       if (response.ok && Array.isArray(data)) {
-        const mapped = data.map((t) => ({
-          address: t.trader_address,
-          // Reuse the existing card layout by mapping into familiar fields.
-          total_pl: Number(t.realized_pl || 0),
-          total_buy_cost: Number(t.resolved_notional || 0),
-          resolved_markets: Number(t.resolved_trades_count || 0),
-          wins: Number(t.wins || 0),
-          losses: Number(t.losses || 0),
-          win_rate: typeof t.win_rate === 'number' ? t.win_rate : 0,
-          median_trade_notional: Number(t.median_trade_notional || 0),
-          copy_score: Number(t.copy_score || 0),
-          // Ensure profitability layout renders (this check is `!== undefined`)
-          profitability_rate: 0,
-        }));
+        const mapped = data.map((t) => {
+          const wins = Number(t.wins_30d || 0);
+          const losses = Number(t.losses_30d || 0);
+          const resolved = Number(t.resolved_trades_30d || 0);
+          return {
+            address: t.trader_address,
+            total_pl: Number(t.realized_pl_30d || 0),
+            total_buy_cost: Number(t.resolved_notional_30d || 0),
+            resolved_markets: resolved,
+            wins,
+            losses,
+            win_rate: resolved > 0 ? wins / resolved : 0,
+            median_trade_notional: Number(t.median_bet_30d || 0),
+            copy_score: Number(t.copy_score_30d || 0),
+            profitability_rate: 0,
+          };
+        });
         setCopyableTraders(mapped);
       } else {
         console.error('Copyable traders error:', data);
