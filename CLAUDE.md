@@ -131,11 +131,19 @@ const isResolved =
 ```
 
 **Supported Event Types (with date-based slugs):**
-- **US Sports:** `nba`, `nhl`, `mlb`, `nfl`, `cbb`
-- **Soccer:** `epl`, `efl`, `bun`, `mls`, `lal` (La Liga), `ser` (Serie A), `lig1`, `copa`, `mex`, `bl2`, `aus`, `fl1`, `ere`, `elc`, `sea`, `spl`, `cbl`, `udi`, `acm`
+- **US Sports:** `nba`, `nhl`, `mlb`, `nfl`, `cbb`, `cwbb` (women's), `ahl`
+- **Soccer - Major:** `epl`, `efl`, `bun`, `mls`, `lal` (La Liga), `ser` (Serie A), `lig1`
+- **Soccer - Other:** `copa`, `mex`, `bl2`, `aus`, `fl1`, `ere`, `elc`, `sea`, `spl`, `cbl`, `udi`, `acm`, `por`, `tur`, `egy1`, `bra`, `arg`, `chi1`, `col1`, `rou1`, `rusrp`, `es2`, `fr2`, `itsb`, `den`
 - **Tennis:** `wta`, `atp`
 - **UFC/Combat:** `ufc`
-- **Esports:** `cs2`, `val`, `lol`, `dota2`, `rl`, `lec`, `lpl`, `lck`, `vct`
+- **Esports:** `cs2`, `val`, `lol`, `dota2`, `rl`, `lec`, `lpl`, `lck`, `vct`, `hok` (Honor of Kings), `r6siege`
+- **Basketball - Intl:** `bkkbl`, `bknbl`, `euroleague`, `shl`
+- **Cricket:** `crint`
+
+**NOT covered (no date-based slug pattern):**
+- Weather markets (`highest-temperature-in-...`)
+- Prediction markets (`will-...`, `bitcoin-up-or-down-...`)
+- These resolve through `mode=due` when they close on Polymarket
 
 **Sync Modes Available:**
 - `mode=recent` - Markets with recent trades (default)

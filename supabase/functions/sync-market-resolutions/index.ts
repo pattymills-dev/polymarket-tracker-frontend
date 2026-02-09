@@ -300,7 +300,7 @@ Deno.serve(async (req) => {
 
       // Comprehensive list of all event types with date-based slugs
       const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp|ufc|cs2|val|lol|dota2|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|lec|lpl|lck|vct|rl)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+        /^(nba|nhl|mlb|nfl|cbb|cwbb|ahl|epl|efl|bun|mls|wta|atp|ufc|cs2|val|lol|dota2|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|lec|lpl|lck|vct|rl|hok|bkkbl|bknbl|es2|itsb|rou1|chi1|col1|arg|rusrp|fr2|crint|euroleague|r6siege|por|tur|egy1|bra|den|shl)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
@@ -360,19 +360,28 @@ Deno.serve(async (req) => {
       const cutoffMs = Date.now() - Math.max(recheckHours, 0) * 60 * 60 * 1000
       // Comprehensive list of all event types with date-based slugs
       const sportsSlugOr =
-        'slug.ilike.nba-%,slug.ilike.nhl-%,slug.ilike.mlb-%,slug.ilike.nfl-%,slug.ilike.cbb-%,' +
+        'slug.ilike.nba-%,slug.ilike.nhl-%,slug.ilike.mlb-%,slug.ilike.nfl-%,slug.ilike.cbb-%,slug.ilike.cwbb-%,slug.ilike.ahl-%,' +
         'slug.ilike.epl-%,slug.ilike.efl-%,slug.ilike.bun-%,slug.ilike.mls-%,' +
         'slug.ilike.wta-%,slug.ilike.atp-%,' +
         // UFC and combat sports
         'slug.ilike.ufc-%,' +
-        // Esports: CS2, Valorant, LoL, Dota2, Rocket League
+        // Esports: CS2, Valorant, LoL, Dota2, Rocket League, Honor of Kings, R6 Siege
         'slug.ilike.cs2-%,slug.ilike.val-%,slug.ilike.lol-%,slug.ilike.dota2-%,slug.ilike.rl-%,' +
+        'slug.ilike.hok-%,slug.ilike.r6siege-%,' +
         // LoL leagues: LEC, LPL, LCK
         'slug.ilike.lec-%,slug.ilike.lpl-%,slug.ilike.lck-%,slug.ilike.vct-%,' +
-        // Additional soccer leagues: La Liga, Serie A, Ligue 1, Copa, Liga MX, Bundesliga 2, A-League, Eredivisie, EFL Championship, etc.
+        // Soccer: La Liga, Serie A, Ligue 1, Copa, Liga MX, Bundesliga 2, A-League, Eredivisie, EFL Championship, etc.
         'slug.ilike.lal-%,slug.ilike.ser-%,slug.ilike.lig1-%,slug.ilike.copa-%,slug.ilike.mex-%,' +
         'slug.ilike.bl2-%,slug.ilike.aus-%,slug.ilike.fl1-%,slug.ilike.ere-%,slug.ilike.elc-%,' +
-        'slug.ilike.sea-%,slug.ilike.spl-%,slug.ilike.cbl-%,slug.ilike.udi-%,slug.ilike.acm-%'
+        'slug.ilike.sea-%,slug.ilike.spl-%,slug.ilike.cbl-%,slug.ilike.udi-%,slug.ilike.acm-%,' +
+        // More soccer: Portugal, Turkey, Egypt, Brazil, Argentina, Chile, Colombia, Romania, Russia, Spain 2nd, France 2nd, Italy B
+        'slug.ilike.por-%,slug.ilike.tur-%,slug.ilike.egy1-%,slug.ilike.bra-%,slug.ilike.arg-%,' +
+        'slug.ilike.chi1-%,slug.ilike.col1-%,slug.ilike.rou1-%,slug.ilike.rusrp-%,slug.ilike.es2-%,' +
+        'slug.ilike.fr2-%,slug.ilike.itsb-%,slug.ilike.den-%,' +
+        // Basketball: Korean leagues, Euroleague, Swedish Hockey
+        'slug.ilike.bkkbl-%,slug.ilike.bknbl-%,slug.ilike.euroleague-%,slug.ilike.shl-%,' +
+        // Cricket
+        'slug.ilike.crint-%'
 
       const { data: candidateMarkets, error: candidateError } = await supabase
         .from('markets')
@@ -394,7 +403,7 @@ Deno.serve(async (req) => {
 
       // Comprehensive regex for all event types with date-based slugs
       const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp|ufc|cs2|val|lol|dota2|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|lec|lpl|lck|vct|rl)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+        /^(nba|nhl|mlb|nfl|cbb|cwbb|ahl|epl|efl|bun|mls|wta|atp|ufc|cs2|val|lol|dota2|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|lec|lpl|lck|vct|rl|hok|bkkbl|bknbl|es2|itsb|rou1|chi1|col1|arg|rusrp|fr2|crint|euroleague|r6siege|por|tur|egy1|bra|den|shl)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
@@ -466,17 +475,23 @@ Deno.serve(async (req) => {
       // Comprehensive list of all event types with date-based slugs
       const supportedLeagues = [
         // US Sports
-        'nba', 'nhl', 'mlb', 'nfl', 'cbb',
+        'nba', 'nhl', 'mlb', 'nfl', 'cbb', 'cwbb', 'ahl',
         // Soccer - Major leagues
         'epl', 'efl', 'bun', 'mls', 'lal', 'ser', 'lig1',
         // Soccer - Other leagues
         'copa', 'mex', 'bl2', 'aus', 'fl1', 'ere', 'elc', 'sea', 'spl', 'cbl', 'udi', 'acm',
+        // Soccer - More leagues (Portugal, Turkey, Egypt, Brazil, Argentina, Chile, Colombia, Romania, Russia, Spain 2nd, France 2nd, Italy B, Denmark)
+        'por', 'tur', 'egy1', 'bra', 'arg', 'chi1', 'col1', 'rou1', 'rusrp', 'es2', 'fr2', 'itsb', 'den',
         // Tennis
         'wta', 'atp',
         // UFC / Combat sports
         'ufc',
         // Esports
-        'cs2', 'val', 'lol', 'dota2', 'rl', 'lec', 'lpl', 'lck', 'vct'
+        'cs2', 'val', 'lol', 'dota2', 'rl', 'lec', 'lpl', 'lck', 'vct', 'hok', 'r6siege',
+        // Basketball - International
+        'bkkbl', 'bknbl', 'euroleague', 'shl',
+        // Cricket
+        'crint'
       ]
 
       // Build a narrow server-side filter that matches sports slugs for the last `days` calendar dates.
