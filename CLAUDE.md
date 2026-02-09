@@ -98,6 +98,7 @@ const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
 1. It only processes 50 markets per run (configurable via `?batch=X`)
 2. It prioritizes markets with recent trades (`mode=recent`)
 3. Older markets may take time to get processed
+4. **Non-sports markets (UFC, esports, soccer, etc.) are NOT covered by `events_window` mode** - only NBA/NHL/MLB/NFL/etc.
 
 **How Resolution Works:**
 1. The function queries unresolved markets from the `markets` table
@@ -105,20 +106,66 @@ const SUPABASE_URL = 'https://smuktlgclwvaxnduuinm.supabase.co';
 3. If the Gamma API shows `closed: true` with `outcomePrices`, it extracts the winning outcome (highest price = winner)
 4. It updates the `markets` table with `resolved=true` and `winning_outcome`
 
+**Resolution Decision Logic** (in `computeResolutionDecision`):
+```javascript
+// A market is resolved if ANY of these are true:
+const isResolved =
+  gammaMarket.resolved === true ||           // Explicitly marked resolved
+  isResolvedByStatus ||                       // umaResolutionStatus === 'resolved'
+  Boolean(winningOutcomeRaw) ||               // Has winningOutcome field
+  (looksSettledPrices && isClosed)            // Prices are 0/1 and market closed
+
+// Winner is inferred from outcomePrices when not explicit:
+// outcomePrices: ["0", "1"] with outcomes: ["Pacers", "Raptors"] → winner = "Raptors"
+```
+
 **Gamma API Response Example:**
 ```json
 {
   "closed": true,
   "outcomes": "[\"Jazz\", \"Nets\"]",
   "outcomePrices": "[\"0\", \"1\"]",  // Nets won (index 1 has price 1)
+  "umaResolutionStatus": "resolved",
   "events": [{ "title": "Nets vs. Jazz", "score": "109-99" }]
 }
 ```
 
-**If trades still show "Pending" after game ended:**
-1. Check if the market exists in `markets` table with correct `slug`
-2. Manually trigger the sync: `POST /functions/v1/sync-market-resolutions?batch=100`
-3. Verify the Gamma API returns `closed: true` for that market
+**Supported Event Types (with date-based slugs):**
+- **US Sports:** `nba`, `nhl`, `mlb`, `nfl`, `cbb`
+- **Soccer:** `epl`, `efl`, `bun`, `mls`, `lal` (La Liga), `ser` (Serie A), `lig1`, `copa`, `mex`, `bl2`, `aus`, `fl1`, `ere`, `elc`, `sea`, `spl`, `cbl`, `udi`, `acm`
+- **Tennis:** `wta`, `atp`
+- **UFC/Combat:** `ufc`
+- **Esports:** `cs2`, `val`, `lol`, `dota2`, `rl`, `lec`, `lpl`, `lck`, `vct`
+
+**Sync Modes Available:**
+- `mode=recent` - Markets with recent trades (default)
+- `mode=events_recent` - Event-based markets from recent trades
+- `mode=events_window&days=3` - Event-based markets in date window
+- `mode=events_due` - Unresolved event markets not recently checked
+- `mode=due` - Any unresolved markets not checked in `recheck_hours`
+- `event_slug=xxx` - Sync specific event by slug
+- `market_id=xxx` - Sync specific market by conditionId
+
+**Manual Sync Commands:**
+```bash
+# Sync specific event (sports, esports, UFC, etc.)
+curl -X POST "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?event_slug=nba-ind-tor-2026-02-08"
+curl -X POST "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?event_slug=cs2-vit-mouz-2026-02-07"
+curl -X POST "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?event_slug=ufc-mic1-mar14-2026-02-07"
+
+# Sync by market_id (fallback for markets without proper slugs)
+curl -X POST "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?market_id=0x..."
+
+# Batch sync unresolved markets
+curl -X POST "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?mode=due&batch=100&recheck_hours=0"
+```
+
+**If trades still show "Pending" after event ended:**
+1. Get the market's `conditionId` from the `trades` table
+2. Check if market has a `slug` in the `markets` table
+3. Verify Gamma API returns resolution data: `curl https://gamma-api.polymarket.com/markets?condition_ids=0x...`
+4. If Gamma shows resolved, manually trigger sync with `market_id` parameter
+5. If no slug exists, the sync will use the conditionId fallback lookup
 
 ## Common Issues
 

@@ -298,8 +298,9 @@ Deno.serve(async (req) => {
         })
       }
 
+      // Comprehensive list of all event types with date-based slugs
       const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp|ufc|cs2|val|lol|dota2|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|lec|lpl|lck|vct|rl)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
@@ -357,10 +358,21 @@ Deno.serve(async (req) => {
 
       const candidateLimit = Math.max(batchSize * 200, 5000)
       const cutoffMs = Date.now() - Math.max(recheckHours, 0) * 60 * 60 * 1000
+      // Comprehensive list of all event types with date-based slugs
       const sportsSlugOr =
         'slug.ilike.nba-%,slug.ilike.nhl-%,slug.ilike.mlb-%,slug.ilike.nfl-%,slug.ilike.cbb-%,' +
         'slug.ilike.epl-%,slug.ilike.efl-%,slug.ilike.bun-%,slug.ilike.mls-%,' +
-        'slug.ilike.wta-%,slug.ilike.atp-%'
+        'slug.ilike.wta-%,slug.ilike.atp-%,' +
+        // UFC and combat sports
+        'slug.ilike.ufc-%,' +
+        // Esports: CS2, Valorant, LoL, Dota2, Rocket League
+        'slug.ilike.cs2-%,slug.ilike.val-%,slug.ilike.lol-%,slug.ilike.dota2-%,slug.ilike.rl-%,' +
+        // LoL leagues: LEC, LPL, LCK
+        'slug.ilike.lec-%,slug.ilike.lpl-%,slug.ilike.lck-%,slug.ilike.vct-%,' +
+        // Additional soccer leagues: La Liga, Serie A, Ligue 1, Copa, Liga MX, Bundesliga 2, A-League, Eredivisie, EFL Championship, etc.
+        'slug.ilike.lal-%,slug.ilike.ser-%,slug.ilike.lig1-%,slug.ilike.copa-%,slug.ilike.mex-%,' +
+        'slug.ilike.bl2-%,slug.ilike.aus-%,slug.ilike.fl1-%,slug.ilike.ere-%,slug.ilike.elc-%,' +
+        'slug.ilike.sea-%,slug.ilike.spl-%,slug.ilike.cbl-%,slug.ilike.udi-%,slug.ilike.acm-%'
 
       const { data: candidateMarkets, error: candidateError } = await supabase
         .from('markets')
@@ -380,8 +392,9 @@ Deno.serve(async (req) => {
         })
       }
 
+      // Comprehensive regex for all event types with date-based slugs
       const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp|ufc|cs2|val|lol|dota2|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|lec|lpl|lck|vct|rl)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
@@ -450,7 +463,21 @@ Deno.serve(async (req) => {
       const windowMs = Math.max(recentDays, 1) * 24 * 60 * 60 * 1000
       const minEventMs = Date.now() - windowMs
       const maxEventMs = Date.now() + 24 * 60 * 60 * 1000 // allow small time-zone skew
-      const supportedLeagues = ['nba', 'nhl', 'mlb', 'nfl', 'cbb', 'epl', 'efl', 'bun', 'mls', 'wta', 'atp']
+      // Comprehensive list of all event types with date-based slugs
+      const supportedLeagues = [
+        // US Sports
+        'nba', 'nhl', 'mlb', 'nfl', 'cbb',
+        // Soccer - Major leagues
+        'epl', 'efl', 'bun', 'mls', 'lal', 'ser', 'lig1',
+        // Soccer - Other leagues
+        'copa', 'mex', 'bl2', 'aus', 'fl1', 'ere', 'elc', 'sea', 'spl', 'cbl', 'udi', 'acm',
+        // Tennis
+        'wta', 'atp',
+        // UFC / Combat sports
+        'ufc',
+        // Esports
+        'cs2', 'val', 'lol', 'dota2', 'rl', 'lec', 'lpl', 'lck', 'vct'
+      ]
 
       // Build a narrow server-side filter that matches sports slugs for the last `days` calendar dates.
       // Example condition: slug.ilike.nba-%-2026-02-05%
@@ -479,8 +506,9 @@ Deno.serve(async (req) => {
         })
       }
 
-      const sportsSlugRegex =
-        /^(nba|nhl|mlb|nfl|cbb|epl|efl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i
+      // Build regex from supportedLeagues array to keep in sync
+      const leaguePattern = supportedLeagues.join('|')
+      const sportsSlugRegex = new RegExp(`^(${leaguePattern})-(.+)-(\\d{4}-\\d{2}-\\d{2})(?:-.+)?$`, 'i')
 
       const seen = new Set<string>()
       const orderedEventSlugs: string[] = []
