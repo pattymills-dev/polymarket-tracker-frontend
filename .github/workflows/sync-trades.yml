@@ -19,8 +19,8 @@ jobs:
       - name: Sync trades from Polymarket
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/fetch-trades)
           http_code=$(echo "$response" | tail -n1)
@@ -35,8 +35,8 @@ jobs:
       - name: Populate markets from trades
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/populate-markets-from-trades)
           http_code=$(echo "$response" | tail -n1)
@@ -51,8 +51,8 @@ jobs:
       - name: Sync market resolutions (recent trades)
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=200&mode=recent&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
@@ -67,8 +67,8 @@ jobs:
       - name: Sync crypto updown resolutions (recent window)
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=200&mode=updown_window&window_hours=48&recheck_minutes=5")
           http_code=$(echo "$response" | tail -n1)
@@ -83,8 +83,8 @@ jobs:
       - name: Sync sports event resolutions (recent)
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=25&mode=events_recent&days=3&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
@@ -99,8 +99,8 @@ jobs:
       - name: Sync sports event resolutions (window)
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=25&mode=events_window&days=3&recheck_hours=2&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
@@ -115,8 +115,8 @@ jobs:
       - name: Sync sports event resolutions (due)
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=10&mode=events_due&recheck_hours=2&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
@@ -131,8 +131,8 @@ jobs:
       - name: Recheck due market resolutions
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=200&mode=due&recheck_hours=2&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
@@ -141,5 +141,35 @@ jobs:
           echo "HTTP Status: $http_code"
           if [ "$http_code" -ge 400 ]; then
             echo "Error: sync-resolutions (due) failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Refresh copyable traders (30-day win/loss stats)
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/refresh-copyable-traders?mode=existing&limit=50&days=30")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (copyable refresh): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: refresh-copyable-traders failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Refresh top traders (all-time win/loss stats)
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/refresh-top-traders?limit=50&min_resolved=5")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (top traders refresh): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: refresh-top-traders failed with status $http_code"
             exit 1
           fi
