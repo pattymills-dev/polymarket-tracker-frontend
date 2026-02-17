@@ -38,6 +38,8 @@ type CopyTrader = {
   min_median_bet_30d: number | string | null;
   min_resolved_trades_30d: number | string | null;
   min_confidence_30d: number | string | null;
+  max_open_positions: number | string | null; // Hard cap on concurrent positions
+  previous_rank_30d: number | string | null;  // Track rank decay
 };
 
 type PaperPortfolio = {
@@ -65,6 +67,15 @@ const PRICE_RULE = "source_price_plus_penalty";
 
 // Data freshness check - don't copy if rankings are stale
 const MAX_RANKINGS_AGE_HOURS = 24; // Skip copying if data is older than 24 hours
+
+// Position limits per trader - prevent overexposure to traders on losing streaks
+const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 5;
+
+// Default rank gate - only copy from traders in top N (can be overridden per trader)
+const DEFAULT_MAX_COPYABLE_RANK = 20;
+
+// Rank decay threshold - if a trader falls this many spots, flag them
+const RANK_DECAY_WARNING_THRESHOLD = 10;
 
 // Market category filters - esports markets have been unprofitable
 // Blacklist slugs that start with these prefixes
@@ -235,6 +246,7 @@ serve(async (req) => {
     let openTotalUsd = toNumber(openTotalRow?.open_usd) ?? 0;
 
     const openTraderMap = new Map<string, number>();
+    const openPositionCountMap = new Map<string, number>(); // Track position count per trader
     if (wallets.length > 0) {
       const { data: openByTrader, error: openByTraderError } = await supabase
         .from("paper_open_exposure_by_trader")
@@ -254,6 +266,28 @@ serve(async (req) => {
               String(row.source_wallet).toLowerCase(),
               toNumber(row.open_usd) ?? 0,
             );
+          }
+        }
+      }
+
+      // Count open positions per trader
+      const { data: openPositionCounts, error: positionCountError } = await supabase
+        .from("paper_positions")
+        .select("source_wallet")
+        .eq("portfolio_id", portfolioId)
+        .eq("status", "OPEN")
+        .in("source_wallet", wallets);
+
+      if (positionCountError) {
+        console.warn(
+          "Failed to load open position counts:",
+          positionCountError.message,
+        );
+      } else {
+        for (const row of openPositionCounts || []) {
+          if (row?.source_wallet) {
+            const wallet = String(row.source_wallet).toLowerCase();
+            openPositionCountMap.set(wallet, (openPositionCountMap.get(wallet) ?? 0) + 1);
           }
         }
       }
@@ -655,12 +689,41 @@ serve(async (req) => {
           continue;
         }
 
-        const maxRank = toNumber(traderRaw.max_copyable_rank_30d);
-        if (
-          maxRank != null &&
-          (!ranking || toNumber(ranking.copyable_rank_30d) == null ||
-            toNumber(ranking.copyable_rank_30d)! > maxRank)
-        ) {
+        // Position cap check - prevent too many concurrent positions from one trader
+        const maxOpenPositions = toNumber(traderRaw.max_open_positions) ?? DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER;
+        const currentPositionCount = openPositionCountMap.get(wallet) ?? 0;
+        if (currentPositionCount >= maxOpenPositions) {
+          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "position_cap_reached");
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "position_cap_reached",
+            source_trade_id: trade.tx_hash,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side,
+            source_price: price,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+            copy_factor: copyFactor,
+            max_trader_exposure_pct: maxTraderExposurePct,
+            min_price: minPrice,
+            max_price: maxPrice,
+            allow_sells: allowSells,
+            ranking_snapshot: rankingSnapshot,
+            current_position_count: currentPositionCount,
+            max_open_positions: maxOpenPositions,
+          });
+          continue;
+        }
+
+        // Rank gate - use configured or default (DEFAULT_MAX_COPYABLE_RANK)
+        const maxRank = toNumber(traderRaw.max_copyable_rank_30d) ?? DEFAULT_MAX_COPYABLE_RANK;
+        const currentRank = toNumber(ranking?.copyable_rank_30d);
+        if (currentRank == null || currentRank > maxRank) {
           logTradeSkip(trade.tx_hash, wallet, trade.market_id, "rank_gate");
           await recordDecision({
             decision: "SKIPPED",
@@ -682,8 +745,20 @@ serve(async (req) => {
             max_price: maxPrice,
             allow_sells: allowSells,
             ranking_snapshot: rankingSnapshot,
+            current_rank: currentRank,
+            max_rank: maxRank,
           });
           continue;
+        }
+
+        // Rank decay detection - warn if trader has fallen significantly
+        const previousRank = toNumber(traderRaw.previous_rank_30d);
+        if (previousRank != null && currentRank != null) {
+          const rankDrop = currentRank - previousRank;
+          if (rankDrop >= RANK_DECAY_WARNING_THRESHOLD) {
+            console.warn(`RANK DECAY: ${wallet} dropped from #${previousRank} to #${currentRank} (${rankDrop} spots)`);
+            // Log but don't skip - the rank gate above will handle if they've fallen out of range
+          }
         }
 
         const minRoi = toNumber(traderRaw.min_realized_roi_30d);
@@ -1019,6 +1094,10 @@ serve(async (req) => {
           status: "OPEN",
           entry_ts: trade.timestamp ?? now.toISOString(),
           updated_at: now.toISOString(),
+          // Store rank at entry for post-analysis of rank decay correlation
+          rank_at_entry: currentRank,
+          roi_at_entry: toNumber(ranking?.realized_roi_30d),
+          pl_at_entry: toNumber(ranking?.realized_pl_30d),
         };
 
         if (!dryRun) {
@@ -1071,6 +1150,8 @@ serve(async (req) => {
             openTotalUsd += usdSize;
             openTraderMap.set(wallet, currentTraderExposure + usdSize);
             openMarketMap.set(trade.market_id, currentMarketExposure + usdSize);
+            // Update position count for this trader
+            openPositionCountMap.set(wallet, (openPositionCountMap.get(wallet) ?? 0) + 1);
             await recordDecision({
               decision: "COPIED",
               reason: null,
@@ -1134,6 +1215,8 @@ serve(async (req) => {
           openTotalUsd += usdSize;
           openTraderMap.set(wallet, currentTraderExposure + usdSize);
           openMarketMap.set(trade.market_id, currentMarketExposure + usdSize);
+          // Update position count for this trader (dry run)
+          openPositionCountMap.set(wallet, (openPositionCountMap.get(wallet) ?? 0) + 1);
           await recordDecision({
             decision: "COPIED",
             reason: null,
