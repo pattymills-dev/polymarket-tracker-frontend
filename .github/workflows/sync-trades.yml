@@ -173,3 +173,34 @@ jobs:
             echo "Error: refresh-top-traders failed with status $http_code"
             exit 1
           fi
+
+      - name: Run paper copy trading
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (paper copy): $body"
+          echo "HTTP Status: $http_code"
+          # Don't fail on 503 (stale data warning) - just log it
+          if [ "$http_code" -ge 400 ] && [ "$http_code" -ne 503 ]; then
+            echo "Error: run-paper-copy failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Settle paper positions
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/settle-paper-positions")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (settle positions): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: settle-paper-positions failed with status $http_code"
+            exit 1
+          fi
