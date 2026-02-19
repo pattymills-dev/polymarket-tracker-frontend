@@ -175,6 +175,82 @@ curl -X POST "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-
 4. If Gamma shows resolved, manually trigger sync with `market_id` parameter
 5. If no slug exists, the sync will use the conditionId fallback lookup
 
+### Trades Table — Pagination & Query Pitfalls
+
+**⚠️ CRITICAL: The `trades` table is large and has bitten us multiple times. Always paginate.**
+
+**The Problem (fixed 2026-02-19):** `refresh-top-traders` and `refresh-copyable-traders` used `.limit(1000)` and `.limit(500)` respectively when fetching trades per trader. Active traders with 2,000+ trades had their win/loss counts silently undercounted because Supabase returns at most `limit` rows with no warning.
+
+**Example:** Trader 0xe90b had 2,366+ trades but only 1,000 were fetched → 22 markets completely missed → wrong win/loss record and rank.
+
+**The Fix:** Both functions now use paginated fetching:
+```typescript
+// fetchAllTrades() — paginate with .range(), PAGE_SIZE=1000, cap at 10,000
+while (offset < MAX_TRADES_PER_TRADER) {
+  query = query.range(offset, offset + PAGE_SIZE - 1);
+  // ... break when data.length < PAGE_SIZE
+  offset += PAGE_SIZE;
+}
+
+// fetchResolvedMarkets() — chunk .in() queries, 200 IDs per chunk
+for (let i = 0; i < marketIds.length; i += MARKET_CHUNK_SIZE) {
+  const chunk = marketIds.slice(i, i + MARKET_CHUNK_SIZE);
+  // ... query with .in("id", chunk)
+}
+```
+
+**Rules for querying the trades table:**
+1. **NEVER use `.limit()` without pagination** — you will silently lose data for active traders
+2. **Always use `.range(offset, offset + PAGE_SIZE - 1)`** and loop until `data.length < PAGE_SIZE`
+3. **Supabase REST API has a default 1,000-row cap** even without `.limit()` — you MUST paginate
+4. **`.in()` has array size limits** — chunk market ID arrays into batches of 200
+5. **Trader discovery queries are also biased** — ordering by `amount DESC` only finds traders with big single trades, not frequent medium-size traders. Paginate discovery too and include existing ranked traders for re-evaluation.
+6. **The `trades` table has no row-count endpoint** — you can't know in advance how many rows a trader has. Always paginate defensively.
+
+**Current pagination constants (in both refresh functions):**
+- `PAGE_SIZE = 1000` (rows per page)
+- `MAX_TRADES_PER_TRADER = 10000` (safety cap)
+- `MARKET_CHUNK_SIZE = 200` (for `.in()` queries)
+- Discovery: 5,000 rows for top-traders, 3,000 for copyable-traders
+
+**Files with pagination:**
+- `supabase/functions/refresh-top-traders/index.ts` — `fetchAllTrades()`, `fetchResolvedMarkets()`, `discoverTraders()`
+- `supabase/functions/refresh-copyable-traders/index.ts` — `fetchAllTrades()`, `fetchResolvedMarkets()`, paginated discovery in serve handler
+
+**If win/loss counts look wrong or stale:**
+1. Check if the trader has more trades than the pagination cap (unlikely but possible)
+2. Check if the refresh functions ran recently: `top_traders.updated_at`, `copyable_traders.updated_at`
+3. Check if markets are resolved: some "missing" wins/losses are actually unresolved markets, not pagination bugs
+4. Run a manual refresh: `curl -X POST .../refresh-top-traders?limit=50&min_resolved=5`
+
+### Copy Trading System
+
+**Paper copy trading** runs every 15 minutes via GitHub Actions (in `sync-trades.yml`).
+
+**Pipeline order (all sequential in the workflow):**
+1. `fetch-trades` — Sync trades from Polymarket API
+2. `populate-markets-from-trades` — Ensure markets table has entries for all traded markets
+3. `sync-market-resolutions` (multiple modes) — Resolve settled markets
+4. `refresh-copyable-traders` — Update 30-day rankings
+5. `refresh-top-traders` — Update all-time rankings
+6. `run-paper-copy` — Execute paper copy trades based on enabled traders
+7. `settle-paper-positions` — Settle paper positions on resolved markets
+
+**Copy trading safeguards (added 2026-02-17):**
+- **Rank gate:** Only copies from traders within top N rankings (`max_copyable_rank_30d`, default 20)
+- **Position cap:** Max concurrent open positions per trader (`max_open_positions`, default 5)
+- **Rank decay detection:** Warns when trader falls 10+ spots from `previous_rank_30d`
+- **Staleness check:** Won't copy if rankings are >24 hours old (`MAX_RANKINGS_AGE_HOURS`)
+- **Rank at entry tracking:** `paper_positions.rank_at_entry`, `roi_at_entry`, `pl_at_entry` for post-analysis
+
+**Key tables:**
+- `copy_traders` — Enabled traders with per-trader config (`max_copyable_rank_30d`, `max_open_positions`, `previous_rank_30d`)
+- `paper_positions` — Paper trade positions with status (OPEN/SETTLED/CANCELED)
+- `paper_portfolio_pnl_summary` — Aggregated P/L view
+- `paper_positions_with_price` — Positions joined with current market prices
+
+**Relevant migration:** `20260217000000_add_rank_tracking_to_paper_positions.sql`
+
 ## Common Issues
 
 1. **"Win/loss data not showing"** → Backend needs `sync-resolutions` function to run
@@ -182,3 +258,6 @@ curl -X POST "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-
 3. **"Market links wrong"** → Backend needs to store full `slug` not just `id`
 4. **"Sports bet title shows 'Spread: Team'"** → `formatGameTitle()` converts slug to "Team vs Team" format
 5. **"Game ended but still Pending"** → Market resolution hasn't synced yet; check Gamma API and manually trigger sync if needed
+6. **"Win/loss counts seem too low for active traders"** → Likely a pagination bug. Check that the refresh functions use `fetchAllTrades()` with `.range()` pagination, NOT `.limit()`. See "Trades Table — Pagination & Query Pitfalls" above.
+7. **"Leaderboard not updating"** → Check `trader_rankings.computed_at` — if stale, the refresh functions may be failing. Check GitHub Actions logs.
+8. **"Copy trader using outdated rankings"** → `run-paper-copy` has a 24-hour staleness check. If rankings haven't refreshed, it returns 503 and skips copying.

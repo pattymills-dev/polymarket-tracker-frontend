@@ -6,6 +6,10 @@ const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+const PAGE_SIZE = 1000;
+const MAX_TRADES_PER_TRADER = 10000;
+const MARKET_CHUNK_SIZE = 200; // Supabase .in() limit
+
 interface TraderStats {
   trader_address: string;
   wins: number;
@@ -13,6 +17,127 @@ interface TraderStats {
   resolved_count: number;
   total_buy_cost: number;
   realized_pl: number;
+}
+
+/**
+ * Paginate through ALL trades for a trader (no truncation).
+ * Returns up to MAX_TRADES_PER_TRADER rows.
+ */
+async function fetchAllTrades(
+  traderAddress: string,
+  selectColumns: string,
+  extraFilters?: { minPrice?: number; maxPrice?: number }
+): Promise<Record<string, unknown>[]> {
+  const allRows: Record<string, unknown>[] = [];
+  let offset = 0;
+
+  while (offset < MAX_TRADES_PER_TRADER) {
+    let query = supabase
+      .from("trades")
+      .select(selectColumns)
+      .eq("trader_address", traderAddress);
+
+    if (extraFilters?.minPrice != null) {
+      query = query.gt("price", extraFilters.minPrice);
+    }
+    if (extraFilters?.maxPrice != null) {
+      query = query.lt("price", extraFilters.maxPrice);
+    }
+
+    query = query
+      .order("timestamp", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    const { data, error } = await query;
+    if (error) {
+      console.error(`fetchAllTrades error for ${traderAddress} at offset ${offset}:`, error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+
+    allRows.push(...data);
+    if (data.length < PAGE_SIZE) break; // last page
+    offset += PAGE_SIZE;
+  }
+
+  return allRows;
+}
+
+/**
+ * Fetch resolved markets in chunks (Supabase .in() has array size limits).
+ */
+async function fetchResolvedMarkets(
+  marketIds: string[]
+): Promise<Map<string, string>> {
+  const resolvedMap = new Map<string, string>();
+
+  for (let i = 0; i < marketIds.length; i += MARKET_CHUNK_SIZE) {
+    const chunk = marketIds.slice(i, i + MARKET_CHUNK_SIZE);
+    const { data: markets, error } = await supabase
+      .from("markets")
+      .select("id, resolved, winning_outcome")
+      .in("id", chunk)
+      .eq("resolved", true);
+
+    if (error) {
+      console.error(`fetchResolvedMarkets error at chunk ${i}:`, error.message);
+      continue;
+    }
+
+    for (const m of markets || []) {
+      if (m.winning_outcome) {
+        resolvedMap.set(m.id, m.winning_outcome);
+      }
+    }
+  }
+
+  return resolvedMap;
+}
+
+/**
+ * Discover traders by paginating through trades ordered by amount desc.
+ * Also includes existing top_traders to avoid dropping them if they had
+ * a quiet period.
+ */
+async function discoverTraders(maxTraders: number): Promise<string[]> {
+  const traderSet = new Set<string>();
+
+  // 1) Paginate through trades to find active traders
+  let offset = 0;
+  const maxDiscoveryRows = 5000;
+  while (offset < maxDiscoveryRows) {
+    const { data, error } = await supabase
+      .from("trades")
+      .select("trader_address")
+      .gt("amount", 50)
+      .order("amount", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (error) {
+      console.error(`discoverTraders error at offset ${offset}:`, error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+
+    for (const row of data) {
+      if (row.trader_address) traderSet.add(row.trader_address);
+    }
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  // 2) Also include existing top_traders so they get re-evaluated
+  const { data: existing } = await supabase
+    .from("top_traders")
+    .select("trader_address")
+    .limit(200);
+
+  for (const row of existing || []) {
+    if (row.trader_address) traderSet.add(row.trader_address);
+  }
+
+  console.log(`Discovered ${traderSet.size} unique traders (from trades + existing)`);
+  return Array.from(traderSet).slice(0, maxTraders);
 }
 
 serve(async (req: Request) => {
@@ -23,55 +148,26 @@ serve(async (req: Request) => {
   console.log(`Refresh top traders (all-time): limit=${limit}, min_resolved=${minResolved}`);
 
   try {
-    // Get all traders with significant volume
-    const { data: activeTraders, error: tradersError } = await supabase
-      .from("trades")
-      .select("trader_address")
-      .gt("amount", 100)
-      .order("amount", { ascending: false })
-      .limit(1000);
-
-    if (tradersError) {
-      return new Response(JSON.stringify({ error: tradersError.message }), { status: 500 });
-    }
-
-    // Dedupe traders
-    const uniqueTraders = [...new Set((activeTraders || []).map(t => t.trader_address))].slice(0, 200);
+    // Discover traders with paginated query
+    const uniqueTraders = await discoverTraders(300);
     console.log(`Processing ${uniqueTraders.length} unique traders`);
 
     const traderStats: TraderStats[] = [];
 
     for (const traderAddress of uniqueTraders) {
-      // Get ALL trades for this trader (not limited by time)
-      const { data: trades, error: tradesErr } = await supabase
-        .from("trades")
-        .select("market_id, outcome, amount, price")
-        .eq("trader_address", traderAddress)
-        .gt("price", 0.05)
-        .lt("price", 0.95)
-        .limit(1000);
+      // Paginate through ALL trades for this trader
+      const trades = await fetchAllTrades(traderAddress, "market_id, outcome, amount, price", {
+        minPrice: 0.05,
+        maxPrice: 0.95,
+      });
 
-      if (tradesErr || !trades || trades.length === 0) continue;
+      if (trades.length === 0) continue;
 
       // Get unique market IDs
-      const marketIds = [...new Set(trades.map(t => t.market_id))];
+      const marketIds = [...new Set(trades.map((t) => t.market_id as string))];
 
-      // Fetch resolved markets
-      const { data: markets, error: marketsErr } = await supabase
-        .from("markets")
-        .select("id, resolved, winning_outcome")
-        .in("id", marketIds)
-        .eq("resolved", true);
-
-      if (marketsErr) continue;
-
-      // Create map of resolved markets
-      const resolvedMap = new Map<string, string>();
-      for (const m of markets || []) {
-        if (m.winning_outcome) {
-          resolvedMap.set(m.id, m.winning_outcome);
-        }
-      }
+      // Fetch resolved markets in chunks
+      const resolvedMap = await fetchResolvedMarkets(marketIds);
 
       if (resolvedMap.size < minResolved) continue;
 
@@ -83,19 +179,24 @@ serve(async (req: Request) => {
       const seenMarkets = new Set<string>();
 
       for (const trade of trades) {
-        totalBuyCost += trade.amount || 0;
+        const amount = (trade.amount as number) || 0;
+        const price = trade.price as number;
+        const marketId = trade.market_id as string;
+        const outcome = trade.outcome as string;
 
-        const winningOutcome = resolvedMap.get(trade.market_id);
-        if (!winningOutcome || seenMarkets.has(trade.market_id)) continue;
-        seenMarkets.add(trade.market_id);
+        totalBuyCost += amount;
 
-        const isWin = trade.outcome === winningOutcome;
+        const winningOutcome = resolvedMap.get(marketId);
+        if (!winningOutcome || seenMarkets.has(marketId)) continue;
+        seenMarkets.add(marketId);
+
+        const isWin = outcome === winningOutcome;
         if (isWin) {
           wins++;
-          realizedPl += trade.amount * (1 / trade.price - 1);
+          realizedPl += amount * (1 / price - 1);
         } else {
           losses++;
-          realizedPl -= trade.amount;
+          realizedPl -= amount;
         }
       }
 
