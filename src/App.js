@@ -12,7 +12,8 @@ import {
   ExternalLink,
   Send,
   Anchor,
-  Navigation
+  Navigation,
+  ChevronLeft
 } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import SnakeGameModal from './snake/SnakeGameModal';
@@ -956,6 +957,42 @@ setMarketStats({
     return traders.sort((a, b) => b.smart_score - a.smart_score).slice(0, 20);
   }, [recentTrades, largeBets]);
 
+  // Derive selected trader info from all available trader lists
+  const selectedTraderInfo = useMemo(() => {
+    if (!selectedFeedTrader) return null;
+    const addr = selectedFeedTrader;
+
+    // Search in all trader sources
+    const allSources = [
+      ...copyableTraders.map((t, i) => ({ ...t, sourceRank: i + 1, source: 'copyable' })),
+      ...profitabilityTraders.map((t, i) => ({ ...t, sourceRank: i + 1, source: 'profitability' })),
+      ...(whaleVolumeTraders || []).map((t, i) => ({ ...t, sourceRank: i + 1, source: 'whale' })),
+      ...recentActiveTraders.map((t, i) => ({ ...t, sourceRank: i + 1, source: 'active' })),
+    ];
+
+    // Prefer copyable data (has most metrics)
+    const match = allSources.find(t => t.address === addr && t.source === 'copyable')
+      || allSources.find(t => t.address === addr);
+
+    if (!match) return { address: addr };
+
+    const totalBuyCost = Number(match.total_buy_cost ?? match.total_volume ?? 0);
+    const roiPct = totalBuyCost ? (Number(match.total_pl || 0) / totalBuyCost) * 100 : null;
+
+    return {
+      address: addr,
+      rank: match.source === 'copyable' ? match.sourceRank : null,
+      rank_24h_ago: match.rank_24h_ago ?? null,
+      total_pl: Number(match.total_pl || 0),
+      roiPct,
+      wins: Number(match.wins || 0),
+      losses: Number(match.losses || 0),
+      median_trade_notional: match.median_trade_notional || null,
+      resolved_markets: Number(match.resolved_markets || 0),
+      source: match.source,
+    };
+  }, [selectedFeedTrader, copyableTraders, profitabilityTraders, whaleVolumeTraders, recentActiveTraders]);
+
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
     const hasResolvedTraders = profitabilityTraders.length >= 5;
@@ -1748,14 +1785,19 @@ setMarketStats({
                             isRetro
                               ? ''
                               : (isSelectedTraderTrade
-                                ? 'bg-cyan-950/30 border-cyan-500/30 shadow-cyan-500/5'
+                                ? 'bg-emerald-950/20 border-emerald-500/25 border-l-emerald-500/60'
                                 : isWatched ? 'bg-slate-950 border-cyan-500/30 shadow-cyan-500/10' : `bg-slate-950 ${getBetBorderColor(bet.amount)}`)
                           }`}
-                          style={isRetro ? {
-                            backgroundColor: isSelectedTraderTrade ? 'rgba(80, 160, 110, 0.08)' : retroColors.surface,
-                            border: `1px solid ${isSelectedTraderTrade ? retroColors.borderActive : (isWatched ? retroColors.textBright : retroColors.border)}`,
-                            borderColor: isWatched ? retroColors.borderActive : retroColors.border
-                          } : {}}
+                          style={{
+                            ...(isRetro ? {
+                              backgroundColor: isSelectedTraderTrade ? 'rgba(80, 160, 110, 0.08)' : retroColors.surface,
+                              border: `1px solid ${isSelectedTraderTrade ? retroColors.borderActive : (isWatched ? retroColors.textBright : retroColors.border)}`,
+                              borderLeft: isSelectedTraderTrade ? `3px solid ${retroColors.win}` : undefined,
+                              borderColor: !isSelectedTraderTrade && isWatched ? retroColors.borderActive : undefined,
+                            } : {
+                              borderLeftWidth: isSelectedTraderTrade ? '3px' : undefined,
+                            }),
+                          }}
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
@@ -1890,10 +1932,13 @@ setMarketStats({
               </div>
             </div>
 
-            {/* Top Traders */}
-            <div className="lg:col-span-1">
+            {/* Right Column: Top Traders or Selected Trader Panel */}
+            <div className="lg:col-span-1 relative">
+              {/* Top Traders - hidden when a trader is selected */}
               <div
-                className={`rounded-lg border p-6 sticky top-6 flex flex-col h-[1200px] ${isRetro ? '' : 'bg-slate-900 border-slate-800'}`}
+                className={`rounded-lg border p-6 sticky top-6 flex flex-col h-[1200px] transition-all duration-200 ${
+                  selectedFeedTrader ? 'hidden' : ''
+                } ${isRetro ? '' : 'bg-slate-900 border-slate-800'}`}
                 style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}`, marginTop: '0.5rem' } : {}}
               >
                 <div className="flex items-center justify-between mb-5">
@@ -2289,304 +2334,427 @@ setMarketStats({
                     <>
                       <p>Ranked by ROI potential (excludes extreme-price trades).</p>
                       <p className="mt-1">Realized P/L and ROI are resolved BUYs only (v1 approximation).</p>
-                      <p className="mt-1">Click a trader to select — see activity panel below.</p>
+                      <p className="mt-1">Click a trader to track in the right panel.</p>
                     </>
                   ) : profitabilityTraders.length > 0 ? (
                     <>
                       <p>Showing {profitabilityTraders.length} traders with resolved markets.</p>
-                      <p className="mt-1">Click a trader to view details and watchlist.</p>
+                      <p className="mt-1">Click a trader to view activity and record.</p>
                       <p className="mt-2 text-amber-400/70">💡 Win rate shows 0% if markets lack winning_outcome data. Run sync to update.</p>
                       <p className="mt-1 text-amber-400/70">Profitability = realized P/L + settlement P/L.</p>
                     </>
                   ) : (
                     <>
                       <p>Showing most active traders from the last 7 days.</p>
-                      <p className="mt-1">Click a trader to view details and watchlist.</p>
+                      <p className="mt-1">Click a trader to view activity and record.</p>
                       <p className="mt-2 text-amber-400/70">💡 Profitability data will appear as markets resolve.</p>
                     </>
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Selected Trader Panel */}
-        {selectedFeedTrader && (
-          <div
-            className={`mt-6 rounded-lg border overflow-hidden ${isRetro ? '' : 'bg-slate-900 border-slate-800'}`}
-            style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}` } : {}}
-          >
-            {/* Panel Header */}
-            <div
-              className={`flex items-center justify-between px-6 py-4 border-b ${isRetro ? '' : 'border-slate-800'}`}
-              style={isRetro ? { borderBottom: `1px solid ${retroColors.border}` } : {}}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <h3
-                  className={`font-mono text-sm truncate ${isRetro ? '' : 'text-slate-200'}`}
-                  style={isRetro ? { color: retroColors.header, fontSize: '1.1rem', letterSpacing: '0.05em' } : {}}
+              {/* Selected Trader Panel - replaces Top Traders when active */}
+              {selectedFeedTrader && (
+                <div
+                  className={`rounded-lg border sticky top-6 flex flex-col overflow-hidden ${isRetro ? '' : 'bg-slate-900 border-slate-800'}`}
+                  style={{
+                    height: 'calc(100vh - 3rem)',
+                    maxHeight: '1200px',
+                    animation: 'fadeSlideIn 200ms ease-out',
+                    ...(isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}`, marginTop: '0.5rem' } : {}),
+                  }}
                 >
-                  {isRetro ? 'SELECTED: ' : 'Selected: '}
-                  <span style={isRetro ? { color: retroColors.text } : {}}>{selectedFeedTrader.slice(0, 10)}…{selectedFeedTrader.slice(-4)}</span>
-                </h3>
-                {/* Tab pills */}
-                <div className="flex gap-1 ml-4">
-                  {[
-                    { key: 'activity', label: isRetro ? 'ACTIVITY' : 'Activity' },
-                    { key: 'record', label: isRetro ? 'RECORD' : 'Record' },
-                  ].map(({ key, label }) => (
-                    <button
-                      key={key}
-                      onClick={() => setSelectedTraderTab(key)}
-                      className={`px-3 py-1 rounded text-xs transition-colors ${
-                        isRetro ? '' : (
-                          selectedTraderTab === key
-                            ? 'bg-cyan-600 text-white'
-                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        )
-                      }`}
-                      style={isRetro ? {
-                        backgroundColor: selectedTraderTab === key ? retroColors.text : retroColors.bg,
-                        color: selectedTraderTab === key ? retroColors.bg : retroColors.textDim,
-                        border: `1px solid ${selectedTraderTab === key ? retroColors.text : retroColors.borderEtched}`,
-                        fontSize: '0.9rem',
-                      } : {}}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedFeedTrader(null);
-                  setOnlySelectedWallet(false);
-                  setSelectedTraderTrades([]);
-                  setSelectedTraderRecord(null);
-                }}
-                className={`px-3 py-1.5 rounded text-xs transition-colors ${
-                  isRetro ? '' : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-600'
-                }`}
-                style={isRetro ? {
-                  backgroundColor: retroColors.bg,
-                  color: retroColors.textDim,
-                  border: `1px solid ${retroColors.borderEtched}`,
-                  fontSize: '0.9rem',
-                } : {}}
-              >
-                {isRetro ? '✕ CLEAR' : '✕ Clear'}
-              </button>
-            </div>
-
-            {/* Panel Body */}
-            <div className="px-6 py-4">
-              {loadingSelectedTrader ? (
-                <div className="text-center py-8">
+                  {/* Panel Header: Back + Tracking label */}
                   <div
-                    className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto"
-                    style={isRetro ? { borderColor: retroColors.textBright } : { borderColor: 'rgb(8, 145, 178)' }}
-                  />
-                  <p className="mt-3 text-sm" style={isRetro ? { color: retroColors.textDim } : {}}>
-                    {isRetro ? '> LOADING TRADER DATA...' : 'Loading trader data…'}
-                  </p>
-                </div>
-              ) : selectedTraderTab === 'activity' ? (
-                /* Activity Tab */
-                <div>
-                  {selectedTraderTrades.length === 0 ? (
-                    <p className="text-sm text-center py-6" style={isRetro ? { color: retroColors.textDim } : {}}>
-                      {isRetro ? '> NO TRADES FOUND' : 'No trades found for this trader.'}
+                    className={`px-4 py-3 border-b shrink-0 ${isRetro ? '' : 'border-slate-800'}`}
+                    style={isRetro ? { borderBottom: `1px solid ${retroColors.border}` } : {}}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <button
+                        onClick={() => {
+                          setSelectedFeedTrader(null);
+                          setOnlySelectedWallet(false);
+                          setSelectedTraderTrades([]);
+                          setSelectedTraderRecord(null);
+                        }}
+                        className={`flex items-center gap-1 text-xs transition-colors ${
+                          isRetro ? '' : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                        style={isRetro ? { color: retroColors.textDim } : {}}
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        {isRetro ? 'BACK TO RANKINGS' : 'Back to Rankings'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedFeedTrader(null);
+                          setOnlySelectedWallet(false);
+                          setSelectedTraderTrades([]);
+                          setSelectedTraderRecord(null);
+                        }}
+                        className={`text-xs px-2 py-1 rounded transition-colors ${
+                          isRetro ? '' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+                        }`}
+                        style={isRetro ? { color: retroColors.textMuted } : {}}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <p
+                      className="text-[10px] uppercase tracking-widest mb-2"
+                      style={isRetro ? { color: retroColors.textMuted, fontSize: '0.75rem' } : { color: 'rgb(100, 116, 139)' }}
+                    >
+                      {isRetro ? 'TRACKING' : 'Tracking'}
                     </p>
-                  ) : (
-                    <div className="max-h-[500px] overflow-y-auto pr-2 space-y-2">
-                      {selectedTraderTrades.map((trade, idx) => {
-                        const tradeSideInfo = getSideLabel(trade.side);
-                        const isResolved = trade.market_resolved;
-                        const isWin = isResolved && trade.winning_outcome === trade.outcome;
-                        const isLoss = isResolved && trade.winning_outcome && trade.winning_outcome !== trade.outcome;
+                    <p
+                      className="font-mono text-sm truncate"
+                      style={isRetro ? { color: retroColors.textBright, fontSize: '1rem' } : { color: 'rgb(226, 232, 240)' }}
+                    >
+                      {selectedFeedTrader.slice(0, 10)}…{selectedFeedTrader.slice(-6)}
+                    </p>
+                  </div>
 
-                        return (
-                          <div
-                            key={idx}
-                            className={isRetro ? '' : `rounded-md border p-3 ${
-                              isWin ? 'border-emerald-500/30 bg-emerald-500/5'
-                                : isLoss ? 'border-rose-500/30 bg-rose-500/5'
-                                : 'bg-slate-950 border-slate-800'
-                            }`}
-                            style={isRetro ? {
-                              backgroundColor: retroColors.surfaceDark,
-                              border: `1px solid ${retroColors.border}`,
-                              borderLeft: `3px solid ${isWin ? retroColors.win : isLoss ? retroColors.loss : retroColors.warn}`,
-                              padding: '0.75rem 1rem',
-                            } : {}}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1">
-                                <a
-                                  href={trade.market_slug ? `https://polymarket.com/market/${trade.market_slug}` : undefined}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className={isRetro ? 'block' : 'text-sm font-medium text-slate-200 hover:underline block truncate'}
-                                  style={isRetro ? { color: retroColors.textPrimary, fontSize: '1rem', fontWeight: 500 } : {}}
-                                >
-                                  {formatGameTitle(trade.market_title, trade.market_slug) || trade.market_id}
-                                </a>
-                                <p className="text-xs mt-1" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.85rem' } : {}}>
-                                  {formatTimestamp(trade.timestamp)}
-                                </p>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <p className="text-sm font-semibold" style={isRetro ? { color: retroColors.numbers, fontSize: '0.95rem' } : {}}>
-                                  {formatCurrency(trade.amount)}
-                                </p>
-                                <span
-                                  className={`text-xs font-semibold px-2 py-0.5 rounded mt-1 inline-block border ${isRetro ? '' : tradeSideInfo.color}`}
-                                  style={isRetro ? {
-                                    border: `1px solid ${retroColors.borderEtched}`,
-                                    color: retroColors.textDim,
-                                    fontSize: '0.7rem',
-                                  } : {}}
-                                >
-                                  {tradeSideInfo.label}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-xs mt-2" style={isRetro ? { fontSize: '0.85rem' } : {}}>
-                              <span style={isRetro ? { color: retroColors.textDim } : {}} className={isRetro ? '' : 'text-slate-500'}>
-                                {formatBetPosition(trade.market_title, trade.outcome)}
-                                {isWin && <span style={isRetro ? { color: retroColors.win, marginLeft: '0.5rem', fontWeight: 600 } : {}} className={isRetro ? '' : 'ml-2 text-emerald-400 font-semibold'}>✓ WIN</span>}
-                                {isLoss && <span style={isRetro ? { color: retroColors.loss, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-rose-400 font-semibold'}>✗ LOSS</span>}
-                                {!isResolved && <span style={isRetro ? { color: retroColors.warn, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-amber-500'}>(Pending)</span>}
-                              </span>
-                              <span style={isRetro ? { color: retroColors.textDim } : {}} className={isRetro ? '' : 'text-slate-500'}>
-                                {Number(trade.price) ? `${(Number(trade.price) * 100).toFixed(0)}¢` : '—'}
-                              </span>
-                            </div>
+                  {/* Stats Grid */}
+                  {selectedTraderInfo && (selectedTraderInfo.rank || selectedTraderInfo.total_pl) && (
+                    <div
+                      className={`px-4 py-3 border-b shrink-0 ${isRetro ? '' : 'border-slate-800'}`}
+                      style={isRetro ? { borderBottom: `1px solid ${retroColors.border}` } : {}}
+                    >
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                        {selectedTraderInfo.rank && (
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.7rem' } : { color: 'rgb(100, 116, 139)' }}>
+                              Rank
+                            </p>
+                            <p className="text-sm font-bold font-mono flex items-center gap-1" style={isRetro ? { color: retroColors.numbers, fontSize: '1rem' } : {}}>
+                              #{selectedTraderInfo.rank}
+                              {selectedTraderInfo.rank_24h_ago != null && (() => {
+                                const delta = selectedTraderInfo.rank_24h_ago - selectedTraderInfo.rank;
+                                if (delta > 0) return <span className="text-[10px]" style={isRetro ? { color: retroColors.win } : { color: 'rgb(52, 211, 153)' }}>▲{delta}</span>;
+                                if (delta < 0) return <span className="text-[10px]" style={isRetro ? { color: retroColors.loss } : { color: 'rgb(251, 113, 133)' }}>▼{Math.abs(delta)}</span>;
+                                return <span className="text-[10px]" style={{ color: 'rgb(100, 116, 139)' }}>—</span>;
+                              })()}
+                            </p>
                           </div>
-                        );
-                      })}
+                        )}
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.7rem' } : { color: 'rgb(100, 116, 139)' }}>
+                            Record
+                          </p>
+                          <p className="text-sm font-bold font-mono" style={isRetro ? { fontSize: '1rem' } : {}}>
+                            <span style={isRetro ? { color: retroColors.win } : { color: 'rgb(52, 211, 153)' }}>{selectedTraderInfo.wins}</span>
+                            <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>W–</span>
+                            <span style={isRetro ? { color: retroColors.loss } : { color: 'rgb(251, 113, 133)' }}>{selectedTraderInfo.losses}</span>
+                            <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>L</span>
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.7rem' } : { color: 'rgb(100, 116, 139)' }}>
+                            {selectedTraderInfo.source === 'copyable' ? 'P/L (30D)' : 'Total P/L'}
+                          </p>
+                          <p
+                            className="text-sm font-bold font-mono"
+                            style={isRetro
+                              ? { color: selectedTraderInfo.total_pl >= 0 ? retroColors.numbers : retroColors.loss, fontSize: '1rem' }
+                              : { color: selectedTraderInfo.total_pl >= 0 ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }
+                            }
+                          >
+                            {selectedTraderInfo.total_pl >= 0 ? '+' : ''}{formatCurrency(selectedTraderInfo.total_pl)}
+                          </p>
+                        </div>
+                        {selectedTraderInfo.roiPct != null && (
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.7rem' } : { color: 'rgb(100, 116, 139)' }}>
+                              ROI
+                            </p>
+                            <p
+                              className="text-sm font-bold font-mono"
+                              style={isRetro
+                                ? { color: selectedTraderInfo.roiPct >= 0 ? retroColors.numbers : retroColors.loss, fontSize: '1rem' }
+                                : { color: selectedTraderInfo.roiPct >= 0 ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }
+                              }
+                            >
+                              {selectedTraderInfo.roiPct >= 0 ? '+' : ''}{selectedTraderInfo.roiPct.toFixed(1)}%
+                            </p>
+                          </div>
+                        )}
+                        {selectedTraderInfo.median_trade_notional && (
+                          <div className="col-span-2">
+                            <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.7rem' } : { color: 'rgb(100, 116, 139)' }}>
+                              Median Bet
+                            </p>
+                            <p className="text-sm font-mono" style={isRetro ? { color: retroColors.text, fontSize: '0.95rem' } : { color: 'rgb(226, 232, 240)' }}>
+                              {formatCurrency(selectedTraderInfo.median_trade_notional)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                </div>
-              ) : (
-                /* Record Tab */
-                <div>
-                  {selectedTraderRecord ? (
-                    <>
-                      {/* Summary stats */}
-                      <div className={`grid grid-cols-3 gap-4 mb-4 ${isRetro ? '' : ''}`}>
-                        <div
-                          className={`rounded-md p-3 text-center ${isRetro ? '' : 'bg-slate-950 border border-slate-800'}`}
-                          style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}`, padding: '0.75rem' } : {}}
-                        >
-                          <p className="text-xs uppercase tracking-wide" style={isRetro ? { color: retroColors.textDim, fontSize: '0.75rem' } : {}}>Wins</p>
-                          <p className="text-xl font-bold mt-1" style={isRetro ? { color: retroColors.win, fontSize: '1.5rem' } : { color: 'rgb(52, 211, 153)' }}>
-                            {selectedTraderRecord.wins}
-                          </p>
-                        </div>
-                        <div
-                          className={`rounded-md p-3 text-center ${isRetro ? '' : 'bg-slate-950 border border-slate-800'}`}
-                          style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}`, padding: '0.75rem' } : {}}
-                        >
-                          <p className="text-xs uppercase tracking-wide" style={isRetro ? { color: retroColors.textDim, fontSize: '0.75rem' } : {}}>Losses</p>
-                          <p className="text-xl font-bold mt-1" style={isRetro ? { color: retroColors.loss, fontSize: '1.5rem' } : { color: 'rgb(251, 113, 133)' }}>
-                            {selectedTraderRecord.losses}
-                          </p>
-                        </div>
-                        <div
-                          className={`rounded-md p-3 text-center ${isRetro ? '' : 'bg-slate-950 border border-slate-800'}`}
-                          style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}`, padding: '0.75rem' } : {}}
-                        >
-                          <p className="text-xs uppercase tracking-wide" style={isRetro ? { color: retroColors.textDim, fontSize: '0.75rem' } : {}}>Pending</p>
-                          <p className="text-xl font-bold mt-1" style={isRetro ? { color: retroColors.warn, fontSize: '1.5rem' } : { color: 'rgb(251, 191, 36)' }}>
-                            {selectedTraderRecord.pending}
-                          </p>
-                        </div>
-                      </div>
 
-                      {/* Win rate bar */}
-                      {(selectedTraderRecord.wins + selectedTraderRecord.losses) > 0 && (
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between text-xs mb-1">
-                            <span style={isRetro ? { color: retroColors.textDim, fontSize: '0.85rem' } : {}}>
-                              {isRetro ? 'WIN RATE' : 'Win Rate'}
-                            </span>
-                            <span className="font-bold" style={isRetro ? { color: retroColors.numbers, fontSize: '0.9rem' } : { color: 'rgb(226, 232, 240)' }}>
-                              {((selectedTraderRecord.wins / (selectedTraderRecord.wins + selectedTraderRecord.losses)) * 100).toFixed(1)}%
-                            </span>
-                          </div>
-                          <div
-                            className={`h-2 rounded-full overflow-hidden ${isRetro ? '' : 'bg-slate-800'}`}
-                            style={isRetro ? { backgroundColor: retroColors.bg, height: '6px' } : {}}
-                          >
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${(selectedTraderRecord.wins / (selectedTraderRecord.wins + selectedTraderRecord.losses)) * 100}%`,
-                                backgroundColor: isRetro ? retroColors.win : 'rgb(52, 211, 153)',
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
+                  {/* Tab pills */}
+                  <div
+                    className={`flex gap-1 px-4 py-2 border-b shrink-0 ${isRetro ? '' : 'border-slate-800'}`}
+                    style={isRetro ? { borderBottom: `1px solid ${retroColors.border}` } : {}}
+                  >
+                    {[
+                      { key: 'activity', label: isRetro ? 'ACTIVITY' : 'Activity' },
+                      { key: 'record', label: isRetro ? 'RECORD' : 'Record' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setSelectedTraderTab(key)}
+                        className={`px-3 py-1.5 rounded text-xs transition-colors ${
+                          isRetro ? '' : (
+                            selectedTraderTab === key
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                          )
+                        }`}
+                        style={isRetro ? {
+                          backgroundColor: selectedTraderTab === key ? retroColors.text : retroColors.bg,
+                          color: selectedTraderTab === key ? retroColors.bg : retroColors.textDim,
+                          border: `1px solid ${selectedTraderTab === key ? retroColors.text : retroColors.borderEtched}`,
+                          fontSize: '0.9rem',
+                        } : {}}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {/* View Full Profile button */}
+                    {selectedTraderInfo && (
+                      <button
+                        onClick={() => {
+                          const trader = visibleTraders.find(t => t.address === selectedFeedTrader)
+                            || { address: selectedFeedTrader, ...selectedTraderInfo };
+                          setSelectedTrader(trader);
+                          fetchTraderTrades(selectedFeedTrader, 100);
+                        }}
+                        className={`ml-auto px-2 py-1 rounded text-[10px] transition-colors ${
+                          isRetro ? '' : 'border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500'
+                        }`}
+                        style={isRetro ? {
+                          border: `1px solid ${retroColors.borderEtched}`,
+                          color: retroColors.textDim,
+                          fontSize: '0.75rem',
+                        } : {}}
+                      >
+                        {isRetro ? 'PROFILE' : 'Profile'}
+                      </button>
+                    )}
+                  </div>
 
-                      {/* Resolved trades list */}
-                      {selectedTraderRecord.resolvedTrades.length > 0 ? (
-                        <div className="max-h-[400px] overflow-y-auto pr-2 space-y-2">
-                          <p className="text-xs uppercase tracking-wide mb-2" style={isRetro ? { color: retroColors.textDim, fontSize: '0.8rem', letterSpacing: '0.1em' } : {}}>
-                            {isRetro ? 'RESOLVED OUTCOMES' : 'Resolved Outcomes'}
-                          </p>
-                          {selectedTraderRecord.resolvedTrades.map((trade, idx) => (
-                            <div
-                              key={idx}
-                              className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
-                                isRetro ? '' : (trade.isWin ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-rose-500/20 bg-rose-500/5')
-                              }`}
-                              style={isRetro ? {
-                                backgroundColor: retroColors.surfaceDark,
-                                border: `1px solid ${retroColors.border}`,
-                                borderLeft: `3px solid ${trade.isWin ? retroColors.win : retroColors.loss}`,
-                                padding: '0.5rem 0.75rem',
-                              } : {}}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <a
-                                  href={trade.market_slug ? `https://polymarket.com/market/${trade.market_slug}` : undefined}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className={`text-sm truncate block hover:underline ${isRetro ? '' : 'text-slate-300'}`}
-                                  style={isRetro ? { color: retroColors.text, fontSize: '0.9rem' } : {}}
-                                >
-                                  {formatGameTitle(trade.market_title, trade.market_slug) || 'Unknown market'}
-                                </a>
-                                <span className="text-xs" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
-                                  Bet: {formatBetPosition(trade.market_title, trade.outcome)} · {formatCurrency(trade.amount)}
-                                </span>
-                              </div>
-                              <span
-                                className="text-xs font-bold shrink-0"
-                                style={isRetro
-                                  ? { color: trade.isWin ? retroColors.win : retroColors.loss, fontSize: '0.85rem' }
-                                  : { color: trade.isWin ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }
-                                }
-                              >
-                                {trade.isWin ? '✓ WIN' : '✗ LOSS'}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-center py-4" style={isRetro ? { color: retroColors.textDim } : {}}>
-                          {isRetro ? '> NO RESOLVED TRADES IN RECENT HISTORY' : 'No resolved trades in recent history.'}
+                  {/* Panel Body - scrollable */}
+                  <div className="flex-1 overflow-y-auto px-4 py-3">
+                    {loadingSelectedTrader ? (
+                      <div className="text-center py-12">
+                        <div
+                          className="animate-spin rounded-full h-7 w-7 border-b-2 mx-auto"
+                          style={isRetro ? { borderColor: retroColors.textBright } : { borderColor: 'rgb(8, 145, 178)' }}
+                        />
+                        <p className="mt-3 text-xs" style={isRetro ? { color: retroColors.textDim } : {}}>
+                          {isRetro ? '> LOADING...' : 'Loading…'}
                         </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm text-center py-6" style={isRetro ? { color: retroColors.textDim } : {}}>
-                      {isRetro ? '> NO RECORD DATA' : 'No record data available.'}
-                    </p>
-                  )}
+                      </div>
+                    ) : selectedTraderTab === 'activity' ? (
+                      /* Activity Tab */
+                      <div className="space-y-2">
+                        {selectedTraderTrades.length === 0 ? (
+                          <p className="text-sm text-center py-8" style={isRetro ? { color: retroColors.textDim } : {}}>
+                            {isRetro ? '> NO TRADES FOUND' : 'No trades found.'}
+                          </p>
+                        ) : (
+                          selectedTraderTrades.map((trade, idx) => {
+                            const tradeSideInfo = getSideLabel(trade.side);
+                            const isResolved = trade.market_resolved;
+                            const isWin = isResolved && trade.winning_outcome === trade.outcome;
+                            const isLoss = isResolved && trade.winning_outcome && trade.winning_outcome !== trade.outcome;
+
+                            return (
+                              <div
+                                key={idx}
+                                className={isRetro ? '' : `rounded-md border p-2.5 ${
+                                  isWin ? 'border-emerald-500/25 bg-emerald-500/5'
+                                    : isLoss ? 'border-rose-500/25 bg-rose-500/5'
+                                    : 'bg-slate-950 border-slate-800'
+                                }`}
+                                style={isRetro ? {
+                                  backgroundColor: retroColors.surfaceDark,
+                                  border: `1px solid ${retroColors.border}`,
+                                  borderLeft: `3px solid ${isWin ? retroColors.win : isLoss ? retroColors.loss : retroColors.warn}`,
+                                  padding: '0.6rem 0.75rem',
+                                } : {}}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <a
+                                      href={trade.market_slug ? `https://polymarket.com/market/${trade.market_slug}` : undefined}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={isRetro ? 'block' : 'text-xs font-medium text-slate-200 hover:underline block truncate'}
+                                      style={isRetro ? { color: retroColors.textPrimary, fontSize: '0.9rem', fontWeight: 500 } : {}}
+                                    >
+                                      {formatGameTitle(trade.market_title, trade.market_slug) || trade.market_id}
+                                    </a>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <span className="text-[10px]" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : { color: 'rgb(100, 116, 139)' }}>
+                                        {formatTimestamp(trade.timestamp)}
+                                      </span>
+                                      <span
+                                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isRetro ? '' : tradeSideInfo.color}`}
+                                        style={isRetro ? {
+                                          border: `1px solid ${retroColors.borderEtched}`,
+                                          color: retroColors.textDim,
+                                          fontSize: '0.65rem',
+                                        } : {}}
+                                      >
+                                        {tradeSideInfo.label}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-xs font-bold font-mono" style={isRetro ? { color: retroColors.numbers, fontSize: '0.9rem' } : {}}>
+                                      {formatCurrency(trade.amount)}
+                                    </p>
+                                    <p className="text-[10px] font-mono mt-0.5" style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>
+                                      {Number(trade.price) ? `${(Number(trade.price) * 100).toFixed(0)}¢` : '—'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center text-[10px] mt-1.5" style={isRetro ? { fontSize: '0.8rem' } : {}}>
+                                  <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>
+                                    {formatBetPosition(trade.market_title, trade.outcome)}
+                                  </span>
+                                  {isWin && <span className="ml-1.5 font-bold" style={isRetro ? { color: retroColors.win } : { color: 'rgb(52, 211, 153)' }}>✓ WIN</span>}
+                                  {isLoss && <span className="ml-1.5 font-bold" style={isRetro ? { color: retroColors.loss } : { color: 'rgb(251, 113, 133)' }}>✗ LOSS</span>}
+                                  {!isResolved && <span className="ml-1.5" style={isRetro ? { color: retroColors.warn } : { color: 'rgb(251, 191, 36)' }}>(Pending)</span>}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    ) : (
+                      /* Record Tab */
+                      <div>
+                        {selectedTraderRecord ? (
+                          <>
+                            {/* Summary stats */}
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                              <div
+                                className={`rounded-md p-2 text-center ${isRetro ? '' : 'bg-slate-950 border border-slate-800'}`}
+                                style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}` } : {}}
+                              >
+                                <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textDim, fontSize: '0.65rem' } : { color: 'rgb(100, 116, 139)' }}>Wins</p>
+                                <p className="text-lg font-bold" style={isRetro ? { color: retroColors.win, fontSize: '1.3rem' } : { color: 'rgb(52, 211, 153)' }}>
+                                  {selectedTraderRecord.wins}
+                                </p>
+                              </div>
+                              <div
+                                className={`rounded-md p-2 text-center ${isRetro ? '' : 'bg-slate-950 border border-slate-800'}`}
+                                style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}` } : {}}
+                              >
+                                <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textDim, fontSize: '0.65rem' } : { color: 'rgb(100, 116, 139)' }}>Losses</p>
+                                <p className="text-lg font-bold" style={isRetro ? { color: retroColors.loss, fontSize: '1.3rem' } : { color: 'rgb(251, 113, 133)' }}>
+                                  {selectedTraderRecord.losses}
+                                </p>
+                              </div>
+                              <div
+                                className={`rounded-md p-2 text-center ${isRetro ? '' : 'bg-slate-950 border border-slate-800'}`}
+                                style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}` } : {}}
+                              >
+                                <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textDim, fontSize: '0.65rem' } : { color: 'rgb(100, 116, 139)' }}>Pending</p>
+                                <p className="text-lg font-bold" style={isRetro ? { color: retroColors.warn, fontSize: '1.3rem' } : { color: 'rgb(251, 191, 36)' }}>
+                                  {selectedTraderRecord.pending}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Win rate bar */}
+                            {(selectedTraderRecord.wins + selectedTraderRecord.losses) > 0 && (
+                              <div className="mb-3">
+                                <div className="flex items-center justify-between text-[10px] mb-1">
+                                  <span style={isRetro ? { color: retroColors.textDim, fontSize: '0.8rem' } : { color: 'rgb(100, 116, 139)' }}>
+                                    {isRetro ? 'WIN RATE' : 'Win Rate'}
+                                  </span>
+                                  <span className="font-bold" style={isRetro ? { color: retroColors.numbers, fontSize: '0.85rem' } : { color: 'rgb(226, 232, 240)' }}>
+                                    {((selectedTraderRecord.wins / (selectedTraderRecord.wins + selectedTraderRecord.losses)) * 100).toFixed(1)}%
+                                  </span>
+                                </div>
+                                <div
+                                  className={`h-1.5 rounded-full overflow-hidden ${isRetro ? '' : 'bg-slate-800'}`}
+                                  style={isRetro ? { backgroundColor: retroColors.bg, height: '5px' } : {}}
+                                >
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${(selectedTraderRecord.wins / (selectedTraderRecord.wins + selectedTraderRecord.losses)) * 100}%`,
+                                      backgroundColor: isRetro ? retroColors.win : 'rgb(52, 211, 153)',
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Resolved trades list */}
+                            {selectedTraderRecord.resolvedTrades.length > 0 ? (
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] uppercase tracking-wide mb-1" style={isRetro ? { color: retroColors.textDim, fontSize: '0.75rem', letterSpacing: '0.1em' } : { color: 'rgb(100, 116, 139)' }}>
+                                  {isRetro ? 'RESOLVED OUTCOMES' : 'Resolved Outcomes'}
+                                </p>
+                                {selectedTraderRecord.resolvedTrades.map((trade, idx) => (
+                                  <div
+                                    key={idx}
+                                    className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 ${
+                                      isRetro ? '' : (trade.isWin ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-rose-500/20 bg-rose-500/5')
+                                    }`}
+                                    style={isRetro ? {
+                                      backgroundColor: retroColors.surfaceDark,
+                                      border: `1px solid ${retroColors.border}`,
+                                      borderLeft: `3px solid ${trade.isWin ? retroColors.win : retroColors.loss}`,
+                                      padding: '0.4rem 0.6rem',
+                                    } : {}}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <a
+                                        href={trade.market_slug ? `https://polymarket.com/market/${trade.market_slug}` : undefined}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className={`text-xs truncate block hover:underline ${isRetro ? '' : 'text-slate-300'}`}
+                                        style={isRetro ? { color: retroColors.text, fontSize: '0.85rem' } : {}}
+                                      >
+                                        {formatGameTitle(trade.market_title, trade.market_slug) || 'Unknown'}
+                                      </a>
+                                      <span className="text-[10px]" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.75rem' } : { color: 'rgb(100, 116, 139)' }}>
+                                        {formatBetPosition(trade.market_title, trade.outcome)} · {formatCurrency(trade.amount)}
+                                      </span>
+                                    </div>
+                                    <span
+                                      className="text-[10px] font-bold shrink-0"
+                                      style={isRetro
+                                        ? { color: trade.isWin ? retroColors.win : retroColors.loss, fontSize: '0.8rem' }
+                                        : { color: trade.isWin ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }
+                                      }
+                                    >
+                                      {trade.isWin ? '✓ WIN' : '✗ LOSS'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-center py-6" style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>
+                                {isRetro ? '> NO RESOLVED TRADES YET' : 'No resolved trades in recent history.'}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-xs text-center py-8" style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>
+                            {isRetro ? '> NO RECORD DATA' : 'No record data available.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
