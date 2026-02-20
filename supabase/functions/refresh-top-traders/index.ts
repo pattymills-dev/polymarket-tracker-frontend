@@ -104,7 +104,7 @@ async function discoverTraders(maxTraders: number): Promise<string[]> {
 
   // 1) Paginate through trades to find active traders
   let offset = 0;
-  const maxDiscoveryRows = 5000;
+  const maxDiscoveryRows = 2000;
   while (offset < maxDiscoveryRows) {
     const { data, error } = await supabase
       .from("trades")
@@ -137,7 +137,10 @@ async function discoverTraders(maxTraders: number): Promise<string[]> {
   }
 
   console.log(`Discovered ${traderSet.size} unique traders (from trades + existing)`);
-  return Array.from(traderSet).slice(0, maxTraders);
+  // Prioritize existing top_traders so they always get re-evaluated
+  const existingAddrs = (existing || []).map(r => r.trader_address).filter(Boolean);
+  const newAddrs = Array.from(traderSet).filter(a => !existingAddrs.includes(a));
+  return [...existingAddrs, ...newAddrs].slice(0, maxTraders);
 }
 
 serve(async (req: Request) => {
@@ -149,7 +152,7 @@ serve(async (req: Request) => {
 
   try {
     // Discover traders with paginated query
-    const uniqueTraders = await discoverTraders(300);
+    const uniqueTraders = await discoverTraders(100);
     console.log(`Processing ${uniqueTraders.length} unique traders`);
 
     const traderStats: TraderStats[] = [];
