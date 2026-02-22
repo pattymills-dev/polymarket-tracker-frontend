@@ -102,7 +102,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=25&mode=events_window&days=3&recheck_hours=2&force_fallback=1")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=25&mode=events_window&days=5&recheck_hours=2&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "Response (events_window): $body"
@@ -187,6 +187,22 @@ jobs:
           # Don't fail on 503 (stale data warning) - just log it
           if [ "$http_code" -ge 400 ] && [ "$http_code" -ne 503 ]; then
             echo "Error: run-paper-copy failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Sync resolutions for open paper positions (priority)
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?mode=paper_open&recheck_hours=0")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (paper_open): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: sync-resolutions (paper_open) failed with status $http_code"
             exit 1
           fi
 

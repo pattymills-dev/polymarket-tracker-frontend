@@ -148,9 +148,11 @@ const isResolved =
 **Sync Modes Available:**
 - `mode=recent` - Markets with recent trades (default)
 - `mode=events_recent` - Event-based markets from recent trades
-- `mode=events_window&days=3` - Event-based markets in date window
+- `mode=events_window&days=5` - Event-based markets in date window (bumped from 3→5 days)
 - `mode=events_due` - Unresolved event markets not recently checked
+- `mode=paper_open` - **PRIORITY**: Markets with OPEN paper positions (prevents exposure cap deadlock)
 - `mode=due` - Any unresolved markets not checked in `recheck_hours`
+- `mode=updown_window` - Crypto updown markets near close
 - `event_slug=xxx` - Sync specific event by slug
 - `market_id=xxx` - Sync specific market by conditionId
 
@@ -234,7 +236,8 @@ for (let i = 0; i < marketIds.length; i += MARKET_CHUNK_SIZE) {
 4. `refresh-copyable-traders` — Update 30-day rankings
 5. `refresh-top-traders` — Update all-time rankings
 6. `run-paper-copy` — Execute paper copy trades based on enabled traders
-7. `settle-paper-positions` — Settle paper positions on resolved markets
+7. `sync-market-resolutions?mode=paper_open` — **PRIORITY**: Resolve markets with OPEN paper positions
+8. `settle-paper-positions` — Settle paper positions on resolved markets
 
 **Copy trading safeguards (added 2026-02-17):**
 - **Rank gate:** Only copies from traders within top N rankings (`max_copyable_rank_30d`, default 20)
@@ -261,3 +264,5 @@ for (let i = 0; i < marketIds.length; i += MARKET_CHUNK_SIZE) {
 6. **"Win/loss counts seem too low for active traders"** → Likely a pagination bug. Check that the refresh functions use `fetchAllTrades()` with `.range()` pagination, NOT `.limit()`. See "Trades Table — Pagination & Query Pitfalls" above.
 7. **"Leaderboard not updating"** → Check `trader_rankings.computed_at` — if stale, the refresh functions may be failing. Check GitHub Actions logs.
 8. **"Copy trader using outdated rankings"** → `run-paper-copy` has a 24-hour staleness check. If rankings haven't refreshed, it returns 503 and skips copying.
+9. **"Paper P/L frozen / no new positions despite Telegram wagers"** → **Exposure cap deadlock.** Stale OPEN positions for already-resolved markets lock up exposure, preventing new trades. The `mode=paper_open` sync step (added to the workflow before `settle-paper-positions`) prevents this by prioritizing resolution of markets with OPEN paper positions. If it recurs: check `paper_positions WHERE status='OPEN'` and verify their markets are resolved. Manual fix: `curl -X POST .../sync-market-resolutions?mode=paper_open&recheck_hours=0` then `curl -X POST .../settle-paper-positions`.
+10. **"Events window missing older games"** → `events_window` days was bumped from 3→5 to catch games that take a few days to resolve (UCL midweek games checked on weekend, etc.).

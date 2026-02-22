@@ -763,6 +763,64 @@ Deno.serve(async (req) => {
           })
         }
       }
+    } else if (mode === 'paper_open') {
+      // PAPER COPY PRIORITY MODE: Resolve markets that have OPEN paper positions.
+      // These are the highest-priority markets because stale resolution blocks the entire
+      // copy trading pipeline (exposure cap deadlock: can't settle → can't free exposure → can't open new trades).
+      // This mode should run BEFORE settle-paper-positions in the workflow.
+
+      const { data: openPositions, error: posError } = await supabase
+        .from('paper_positions')
+        .select('market_id')
+        .eq('status', 'OPEN')
+
+      if (posError) {
+        console.error('Error fetching open paper positions:', posError)
+        return new Response(JSON.stringify({ error: posError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const openMarketIds = [...new Set((openPositions || []).map((p: any) => p.market_id).filter(Boolean))]
+      console.log(`Found ${openMarketIds.length} unique markets with open paper positions`)
+
+      if (openMarketIds.length === 0) {
+        return new Response(JSON.stringify({ ok: true, mode: 'paper_open', processed: 0, updated: 0, message: 'No open paper positions' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Fetch unresolved markets from this set (chunk to avoid URL limits)
+      const chunkSize = 150
+      for (let start = 0; start < openMarketIds.length; start += chunkSize) {
+        const chunk = openMarketIds.slice(start, start + chunkSize)
+        const { data: chunkMarkets, error: chunkError } = await supabase
+          .from('markets')
+          .select('id, question, slug, resolved, winning_outcome, resolution_checked_at')
+          .in('id', chunk)
+          .or('winning_outcome.is.null,resolved.eq.false')
+
+        if (chunkError) {
+          console.error('Error fetching paper position markets:', chunkError)
+          continue
+        }
+        if (chunkMarkets) {
+          unresolvedMarkets.push(...chunkMarkets)
+        }
+      }
+
+      // Dedupe
+      const seen = new Set<string>()
+      unresolvedMarkets = unresolvedMarkets.filter((m: any) => {
+        if (seen.has(m.id)) return false
+        seen.add(m.id)
+        return true
+      })
+
+      console.log(`${unresolvedMarkets.length} unresolved markets with open paper positions to check`)
+      marketsError = null
     } else if (mode === 'due') {
       // RECHECK MODE: Markets can close, stop trading, and only become "resolved" later (UMA).
       // If we only prioritize recently-traded markets, sports games can stay pending for a long time.
