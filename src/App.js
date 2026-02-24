@@ -1497,45 +1497,31 @@ setMarketStats({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                    isRetro ? '' : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
                   }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.text}`, color: retroColors.text } : {}}>TOP TRADER</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>High-performing trader activity</span>
+                  style={isRetro ? { border: `1px solid ${retroColors.danger}`, color: retroColors.danger } : {}}>ISOLATED</span>
+                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Rare trader, outsized bet in thin market</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? '' : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.warn}`, color: retroColors.warn } : {}}>DORMANT</span>
+                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Wallet inactive 180+ days suddenly active</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                    isRetro ? '' : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                  }`}
+                  style={isRetro ? { border: `1px solid ${retroColors.danger}`, color: retroColors.danger } : {}}>TAIL RISK</span>
+                  <span style={isRetro ? { color: retroColors.textDim } : {}}>$5K+ at extreme price (&lt;10¢ / &gt;90¢)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
                     isRetro ? '' : 'bg-lime-500/15 text-lime-200 border-lime-500/40'
                   }`}
                   style={isRetro ? { border: `1px solid ${retroColors.text}`, color: retroColors.text } : {}}>COPYABLE</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Ranked by ROI potential (excludes extreme-price trades)</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.text}`, color: retroColors.text } : {}}>WATCHLIST</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Traders you're tracking</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.warn}`, color: retroColors.warn } : {}}>WHALE</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Large position ($50k+)</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.warn}`, color: retroColors.warn } : {}}>MEGA WHALE</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Massive position ($100k+)</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.danger}`, color: retroColors.danger } : {}}>ISOLATED CONTACT</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Low-activity trader, outsized bet in thin market</span>
+                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Top-ranked trader making $250+ trade</span>
                 </div>
               </div>
             </div>
@@ -1544,60 +1530,42 @@ setMarketStats({
               <p className="text-sm" style={isRetro ? { color: retroColors.textDim } : {}}>
                 {isRetro
                   ? '> NO SIGNALS DETECTED. MONITORING...'
-                  : 'No alerts yet. They\'ll appear when top traders, copyable traders, watchlist traders, or whales make trades.'}
+                  : 'No alerts yet. Signals appear when isolated contacts, dormant wallets, or copyable traders make moves.'}
               </p>
             ) : (
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                 {alerts.slice(0, 20).map((alert, idx) => {
-                  const isTopTrader = alert.type === 'top_trader';
-                  const isCopyable = alert.type === 'copyable';
-                  const isWatchlist = alert.type === 'watchlist';
-                  const isMega = alert.type === 'mega_whale';
-                  const isIsolatedContact = alert.type === 'isolated_contact';
-                  const isTailRisk = alert.type === 'tail_risk';
-
-                  // Dynamic styling based on alert type
-                  const borderClass = isTopTrader
-                    ? 'border-emerald-500/40 bg-emerald-500/5 shadow-emerald-500/20'
-                    : isCopyable
-                      ? 'border-lime-500/30 bg-lime-500/5 shadow-lime-500/10'
-                      : isWatchlist
-                      ? 'border-cyan-500/40 bg-cyan-500/5 shadow-cyan-500/20'
-                      : isTailRisk
-                        ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
-                        : isMega
-                          ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
-                          : isIsolatedContact
-                            ? 'border-purple-500/40 bg-purple-500/5 shadow-purple-500/20'
-                            : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20';
-
-                  const badgeClass = isTopTrader
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                    : isCopyable
-                      ? 'bg-lime-500/15 text-lime-200 border-lime-500/40'
-                      : isWatchlist
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                      : isTailRisk
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                        : isMega
-                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                          : isIsolatedContact
-                            ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 animate-pulse'
-                            : 'bg-amber-500/20 text-amber-300 border-amber-500/50';
-
-                  const badgeText = isTopTrader
-                    ? '🏆 TOP TRADER'
-                    : isCopyable
-                      ? '📈 COPYABLE'
-                      : isWatchlist
-                      ? '👀 WATCHLIST'
-                      : isTailRisk
-                        ? '🔥 TAIL RISK'
-                        : isMega
-                          ? '🐋 MEGA WHALE'
-                          : isIsolatedContact
-                            ? '📡 ISOLATED CONTACT'
-                            : '🐋 WHALE';
+                  const alertStyles = {
+                    isolated_contact: {
+                      border: 'border-purple-500/40 bg-purple-500/5 shadow-purple-500/20',
+                      badge: 'bg-purple-500/20 text-purple-300 border-purple-500/50 animate-pulse',
+                      text: '📡 ISOLATED', retro: 'ISOLATED', retroColor: retroColors.danger,
+                    },
+                    dormant_whale: {
+                      border: 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20',
+                      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/50 animate-pulse',
+                      text: '💤 DORMANT', retro: 'DORMANT', retroColor: retroColors.warn,
+                    },
+                    tail_risk: {
+                      border: 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20',
+                      badge: 'bg-rose-500/20 text-rose-300 border-rose-500/50',
+                      text: '🔥 TAIL RISK', retro: 'TAIL RISK', retroColor: retroColors.danger,
+                    },
+                    copyable: {
+                      border: 'border-lime-500/30 bg-lime-500/5 shadow-lime-500/10',
+                      badge: 'bg-lime-500/15 text-lime-200 border-lime-500/40',
+                      text: '📈 COPYABLE', retro: 'COPYABLE', retroColor: retroColors.text,
+                    },
+                    whale_position: {
+                      border: 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20',
+                      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/50',
+                      text: '🐋 WHALE', retro: 'WHALE', retroColor: retroColors.warn,
+                    },
+                  };
+                  const style = alertStyles[alert.type] || alertStyles.whale_position;
+                  const borderClass = style.border;
+                  const badgeClass = style.badge;
+                  const badgeText = style.text;
 
                   // Build Polymarket URL from slug
                   // For sports bets, link to the game page; for others, link to the event
@@ -1624,35 +1592,8 @@ setMarketStats({
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
                     : 'bg-rose-500/20 text-rose-300 border-rose-500/50';
 
-                  // Retro-specific badge colors
-                  const retroBadgeBorder = isTopTrader
-                    ? retroColors.text
-                    : isCopyable
-                      ? retroColors.text
-                      : isWatchlist
-                      ? retroColors.text
-                      : isTailRisk
-                        ? retroColors.danger
-                        : isMega
-                          ? retroColors.warn
-                          : isIsolatedContact
-                            ? retroColors.danger
-                            : retroColors.warn;
-
-                  // Retro badge text (no emojis)
-                  const retroBadgeText = isTopTrader
-                    ? 'TOP TRADER'
-                    : isCopyable
-                      ? 'COPYABLE'
-                      : isWatchlist
-                      ? 'WATCHLIST'
-                      : isTailRisk
-                        ? 'TAIL RISK'
-                        : isMega
-                          ? 'MEGA WHALE'
-                          : isIsolatedContact
-                            ? 'ISOLATED CONTACT'
-                            : 'WHALE';
+                  const retroBadgeBorder = style.retroColor;
+                  const retroBadgeText = style.retro;
 
                   return (
                     <div

@@ -1000,11 +1000,11 @@ serve(async (req) => {
             // 1. copyable - High ROI traders worth tailing
             // 2. dormant_whale - Potential insider signal (wallet inactive 180+ days)
             // 3. isolated_contact - Rare trader + thin market + outsized bet
-            // 4. tail_risk - Large bet at extreme price (<10¢ or >90¢)
-            // NOT sent: whale_position (too spammy, viewable on website only)
+            // NOT sent: tail_risk (auto-watchlist only — too noisy for Telegram)
+            // NOT sent: whale_position (stored for website only)
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'copyable' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact' || alert.type === 'tail_risk')) {
+                  (alert.type === 'copyable' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact')) {
                 const meta = tradeMetaByHash.get(alert.trade_hash) ?? null;
                 await sendTelegramAlert(alert, meta);
               }
