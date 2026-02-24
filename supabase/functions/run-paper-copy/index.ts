@@ -54,7 +54,7 @@ type PaperPortfolio = {
 const DEFAULT_COPY_FACTOR = 0.1;
 const DEFAULT_PRICE_PENALTY = 0.01;
 const DEFAULT_MIN_PRICE = 0.05;
-const DEFAULT_MAX_PRICE = 0.95;
+const DEFAULT_MAX_PRICE = 0.80;
 const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
 const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.6;
@@ -69,7 +69,7 @@ const PRICE_RULE = "source_price_plus_penalty";
 const MAX_RANKINGS_AGE_HOURS = 24; // Skip copying if data is older than 24 hours
 
 // Position limits per trader - prevent overexposure to traders on losing streaks
-const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 5;
+const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 3;
 
 // Default rank gate - only copy from traders in top N (can be overridden per trader)
 const DEFAULT_MAX_COPYABLE_RANK = 20;
