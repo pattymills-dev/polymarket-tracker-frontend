@@ -102,7 +102,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=25&mode=events_window&days=5&recheck_hours=2&force_fallback=1")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=100&mode=events_window&days=5&recheck_hours=1&force_fallback=1")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "Response (events_window): $body"

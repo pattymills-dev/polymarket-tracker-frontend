@@ -776,6 +776,29 @@ serve(async (req) => {
             isolatedContactCandidates.push({ trade: r, betDirection });
           }
         }
+
+        // TAIL RISK: Large bet at extreme price (<10¢ or >90¢) — any trader, any status
+        // This DELIBERATELY triggers on extreme prices (the opposite of copyable alerts which SUPPRESS them)
+        if (globalRemaining > 0 && r.amount >= 5000 && priceNum != null) {
+          if (priceNum < 0.10 || priceNum > 0.90) {
+            alertRows.push({
+              type: "tail_risk",
+              alert_source: "tail_risk",
+              trade_hash: r.tx_hash,
+              trader_address: r.trader_address,
+              market_id: r.market_id,
+              market_title: r.market_title,
+              market_slug: r.market_slug,
+              outcome: r.outcome,
+              side: r.side || 'BUY',
+              price: r.price,
+              amount: r.amount,
+              message: `🔥 TAIL RISK: $${Math.round(r.amount).toLocaleString()} ${betDirection} at ${Math.round(priceNum * 100)}¢ on ${r.market_title || r.market_id}`,
+              sent: false,
+            });
+            globalRemaining -= 1;
+          }
+        }
       }
 
       // Batch check Isolated Contact candidates with a single RPC call
@@ -977,12 +1000,40 @@ serve(async (req) => {
             // 1. copyable - High ROI traders worth tailing
             // 2. dormant_whale - Potential insider signal (wallet inactive 180+ days)
             // 3. isolated_contact - Rare trader + thin market + outsized bet
+            // 4. tail_risk - Large bet at extreme price (<10¢ or >90¢)
             // NOT sent: whale_position (too spammy, viewable on website only)
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'copyable' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact')) {
+                  (alert.type === 'copyable' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact' || alert.type === 'tail_risk')) {
                 const meta = tradeMetaByHash.get(alert.trade_hash) ?? null;
                 await sendTelegramAlert(alert, meta);
+              }
+            }
+
+            // Auto-add anomaly traders to watchlist for ongoing monitoring
+            const autoWatchTypes = ['tail_risk', 'isolated_contact', 'dormant_whale'];
+            const autoWatchCandidates = alertRows
+              .filter(a => insertedHashes.has(a.trade_hash) && autoWatchTypes.includes(a.type) && a.trader_address)
+              .map(a => ({
+                trader_address: a.trader_address,
+                category: a.type,
+                notes: `Auto-added from ${a.type} alert on ${new Date().toISOString().slice(0, 10)}`,
+              }));
+            // Dedupe by trader_address within this batch
+            const seenWatchAddrs = new Set<string>();
+            const uniqueWatchCandidates = autoWatchCandidates.filter(c => {
+              if (seenWatchAddrs.has(c.trader_address)) return false;
+              seenWatchAddrs.add(c.trader_address);
+              return true;
+            });
+            if (uniqueWatchCandidates.length > 0) {
+              const { error: watchlistError } = await supabase
+                .from('watchlist')
+                .upsert(uniqueWatchCandidates, { onConflict: 'trader_address', ignoreDuplicates: true });
+              if (watchlistError) {
+                console.error('Auto-watchlist upsert error:', watchlistError);
+              } else {
+                console.log(`Auto-watchlisted ${uniqueWatchCandidates.length} traders from anomaly alerts`);
               }
             }
           }

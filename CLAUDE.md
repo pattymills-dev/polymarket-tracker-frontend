@@ -64,6 +64,40 @@ Removed options (per user request):
 - Profit % (profitability)
 - Win % (win_rate)
 
+### Anomaly Detection System
+
+**The system uses multi-signal behavioral anomaly detection** instead of a single heuristic. The `classifyAnomaly(bet)` function in App.js returns an array of anomaly type strings.
+
+**Six anomaly types:**
+| Type | Trigger | Badge Color (Modern) |
+|------|---------|---------------------|
+| `tail_risk` | >= $5K at price < 10¢ or > 90¢ | rose-500 |
+| `size_spike` | Ranked trader making 3x their median bet (5-95¢) | purple-500 |
+| `event_specialist` | 3+ sub-markets of same event from one trader | amber-500 |
+| `rapid_fire` | 5+ trades within 10-minute window | orange-500 |
+| `watched` | Watchlisted trader making >= $1K trade (catch-all) | emerald-500 |
+| `isolated` | Trader appears in isolated_contact/dormant_whale alerts | purple-500 |
+
+**Key helpers:**
+- `extractEventKey(slug)` — Groups sub-markets of the same event (sports: by league-teams-date, non-sports: by common slug prefix)
+- `traderProfiles` useMemo — Pre-computed per-trader aggregates (trades, event slugs, volume)
+- `alertTraderSet` useMemo — Set of trader addresses from recent isolated/dormant/tail_risk alerts
+
+**Activity Feed filters:** `[Anomaly] [Isolated] [Top 10] [Top 20] [Large Bets] [All Activity]`
+- "Anomaly" shows trades matching any anomaly signal
+- "Isolated" shows trades from backend-flagged isolated contacts and dormant whales
+
+**Backend alert types** (in `fetch-trades/index.ts`):
+- `copyable` — Top-15 ranked traders making trades >= $250
+- `dormant_whale` — Wallets inactive 180+ days
+- `isolated_contact` — Rare trader + thin market + outsized bet
+- `tail_risk` — Large bet (>= $5K) at extreme price (< 10¢ or > 90¢)
+- `whale_position` — Aggregated positions >= $50K (stored only, no Telegram)
+
+**Auto-watchlist:** When `tail_risk`, `isolated_contact`, or `dormant_whale` alerts fire, the trader is automatically added to the `watchlist` table with the alert type as category. This ensures future trades from these addresses surface in the Anomaly feed.
+
+**Watchlist table columns:** `trader_address (PK), added_at, notes, category ('manual'|'tail_risk'|'isolated_contact'|'dormant_whale'), tags (TEXT[])`
+
 ### Supabase Endpoints Used
 
 ```javascript
@@ -136,9 +170,14 @@ const isResolved =
 - **Soccer - Other:** `copa`, `mex`, `bl2`, `aus`, `fl1`, `ere`, `elc`, `sea`, `spl`, `cbl`, `udi`, `acm`, `por`, `tur`, `egy1`, `bra`, `arg`, `chi1`, `col1`, `rou1`, `rusrp`, `es2`, `fr2`, `itsb`, `den`
 - **Tennis:** `wta`, `atp`
 - **UFC/Combat:** `ufc`
-- **Esports:** `cs2`, `val`, `lol`, `dota2`, `rl`, `lec`, `lpl`, `lck`, `vct`, `hok` (Honor of Kings), `r6siege`
+- **Esports:** `cs2`, `val`, `lol`, `dota2`, `rl`, `lec`, `lpl`, `lck`, `vct`, `hok` (Honor of Kings), `r6siege`, `sc2` (StarCraft 2), `codmw` (Call of Duty)
 - **Basketball - Intl:** `bkkbl`, `bknbl`, `euroleague`, `shl`
+- **Hockey - Intl:** `khl`
 - **Cricket:** `crint`
+- **Table Tennis:** `wttmen`, `wttwom`
+- **Soccer - Additional:** `scop`, `cze1`, `mwoh`, `rusixnat`
+
+**events_window limitation:** Gamma's events API (`/events/slug/...`) only returns core match outcome markets, NOT spread/total/player prop sub-markets. Those resolve through `mode=due` or `mode=recent` which use the individual market API (`/markets/slug/...`). On busy sports nights, props can lag behind by several hours.
 
 **NOT covered (no date-based slug pattern):**
 - Weather markets (`highest-temperature-in-...`)

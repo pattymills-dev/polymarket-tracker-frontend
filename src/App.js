@@ -40,7 +40,7 @@ const PolymarketTracker = () => {
   const [showTipJar, setShowTipJar] = useState(false);
   const [showSnake, setShowSnake] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
-  const [feedFilter, setFeedFilter] = useState('anomaly'); // 'anomaly' | 'top10' | 'top20' | 'large' | 'all'
+  const [feedFilter, setFeedFilter] = useState('anomaly'); // 'anomaly' | 'isolated' | 'top10' | 'top20' | 'large' | 'all'
   const [selectedFeedTrader, setSelectedFeedTrader] = useState(null); // selected trader address (UI highlight + panel)
   const [onlySelectedWallet, setOnlySelectedWallet] = useState(false); // explicit filter toggle for Activity Feed
   const [selectedTraderTab, setSelectedTraderTab] = useState('activity'); // 'activity' | 'record'
@@ -256,6 +256,24 @@ const formatGameTitle = (marketTitle, marketSlug) => {
   return marketTitle;
 };
 
+// Extract event key from a market slug for grouping sub-markets of the same event
+// Sports: "nba-bkn-uta-2026-01-30-spread-home-2pt5" → "nba-bkn-uta-2026-01-30"
+// Non-sports: "super-bowl-lix-halftime-show-lady-gaga" → "super-bowl-lix-halftime"
+const extractEventKey = (slug) => {
+  if (!slug) return null;
+  // Sports / esports / combat: strip bet-type suffix after league-teams-date
+  const sportsMatch = slug.match(
+    /^(nba|nhl|mlb|nfl|cbb|cwbb|cfb|ahl|epl|efl|bun|mls|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|por|tur|egy1|bra|arg|chi1|col1|rou1|rusrp|es2|fr2|itsb|den|wta|atp|ufc|cs2|val|lol|dota2|rl|lec|lpl|lck|vct|hok|r6siege|sc2|codmw|bkkbl|bknbl|euroleague|shl|khl|crint|wttmen|wttwom|scop|cze1|mwoh|rusixnat)-([a-z0-9]+-[a-z0-9]+)-(\d{4}-\d{2}-\d{2})/i
+  );
+  if (sportsMatch) return `${sportsMatch[1]}-${sportsMatch[2]}-${sportsMatch[3]}`.toLowerCase();
+  // Non-sports events: keep all but last 2 segments as event key
+  // This groups "super-bowl-lix-halftime-show-lady-gaga" and "super-bowl-lix-halftime-show-ricky-martin" together
+  const parts = slug.split('-');
+  if (parts.length >= 5) return parts.slice(0, parts.length - 2).join('-');
+  if (parts.length === 4) return parts.slice(0, 3).join('-');
+  return slug;
+};
+
 // Format bet description for spread/total markets to show the actual position
 // e.g., "Spread: Celtics (-12.5)" + outcome "Bucks" → "Bucks +12.5"
 const formatBetPosition = (marketTitle, outcome) => {
@@ -407,7 +425,7 @@ setMarketStats({
     const loadWatchlist = async () => {
       try {
         const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/watchlist?select=trader_address`,
+          `${SUPABASE_URL}/rest/v1/watchlist?select=trader_address,category`,
           { headers }
         );
         const data = await response.json();
@@ -455,7 +473,7 @@ setMarketStats({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minBetSize]);
 
-  const toggleWatchTrader = async (address) => {
+  const toggleWatchTrader = async (address, category = 'manual') => {
     const isCurrentlyWatched = watchedTraders.includes(address);
 
     // Optimistically update UI
@@ -472,13 +490,13 @@ setMarketStats({
           { method: 'DELETE', headers }
         );
       } else {
-        // Add to watchlist
+        // Add to watchlist with category
         await fetch(
           `${SUPABASE_URL}/rest/v1/watchlist`,
           {
             method: 'POST',
             headers: { ...headers, 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ trader_address: address })
+            body: JSON.stringify({ trader_address: address, category })
           }
         );
       }
@@ -812,6 +830,40 @@ setMarketStats({
     return map;
   }, [copyableTraders]);
 
+  // Trader behavioral profiles — pre-computed from available trade data for anomaly detection
+  const traderProfiles = useMemo(() => {
+    const source = recentTrades.length > 0 ? recentTrades : largeBets;
+    const profiles = new Map();
+    for (const trade of source) {
+      const addr = trade.trader_address;
+      if (!profiles.has(addr)) {
+        profiles.set(addr, { trades: [], eventSlugs: new Map(), totalVolume: 0 });
+      }
+      const p = profiles.get(addr);
+      p.trades.push(trade);
+      p.totalVolume += Number(trade.amount || 0);
+      if (trade.market_slug) {
+        const eventKey = extractEventKey(trade.market_slug);
+        if (eventKey) {
+          if (!p.eventSlugs.has(eventKey)) p.eventSlugs.set(eventKey, new Set());
+          p.eventSlugs.get(eventKey).add(trade.market_id);
+        }
+      }
+    }
+    return profiles;
+  }, [recentTrades, largeBets]);
+
+  // Set of trader addresses from isolated_contact or dormant_whale alerts (for "Isolated" feed filter)
+  const alertTraderSet = useMemo(() => {
+    const set = new Set();
+    for (const alert of alerts) {
+      if (['isolated_contact', 'dormant_whale', 'tail_risk'].includes(alert.type) && alert.trader_address) {
+        set.add(alert.trader_address);
+      }
+    }
+    return set;
+  }, [alerts]);
+
   // Activity Feed: filtered trades based on feedFilter + optional onlySelectedWallet + keyword search
   const filteredBets = useMemo(() => {
     const keywordFilter = (bets) => {
@@ -854,13 +906,13 @@ setMarketStats({
 
       case 'anomaly':
         result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
-          const addr = bet.trader_address;
-          if (!top20MedianMap.has(addr)) return false;
-          const median = top20MedianMap.get(addr);
-          const amount = Number(bet.amount || 0);
-          const price = Number(bet.price || 0);
-          const threshold = Math.max(median * 3, 1000);
-          return amount >= threshold && price >= 0.05 && price <= 0.95;
+          return classifyAnomaly(bet).length > 0;
+        });
+        break;
+
+      case 'isolated':
+        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
+          return alertTraderSet.has(bet.trader_address);
         });
         break;
 
@@ -871,17 +923,96 @@ setMarketStats({
     }
 
     return keywordFilter(walletFilter(result));
-  }, [largeBets, recentTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top10Addresses, top20Addresses, top20MedianMap]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [largeBets, recentTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top10Addresses, top20Addresses, top20MedianMap, traderProfiles, alertTraderSet, watchedTraders]);
 
-  // Helper: check if a trade matches anomaly heuristic (used for badges in non-anomaly views)
-  const isAnomalyTrade = (bet) => {
-    const addr = bet.trader_address;
-    if (!top20MedianMap.has(addr)) return false;
-    const median = top20MedianMap.get(addr);
+  // Multi-signal anomaly classifier — returns array of anomaly type strings
+  // Types: 'tail_risk', 'size_spike', 'event_specialist', 'rapid_fire', 'watched', 'isolated'
+  const classifyAnomaly = (bet) => {
+    const labels = [];
     const amount = Number(bet.amount || 0);
     const price = Number(bet.price || 0);
-    const threshold = Math.max(median * 3, 1000);
-    return amount >= threshold && price >= 0.05 && price <= 0.95;
+    const addr = bet.trader_address;
+    const profile = traderProfiles.get(addr);
+
+    // 1. TAIL RISK: Large bet at extreme price (<10¢ or >90¢)
+    if (price > 0 && price < 0.10 && amount >= 5000) {
+      labels.push('tail_risk');
+    } else if (price > 0.90 && price < 1.0 && amount >= 5000) {
+      labels.push('tail_risk');
+    }
+
+    // 2. SIZE SPIKE: Ranked trader making 3x their median (existing logic, renamed)
+    if (top20MedianMap.has(addr)) {
+      const median = top20MedianMap.get(addr);
+      const threshold = Math.max(median * 3, 1000);
+      if (amount >= threshold && price >= 0.05 && price <= 0.95) {
+        labels.push('size_spike');
+      }
+    }
+
+    // 3. EVENT SPECIALIST: 3+ sub-markets of the same event from one trader
+    if (profile) {
+      const thisEventKey = extractEventKey(bet.market_slug);
+      if (thisEventKey) {
+        for (const [eventKey, marketIds] of profile.eventSlugs) {
+          if (marketIds.size >= 3 && thisEventKey === eventKey) {
+            labels.push('event_specialist');
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. RAPID FIRE: 5+ trades within 10-minute window from same wallet
+    if (profile && profile.trades.length >= 5) {
+      const betTs = new Date(bet.timestamp).getTime();
+      if (betTs) {
+        const windowMs = 10 * 60 * 1000; // 10 minutes
+        let nearbyCount = 0;
+        for (const t of profile.trades) {
+          const ts = new Date(t.timestamp).getTime();
+          if (ts && Math.abs(ts - betTs) <= windowMs) {
+            nearbyCount++;
+            if (nearbyCount >= 5) {
+              labels.push('rapid_fire');
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // 5. ISOLATED: Trader appears in isolated_contact/dormant_whale/tail_risk alerts
+    if (alertTraderSet.has(addr) && labels.length === 0) {
+      labels.push('isolated');
+    }
+
+    // 6. WATCHED: Watchlisted trader making >= $1K trade (catch-all if no other signals)
+    if (watchedTraders.includes(addr) && amount >= 1000 && labels.length === 0) {
+      labels.push('watched');
+    }
+
+    return labels;
+  };
+
+  // Anomaly badge color mapping
+  const anomalyBadgeStyles = {
+    tail_risk:        { modern: 'border-rose-500/40 text-rose-300 bg-rose-500/10', label: 'TAIL RISK' },
+    size_spike:       { modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', label: 'SIZE SPIKE' },
+    event_specialist: { modern: 'border-amber-500/40 text-amber-300 bg-amber-500/10', label: 'EVENT SPECIALIST' },
+    rapid_fire:       { modern: 'border-orange-500/40 text-orange-300 bg-orange-500/10', label: 'RAPID FIRE' },
+    watched:          { modern: 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10', label: 'WATCHED' },
+    isolated:         { modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', label: 'ISOLATED' },
+  };
+
+  const anomalyRetroColors = {
+    tail_risk:        { border: 'rgba(160, 112, 112, 0.4)', color: 'rgba(160, 112, 112, 0.9)' },
+    size_spike:       { border: 'rgba(140, 120, 180, 0.3)', color: 'rgba(140, 120, 180, 0.9)' },
+    event_specialist: { border: 'rgba(184, 160, 80, 0.4)', color: 'rgba(184, 160, 80, 0.9)' },
+    rapid_fire:       { border: 'rgba(184, 160, 80, 0.4)', color: 'rgba(184, 160, 80, 0.9)' },
+    watched:          { border: 'rgba(69, 160, 106, 0.4)', color: 'rgba(69, 160, 106, 0.9)' },
+    isolated:         { border: 'rgba(160, 112, 112, 0.4)', color: 'rgba(160, 112, 112, 0.9)' },
   };
 
   // Close tip jar dropdown when clicking outside
@@ -1423,6 +1554,7 @@ setMarketStats({
                   const isWatchlist = alert.type === 'watchlist';
                   const isMega = alert.type === 'mega_whale';
                   const isIsolatedContact = alert.type === 'isolated_contact';
+                  const isTailRisk = alert.type === 'tail_risk';
 
                   // Dynamic styling based on alert type
                   const borderClass = isTopTrader
@@ -1431,11 +1563,13 @@ setMarketStats({
                       ? 'border-lime-500/30 bg-lime-500/5 shadow-lime-500/10'
                       : isWatchlist
                       ? 'border-cyan-500/40 bg-cyan-500/5 shadow-cyan-500/20'
-                      : isMega
+                      : isTailRisk
                         ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
-                        : isIsolatedContact
-                          ? 'border-purple-500/40 bg-purple-500/5 shadow-purple-500/20'
-                          : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20';
+                        : isMega
+                          ? 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20'
+                          : isIsolatedContact
+                            ? 'border-purple-500/40 bg-purple-500/5 shadow-purple-500/20'
+                            : 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20';
 
                   const badgeClass = isTopTrader
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
@@ -1443,11 +1577,13 @@ setMarketStats({
                       ? 'bg-lime-500/15 text-lime-200 border-lime-500/40'
                       : isWatchlist
                       ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                      : isMega
+                      : isTailRisk
                         ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                        : isIsolatedContact
-                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 animate-pulse'
-                          : 'bg-amber-500/20 text-amber-300 border-amber-500/50';
+                        : isMega
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                          : isIsolatedContact
+                            ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 animate-pulse'
+                            : 'bg-amber-500/20 text-amber-300 border-amber-500/50';
 
                   const badgeText = isTopTrader
                     ? '🏆 TOP TRADER'
@@ -1455,11 +1591,13 @@ setMarketStats({
                       ? '📈 COPYABLE'
                       : isWatchlist
                       ? '👀 WATCHLIST'
-                      : isMega
-                        ? '🐋 MEGA WHALE'
-                        : isIsolatedContact
-                          ? '📡 ISOLATED CONTACT'
-                          : '🐋 WHALE';
+                      : isTailRisk
+                        ? '🔥 TAIL RISK'
+                        : isMega
+                          ? '🐋 MEGA WHALE'
+                          : isIsolatedContact
+                            ? '📡 ISOLATED CONTACT'
+                            : '🐋 WHALE';
 
                   // Build Polymarket URL from slug
                   // For sports bets, link to the game page; for others, link to the event
@@ -1493,11 +1631,13 @@ setMarketStats({
                       ? retroColors.text
                       : isWatchlist
                       ? retroColors.text
-                      : isMega
-                        ? retroColors.warn
-                        : isIsolatedContact
-                          ? retroColors.danger
-                          : retroColors.warn;
+                      : isTailRisk
+                        ? retroColors.danger
+                        : isMega
+                          ? retroColors.warn
+                          : isIsolatedContact
+                            ? retroColors.danger
+                            : retroColors.warn;
 
                   // Retro badge text (no emojis)
                   const retroBadgeText = isTopTrader
@@ -1506,11 +1646,13 @@ setMarketStats({
                       ? 'COPYABLE'
                       : isWatchlist
                       ? 'WATCHLIST'
-                      : isMega
-                        ? 'MEGA WHALE'
-                        : isIsolatedContact
-                          ? 'ISOLATED CONTACT'
-                          : 'WHALE';
+                      : isTailRisk
+                        ? 'TAIL RISK'
+                        : isMega
+                          ? 'MEGA WHALE'
+                          : isIsolatedContact
+                            ? 'ISOLATED CONTACT'
+                            : 'WHALE';
 
                   return (
                     <div
@@ -1639,6 +1781,7 @@ setMarketStats({
                     {onlySelectedWallet && selectedFeedTrader && ` by ${selectedFeedTrader.slice(0, 6)}...`}
                     {feedFilter === 'large' && ' (>=$5k)'}
                     {feedFilter === 'anomaly' && ' (anomaly)'}
+                    {feedFilter === 'isolated' && ' (isolated)'}
                     {feedFilter === 'top10' && ' (top 10)'}
                     {feedFilter === 'top20' && ' (top 20)'}
                   </div>
@@ -1648,6 +1791,7 @@ setMarketStats({
                 <div className="flex items-center gap-1 mb-3 flex-wrap">
                   {[
                     { key: 'anomaly', label: isRetro ? 'ANOMALY' : 'Anomaly' },
+                    { key: 'isolated', label: isRetro ? 'ISOLATED' : 'Isolated' },
                     { key: 'top10', label: isRetro ? 'TOP 10' : 'Top 10' },
                     { key: 'top20', label: isRetro ? 'TOP 20' : 'Top 20' },
                     { key: 'large', label: isRetro ? 'LARGE' : 'Large Bets' },
@@ -1750,7 +1894,9 @@ setMarketStats({
                           ? (isRetro ? '> NO TRADES FOUND FOR THIS TRADER' : 'No trades found for this trader in the current dataset.')
                           : feedFilter === 'anomaly'
                             ? (isRetro ? '> NO ANOMALIES DETECTED' : 'No anomalous trades detected right now.')
-                            : feedFilter === 'top10' || feedFilter === 'top20'
+                            : feedFilter === 'isolated'
+                              ? (isRetro ? '> NO ISOLATED CONTACTS DETECTED' : 'No recent isolated contact activity.')
+                              : feedFilter === 'top10' || feedFilter === 'top20'
                               ? (isRetro ? '> NO RECENT TRADES FROM TOP TRADERS' : `No recent trades from ${feedFilter === 'top10' ? 'top 10' : 'top 20'} traders.`)
                               : feedFilter === 'large'
                                 ? (isRetro ? '> NO TRADES ABOVE $5,000 YET. MONITORING...' : 'No trades above $5,000 yet.')
@@ -1777,7 +1923,7 @@ setMarketStats({
                       const sizeLabel = getBetSizeLabel(bet.amount);
                       const sideInfo = getSideLabel(bet.side);
                       const isSelectedTraderTrade = selectedFeedTrader && bet.trader_address === selectedFeedTrader;
-                      const showAnomalyBadge = feedFilter !== 'anomaly' && isAnomalyTrade(bet);
+                      const anomalyLabels = classifyAnomaly(bet);
                       return (
                         <div
                           key={idx}
@@ -1823,20 +1969,26 @@ setMarketStats({
                                     {isRetro ? 'WATCHING' : 'Watching'}
                                   </span>
                                 )}
-                                {showAnomalyBadge && (
-                                  <span
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${
-                                      isRetro ? '' : 'border-purple-500/40 text-purple-300 bg-purple-500/10'
-                                    }`}
-                                    style={isRetro ? {
-                                      border: '1px solid rgba(140, 120, 180, 0.3)',
-                                      color: 'rgba(140, 120, 180, 0.9)',
-                                      fontSize: '0.7rem',
-                                    } : {}}
-                                  >
-                                    ANOMALY
-                                  </span>
-                                )}
+                                {anomalyLabels.slice(0, 2).map(label => {
+                                  const style = anomalyBadgeStyles[label];
+                                  const retroStyle = anomalyRetroColors[label];
+                                  if (!style) return null;
+                                  return (
+                                    <span
+                                      key={label}
+                                      className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${
+                                        isRetro ? '' : style.modern
+                                      }`}
+                                      style={isRetro ? {
+                                        border: `1px solid ${retroStyle?.border || 'rgba(140, 120, 180, 0.3)'}`,
+                                        color: retroStyle?.color || 'rgba(140, 120, 180, 0.9)',
+                                        fontSize: '0.7rem',
+                                      } : {}}
+                                    >
+                                      {style.label}
+                                    </span>
+                                  );
+                                })}
                               </div>
 
                               {/* Market Title - primary tier, readable at a glance */}
@@ -2488,6 +2640,44 @@ setMarketStats({
                             </p>
                           </div>
                         )}
+                        {/* Anomaly signals for this trader */}
+                        {(() => {
+                          const traderTrades = selectedTraderTrades.length > 0 ? selectedTraderTrades : (recentTrades.length > 0 ? recentTrades : largeBets).filter(t => t.trader_address === selectedFeedTrader);
+                          const allLabels = new Set();
+                          for (const trade of traderTrades.slice(0, 50)) {
+                            for (const label of classifyAnomaly(trade)) {
+                              allLabels.add(label);
+                            }
+                          }
+                          if (allLabels.size === 0) return null;
+                          return (
+                            <div className="col-span-2">
+                              <p className="text-[10px] uppercase tracking-wide mb-1" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.7rem' } : { color: 'rgb(100, 116, 139)' }}>
+                                {isRetro ? 'SIGNALS' : 'Signals'}
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {[...allLabels].map(label => {
+                                  const style = anomalyBadgeStyles[label];
+                                  const retroStyle = anomalyRetroColors[label];
+                                  if (!style) return null;
+                                  return (
+                                    <span
+                                      key={label}
+                                      className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${isRetro ? '' : style.modern}`}
+                                      style={isRetro ? {
+                                        border: `1px solid ${retroStyle?.border || 'rgba(140, 120, 180, 0.3)'}`,
+                                        color: retroStyle?.color || 'rgba(140, 120, 180, 0.9)',
+                                        fontSize: '0.7rem',
+                                      } : {}}
+                                    >
+                                      {style.label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

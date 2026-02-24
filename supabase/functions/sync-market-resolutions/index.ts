@@ -487,11 +487,17 @@ Deno.serve(async (req) => {
         // UFC / Combat sports
         'ufc',
         // Esports
-        'cs2', 'val', 'lol', 'dota2', 'rl', 'lec', 'lpl', 'lck', 'vct', 'hok', 'r6siege',
+        'cs2', 'val', 'lol', 'dota2', 'rl', 'lec', 'lpl', 'lck', 'vct', 'hok', 'r6siege', 'sc2', 'codmw',
         // Basketball - International
         'bkkbl', 'bknbl', 'euroleague', 'shl',
+        // Hockey - International
+        'khl',
         // Cricket
-        'crint'
+        'crint',
+        // Table Tennis
+        'wttmen', 'wttwom',
+        // Soccer - Additional
+        'scop', 'cze1', 'mwoh', 'rusixnat'
       ]
 
       // Build a narrow server-side filter that matches sports slugs for the last `days` calendar dates.

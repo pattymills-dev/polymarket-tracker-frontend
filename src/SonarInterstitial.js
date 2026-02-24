@@ -155,10 +155,10 @@ const SonarInterstitial = ({ onComplete }) => {
   const sonarSize = viewportSize;
   const center = sonarSize / 2;
   // Slightly larger sweep/rings for a fuller-screen feel.
-  const outerRadius = sonarSize * 0.47;
-  const innerRadius1 = sonarSize * 0.32;
-  const innerRadius2 = sonarSize * 0.18;
-  const innerRadius3 = sonarSize * 0.08;
+  const outerRadius = sonarSize * 0.49;
+  const innerRadius1 = sonarSize * 0.34;
+  const innerRadius2 = sonarSize * 0.20;
+  const innerRadius3 = sonarSize * 0.09;
 
   return (
     <div
@@ -338,7 +338,7 @@ const SonarInterstitial = ({ onComplete }) => {
         {/* Sweep wedge gradient */}
         <defs>
           <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={colors.sonarGreen} stopOpacity="0.15" />
+            <stop offset="0%" stopColor={colors.sonarGreen} stopOpacity="0.18" />
             <stop offset="100%" stopColor={colors.sonarGreen} stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -348,7 +348,7 @@ const SonarInterstitial = ({ onComplete }) => {
           d={`
             M ${center} ${center}
             L ${center + Math.cos((sweepAngle * Math.PI) / 180) * outerRadius} ${center + Math.sin((sweepAngle * Math.PI) / 180) * outerRadius}
-            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 65) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 65) * Math.PI) / 180) * outerRadius}
+            A ${outerRadius} ${outerRadius} 0 0 0 ${center + Math.cos(((sweepAngle - 75) * Math.PI) / 180) * outerRadius} ${center + Math.sin(((sweepAngle - 75) * Math.PI) / 180) * outerRadius}
             Z
           `}
           fill="url(#sweepGrad)"
