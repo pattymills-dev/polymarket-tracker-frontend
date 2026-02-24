@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   TrendingUp,
   Trophy,
-  Bell,
+  HelpCircle,
   Search,
   Star,
   Activity,
@@ -36,7 +36,7 @@ const PolymarketTracker = () => {
   const [searchAddress, setSearchAddress] = useState('');
   const [betSearchQuery, setBetSearchQuery] = useState(''); // Search filter for large bets
   const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'total_pl', 'copyable', 'whale_volume'
-  const [showAlerts, setShowAlerts] = useState(false);
+  const [showSignalKey, setShowSignalKey] = useState(false);
   const [showTipJar, setShowTipJar] = useState(false);
   const [showSnake, setShowSnake] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
@@ -48,6 +48,7 @@ const PolymarketTracker = () => {
   const [selectedTraderRecord, setSelectedTraderRecord] = useState(null); // resolved outcomes for Record tab
   const [loadingSelectedTrader, setLoadingSelectedTrader] = useState(false); // loading state for panel
   const tipJarRef = useRef(null);
+  const signalKeyRef = useRef(null);
   const largeBetsScrollRef = useRef(null);
   const tradersScrollRef = useRef(null);
   const [selectedTrader, setSelectedTrader] = useState(null);
@@ -1033,6 +1034,19 @@ setMarketStats({
     };
   }, [showTipJar]);
 
+  // Close signal key dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (signalKeyRef.current && !signalKeyRef.current.contains(event.target)) {
+        setShowSignalKey(false);
+      }
+    };
+    if (showSignalKey) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSignalKey]);
+
   // Calculate smart money metrics from recent trades (7-day fallback)
   const recentActiveTraders = useMemo(() => {
     const sourceTrades = recentTrades && recentTrades.length > 0 ? recentTrades : largeBets;
@@ -1243,34 +1257,6 @@ setMarketStats({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {/* Alerts Button */}
-              <button
-                onClick={() => setShowAlerts((v) => !v)}
-                className={`relative px-4 py-2 rounded-md transition-all flex items-center gap-2 text-sm font-medium border ${
-                  isRetro
-                    ? ''
-                    : 'bg-slate-900 hover:bg-slate-800 border-slate-800'
-                }`}
-                style={isRetro ? {
-                  color: retroColors.text,
-                  border: `1px solid ${retroColors.textDim}`,
-                  background: 'transparent'
-                } : {}}
-                onMouseEnter={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.textBright, e.currentTarget.style.color = retroColors.textBright, e.currentTarget.style.borderColor = retroColors.borderActive)}
-                onMouseLeave={(e) => isRetro && (e.currentTarget.style.borderColor = retroColors.textDim, e.currentTarget.style.color = retroColors.text, e.currentTarget.style.borderColor = retroColors.border)}
-              >
-                <Bell className="w-4 h-4" />
-                {isRetro ? 'ALERTS' : 'Alerts'}
-                {alerts.length > 0 && (
-                  <span className={`absolute -top-2 -right-2 text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold ${
-                    isRetro ? '' : 'bg-cyan-600 text-slate-950'
-                  }`}
-                  style={isRetro ? { backgroundColor: retroColors.warn, color: retroColors.bg } : {}}>
-                    {alerts.length}
-                  </span>
-                )}
-              </button>
-
               {/* Telegram Bot Link */}
               <a
                 href="https://t.me/sonarstack_bot"
@@ -1460,200 +1446,6 @@ setMarketStats({
           </div>
         </div>
 
-        {/* Alerts Panel */}
-        {showAlerts && (
-          <div className={`mb-6 backdrop-blur rounded-lg p-4 ${
-            isRetro
-              ? ''
-              : 'bg-slate-900/80 border border-amber-500/30 shadow-amber-500/10'
-          }`}
-          style={isRetro ? { backgroundColor: retroColors.surface, border: `1px solid ${retroColors.border}` } : {}}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className={`font-semibold flex items-center gap-2 ${isRetro ? '' : 'text-sm'}`} style={isRetro ? { fontSize: '1.15rem', letterSpacing: '0.08em', fontWeight: 500 } : {}}>
-                <Bell className="w-4 h-4" style={isRetro ? { color: retroColors.textDim } : {}} />
-                <span style={isRetro ? { color: retroColors.header } : {}}>
-                  {isRetro ? 'SIGNAL INTERCEPTS' : 'Signal Alerts'}
-                </span>
-                {isRetro && <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>24H</span>}
-              </h3>
-              <button
-                onClick={() => setAlerts([])}
-                className={`text-xs transition-colors ${
-                  isRetro ? '' : 'text-slate-400 hover:text-slate-200'
-                }`}
-                style={isRetro ? { color: retroColors.textDim } : {}}
-              >
-                {isRetro ? 'CLEAR' : 'Clear all'}
-              </button>
-            </div>
-
-            {/* Alert Categories Legend */}
-            <div className={`mb-4 p-3 rounded-lg text-xs ${
-              isRetro ? '' : 'bg-slate-950/50'
-            }`}
-            style={isRetro ? { backgroundColor: retroColors.bg, border: `1px solid ${retroColors.border}` } : {}}>
-              <div className="font-medium mb-2" style={isRetro ? { color: retroColors.textDim } : {}}>
-                {isRetro ? '> ALERT CLASSIFICATIONS:' : 'Alert Types:'}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.danger}`, color: retroColors.danger } : {}}>ISOLATED</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Rare trader, outsized bet in thin market</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.warn}`, color: retroColors.warn } : {}}>DORMANT</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Wallet inactive 180+ days suddenly active</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.danger}`, color: retroColors.danger } : {}}>TAIL RISK</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>$5K+ at extreme price (&lt;10¢ / &gt;90¢)</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                    isRetro ? '' : 'bg-lime-500/15 text-lime-200 border-lime-500/40'
-                  }`}
-                  style={isRetro ? { border: `1px solid ${retroColors.text}`, color: retroColors.text } : {}}>COPYABLE</span>
-                  <span style={isRetro ? { color: retroColors.textDim } : {}}>Top-ranked trader making $250+ trade</span>
-                </div>
-              </div>
-            </div>
-
-            {alerts.length === 0 ? (
-              <p className="text-sm" style={isRetro ? { color: retroColors.textDim } : {}}>
-                {isRetro
-                  ? '> NO SIGNALS DETECTED. MONITORING...'
-                  : 'No alerts yet. Signals appear when isolated contacts, dormant wallets, or copyable traders make moves.'}
-              </p>
-            ) : (
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {alerts.slice(0, 20).map((alert, idx) => {
-                  const alertStyles = {
-                    isolated_contact: {
-                      border: 'border-purple-500/40 bg-purple-500/5 shadow-purple-500/20',
-                      badge: 'bg-purple-500/20 text-purple-300 border-purple-500/50 animate-pulse',
-                      text: '📡 ISOLATED', retro: 'ISOLATED', retroColor: retroColors.danger,
-                    },
-                    dormant_whale: {
-                      border: 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20',
-                      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/50 animate-pulse',
-                      text: '💤 DORMANT', retro: 'DORMANT', retroColor: retroColors.warn,
-                    },
-                    tail_risk: {
-                      border: 'border-rose-500/40 bg-rose-500/5 shadow-rose-500/20',
-                      badge: 'bg-rose-500/20 text-rose-300 border-rose-500/50',
-                      text: '🔥 TAIL RISK', retro: 'TAIL RISK', retroColor: retroColors.danger,
-                    },
-                    copyable: {
-                      border: 'border-lime-500/30 bg-lime-500/5 shadow-lime-500/10',
-                      badge: 'bg-lime-500/15 text-lime-200 border-lime-500/40',
-                      text: '📈 COPYABLE', retro: 'COPYABLE', retroColor: retroColors.text,
-                    },
-                    whale_position: {
-                      border: 'border-amber-500/40 bg-amber-500/5 shadow-amber-500/20',
-                      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/50',
-                      text: '🐋 WHALE', retro: 'WHALE', retroColor: retroColors.warn,
-                    },
-                  };
-                  const style = alertStyles[alert.type] || alertStyles.whale_position;
-                  const borderClass = style.border;
-                  const badgeClass = style.badge;
-                  const badgeText = style.text;
-
-                  // Build Polymarket URL from slug
-                  // For sports bets, link to the game page; for others, link to the event
-                  const buildPolymarketUrl = (slug) => {
-                    if (!slug) return null;
-
-                    // Check if it's a sports bet (has league prefix like nba-, nhl-, cbb-, epl-, etc.)
-                    const sportsMatch = slug.match(/^(nba|nhl|mlb|nfl|cbb|epl|bun|mls|wta|atp)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i);
-                    if (sportsMatch) {
-                      const [, league, teams, date] = sportsMatch;
-                      // Return sports game page URL
-                      return `https://polymarket.com/sports/${league.toLowerCase()}/games/week/1/${league.toLowerCase()}-${teams}-${date}`;
-                    }
-
-                    // For non-sports, strip any suffix after the date
-                    const cleanSlug = slug.replace(/(-\d{4}-\d{2}-\d{2})-[a-z0-9]+$/i, '$1');
-                    return `https://polymarket.com/event/${cleanSlug}`;
-                  };
-                  const polymarketUrl = buildPolymarketUrl(alert.market_slug);
-
-                  // Determine bet direction styling
-                  const isBuy = !alert.side || alert.side === 'BUY';
-                  const betBadgeClass = isBuy
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                    : 'bg-rose-500/20 text-rose-300 border-rose-500/50';
-
-                  const retroBadgeBorder = style.retroColor;
-                  const retroBadgeText = style.retro;
-
-                  return (
-                    <div
-                      key={idx}
-                      className={`rounded-md border p-4 transition-all hover:scale-[1.01] ${isRetro ? '' : `bg-slate-950 ${borderClass}`} ${polymarketUrl ? 'cursor-pointer' : ''}`}
-                      style={isRetro ? {
-                        backgroundColor: retroColors.bg,
-                        border: `1px solid ${retroBadgeBorder}`,
-                        padding: '1rem',
-                      } : {}}
-                      onClick={() => polymarketUrl && window.open(polymarketUrl, '_blank')}
-                    >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`font-bold px-2 py-1 rounded border uppercase tracking-wide ${isRetro ? '' : 'text-[10px]'} ${isRetro ? '' : badgeClass}`}
-                          style={isRetro ? { border: `1px solid ${retroColors.textDim}`, color: retroColors.text, fontSize: '0.7rem' } : {}}
-                        >
-                          {isRetro ? retroBadgeText : badgeText}
-                        </span>
-                        {alert.outcome && (
-                          <span
-                            className={`text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wide ${isRetro ? '' : betBadgeClass}`}
-                            style={isRetro ? {
-                              border: `1px solid ${retroColors.textDim}`,
-                              color: retroColors.text,
-                              fontSize: '0.7rem'
-                            } : {}}
-                          >
-                            {isRetro ? '' : (isBuy ? '📈' : '📉')} {alert.side || 'BUY'} {alert.outcome}{alert.price ? ` @ ${Math.round(alert.price * 100)}¢` : ''}
-                          </span>
-                        )}
-                        <span
-                          className="text-xs font-mono"
-                          style={isRetro ? { color: retroColors.textDim, fontSize: '0.75rem' } : { color: 'rgb(100, 116, 139)' }}
-                        >
-                          {formatTimestamp(alert.created_at)}
-                        </span>
-                        {polymarketUrl && (
-                          <span
-                            className="text-xs ml-auto"
-                            style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(34, 211, 238)' }}
-                          >↗</span>
-                        )}
-                      </div>
-                      <p
-                        className={`mt-2 font-medium ${isRetro ? '' : 'text-sm'}`}
-                        style={isRetro ? { color: retroColors.text, fontSize: '1rem', lineHeight: 1.4 } : { color: 'rgb(226, 232, 240)' }}
-                      >
-                        <span style={isRetro ? { color: retroColors.numbers, fontWeight: 600 } : {}}>${alert.amount ? Math.round(alert.amount).toLocaleString() : '?'}</span>
-                        <span style={isRetro ? { color: retroColors.textDim } : {}}> on </span>
-                        <span style={isRetro ? { color: retroColors.textPrimary } : {}}>{alert.market_title || 'Unknown market'}</span>
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Stats - background telemetry for $5k+ trades, last 24h */}
         {marketStats && (
@@ -1759,6 +1551,63 @@ setMarketStats({
                       {label}
                     </button>
                   ))}
+                  {/* Signal Key dropdown */}
+                  <div className="relative ml-auto" ref={signalKeyRef}>
+                    <button
+                      onClick={() => setShowSignalKey(prev => !prev)}
+                      className={`p-1.5 rounded transition-colors ${
+                        isRetro ? '' : (
+                          showSignalKey
+                            ? 'bg-cyan-600/20 text-cyan-300'
+                            : 'text-slate-500 hover:text-slate-300'
+                        )
+                      }`}
+                      style={isRetro ? {
+                        color: showSignalKey ? retroColors.text : retroColors.textDim,
+                      } : {}}
+                      title="Signal definitions"
+                    >
+                      <HelpCircle className="w-4 h-4" />
+                    </button>
+                    {showSignalKey && (
+                      <div
+                        className={`absolute right-0 mt-2 w-80 rounded-lg shadow-xl z-50 p-4 ${
+                          isRetro ? '' : 'bg-slate-900 border border-slate-700'
+                        }`}
+                        style={isRetro ? {
+                          backgroundColor: retroColors.surface,
+                          border: `1px solid ${retroColors.border}`,
+                        } : {}}
+                      >
+                        <div className="font-medium mb-3 text-xs" style={isRetro ? { color: retroColors.header, letterSpacing: '0.08em' } : { color: 'rgb(226, 232, 240)' }}>
+                          {isRetro ? '> SIGNAL CLASSIFICATIONS' : 'Signal Classifications'}
+                        </div>
+                        <div className="space-y-2">
+                          {[
+                            { label: 'TAIL RISK', desc: '$5K+ bet at extreme odds (<10¢ or >90¢)', modern: 'border-rose-500/40 text-rose-300 bg-rose-500/10', retroColor: retroColors.danger },
+                            { label: 'SIZE SPIKE', desc: 'Ranked trader betting 3x their median', modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', retroColor: retroColors.textDim },
+                            { label: 'EVENT SPECIALIST', desc: '3+ sub-markets of same event from one wallet', modern: 'border-amber-500/40 text-amber-300 bg-amber-500/10', retroColor: retroColors.warn },
+                            { label: 'RAPID FIRE', desc: '5+ trades within 10 minutes', modern: 'border-orange-500/40 text-orange-300 bg-orange-500/10', retroColor: retroColors.warn },
+                            { label: 'ISOLATED', desc: 'Rare trader, outsized bet in thin market', modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', retroColor: retroColors.danger },
+                            { label: 'DORMANT', desc: 'Wallet inactive 180+ days suddenly active', modern: 'border-amber-500/40 text-amber-300 bg-amber-500/10', retroColor: retroColors.warn },
+                            { label: 'WATCHED', desc: 'Watchlisted trader making $1K+ trade', modern: 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10', retroColor: retroColors.text },
+                          ].map(({ label, desc, modern, retroColor }) => (
+                            <div key={label} className="flex items-start gap-2">
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${isRetro ? '' : modern}`}
+                                style={isRetro ? { border: `1px solid ${retroColor}`, color: retroColor, fontSize: '0.7rem' } : {}}
+                              >
+                                {label}
+                              </span>
+                              <span className="text-xs leading-tight" style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(148, 163, 184)' }}>
+                                {desc}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {/* Only Selected Wallet toggle — appears when a trader is selected */}
                   {selectedFeedTrader && (
                     <button
