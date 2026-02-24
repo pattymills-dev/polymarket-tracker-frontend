@@ -864,70 +864,9 @@ setMarketStats({
     return set;
   }, [alerts]);
 
-  // Activity Feed: filtered trades based on feedFilter + optional onlySelectedWallet + keyword search
-  const filteredBets = useMemo(() => {
-    const keywordFilter = (bets) => {
-      if (!betSearchQuery.trim()) return bets;
-      const query = betSearchQuery.toLowerCase().trim();
-      return bets.filter(bet => {
-        const title = (bet.market_title || '').toLowerCase();
-        const outcome = (bet.outcome || '').toLowerCase();
-        const slug = (bet.market_slug || '').toLowerCase();
-        return title.includes(query) || outcome.includes(query) || slug.includes(query);
-      });
-    };
-
-    // Wallet filter: only applied when both selectedFeedTrader is set AND onlySelectedWallet is toggled ON
-    const walletFilter = (bets) => {
-      if (onlySelectedWallet && selectedFeedTrader) {
-        return bets.filter(bet => bet.trader_address === selectedFeedTrader);
-      }
-      return bets;
-    };
-
-    // Normal filter modes (no longer overridden by selectedFeedTrader)
-    let result;
-    switch (feedFilter) {
-      case 'large':
-        result = (largeBets || []).filter(bet => Number(bet.amount || 0) >= 5000);
-        break;
-
-      case 'top10':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(
-          bet => top10Addresses.has(bet.trader_address)
-        );
-        break;
-
-      case 'top20':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(
-          bet => top20Addresses.has(bet.trader_address)
-        );
-        break;
-
-      case 'anomaly':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
-          return classifyAnomaly(bet).length > 0;
-        });
-        break;
-
-      case 'isolated':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
-          return alertTraderSet.has(bet.trader_address);
-        });
-        break;
-
-      case 'all':
-      default:
-        result = recentTrades.length > 0 ? recentTrades : largeBets;
-        break;
-    }
-
-    return keywordFilter(walletFilter(result));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [largeBets, recentTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top10Addresses, top20Addresses, top20MedianMap, traderProfiles, alertTraderSet, watchedTraders]);
-
   // Multi-signal anomaly classifier — returns array of anomaly type strings
   // Types: 'tail_risk', 'size_spike', 'event_specialist', 'rapid_fire', 'watched', 'isolated'
+  // IMPORTANT: Must be defined BEFORE filteredBets useMemo which calls it
   const classifyAnomaly = (bet) => {
     const labels = [];
     const amount = Number(bet.amount || 0);
@@ -1014,6 +953,68 @@ setMarketStats({
     watched:          { border: 'rgba(69, 160, 106, 0.4)', color: 'rgba(69, 160, 106, 0.9)' },
     isolated:         { border: 'rgba(160, 112, 112, 0.4)', color: 'rgba(160, 112, 112, 0.9)' },
   };
+
+  // Activity Feed: filtered trades based on feedFilter + optional onlySelectedWallet + keyword search
+  const filteredBets = useMemo(() => {
+    const keywordFilter = (bets) => {
+      if (!betSearchQuery.trim()) return bets;
+      const query = betSearchQuery.toLowerCase().trim();
+      return bets.filter(bet => {
+        const title = (bet.market_title || '').toLowerCase();
+        const outcome = (bet.outcome || '').toLowerCase();
+        const slug = (bet.market_slug || '').toLowerCase();
+        return title.includes(query) || outcome.includes(query) || slug.includes(query);
+      });
+    };
+
+    // Wallet filter: only applied when both selectedFeedTrader is set AND onlySelectedWallet is toggled ON
+    const walletFilter = (bets) => {
+      if (onlySelectedWallet && selectedFeedTrader) {
+        return bets.filter(bet => bet.trader_address === selectedFeedTrader);
+      }
+      return bets;
+    };
+
+    // Normal filter modes (no longer overridden by selectedFeedTrader)
+    let result;
+    switch (feedFilter) {
+      case 'large':
+        result = (largeBets || []).filter(bet => Number(bet.amount || 0) >= 5000);
+        break;
+
+      case 'top10':
+        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(
+          bet => top10Addresses.has(bet.trader_address)
+        );
+        break;
+
+      case 'top20':
+        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(
+          bet => top20Addresses.has(bet.trader_address)
+        );
+        break;
+
+      case 'anomaly':
+        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
+          return classifyAnomaly(bet).length > 0;
+        });
+        break;
+
+      case 'isolated':
+        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
+          return alertTraderSet.has(bet.trader_address);
+        });
+        break;
+
+      case 'all':
+      default:
+        result = recentTrades.length > 0 ? recentTrades : largeBets;
+        break;
+    }
+
+    return keywordFilter(walletFilter(result));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [largeBets, recentTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top10Addresses, top20Addresses, top20MedianMap, traderProfiles, alertTraderSet, watchedTraders]);
 
   // Close tip jar dropdown when clicking outside
   useEffect(() => {
