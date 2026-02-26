@@ -230,10 +230,43 @@ serve(async (req: Request) => {
       tradersToProcess = (existing || []).map((t) => t.trader_address);
       console.log(`Processing ${tradersToProcess.length} existing top traders`);
     } else {
-      // Mode: Find top traders by recent activity — paginate discovery
+      // Mode: Find top traders — hybrid discovery (CLI leaderboard + trades)
       const traderSet = new Set<string>();
+
+      // 1) CLI leaderboard entries (cheapest discovery — no trades table scan)
+      const { data: lbEntries } = await supabase
+        .from("polymarket_leaderboard_snapshots")
+        .select("trader_address")
+        .order("snapshot_at", { ascending: false })
+        .limit(50);
+
+      const lbCount = (lbEntries || []).length;
+      for (const row of lbEntries || []) {
+        if (row.trader_address) traderSet.add(row.trader_address);
+      }
+
+      // 2) CLI portfolio snapshot traders (already validated by CLI)
+      const { data: cliTraders } = await supabase
+        .from("latest_cli_trader_stats")
+        .select("trader_address");
+
+      for (const row of cliTraders || []) {
+        if (row.trader_address) traderSet.add(row.trader_address);
+      }
+
+      // 3) Existing copyable_traders so they get re-evaluated
+      const { data: existingCopyable } = await supabase
+        .from("copyable_traders")
+        .select("trader_address")
+        .limit(100);
+
+      for (const row of existingCopyable || []) {
+        if (row.trader_address) traderSet.add(row.trader_address);
+      }
+
+      // 4) Trade-based discovery (reduced from 3000 to 1500 rows — CLI handles primary discovery)
       let offset = 0;
-      const maxDiscoveryRows = 3000;
+      const maxDiscoveryRows = 1500;
 
       while (offset < maxDiscoveryRows) {
         const { data, error } = await supabase
@@ -259,18 +292,8 @@ serve(async (req: Request) => {
         offset += PAGE_SIZE;
       }
 
-      // Also include existing copyable_traders so they get re-evaluated
-      const { data: existingCopyable } = await supabase
-        .from("copyable_traders")
-        .select("trader_address")
-        .limit(100);
-
-      for (const row of existingCopyable || []) {
-        if (row.trader_address) traderSet.add(row.trader_address);
-      }
-
       tradersToProcess = Array.from(traderSet).slice(0, Math.max(limit, 200));
-      console.log(`Processing ${tradersToProcess.length} traders by activity (discovered ${traderSet.size})`);
+      console.log(`Processing ${tradersToProcess.length} traders (${lbCount} from leaderboard, ${(cliTraders || []).length} from CLI, ${(existingCopyable || []).length} existing, rest from trades)`);
     }
 
     // Calculate stats for each trader

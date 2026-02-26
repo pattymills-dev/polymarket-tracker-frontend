@@ -9,6 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const PAGE_SIZE = 1000;
 const MAX_TRADES_PER_TRADER = 10000;
 const MARKET_CHUNK_SIZE = 200; // Supabase .in() limit
+const MAX_CLI_SNAPSHOT_AGE_HOURS = 6; // Only trust recent CLI data
 
 interface TraderStats {
   trader_address: string;
@@ -17,11 +18,53 @@ interface TraderStats {
   resolved_count: number;
   total_buy_cost: number;
   realized_pl: number;
+  source: "cli" | "trades"; // Track where the data came from
+}
+
+/**
+ * Fetch latest CLI snapshots per trader (from the CLI integration).
+ * Only returns snapshots within the freshness window.
+ */
+async function fetchCliStats(): Promise<Map<string, TraderStats>> {
+  const cutoff = new Date(Date.now() - MAX_CLI_SNAPSHOT_AGE_HOURS * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from("latest_cli_trader_stats")
+    .select("*")
+    .gte("snapshot_at", cutoff);
+
+  if (error) {
+    console.error("Error fetching CLI stats:", error.message);
+    return new Map();
+  }
+
+  const statsMap = new Map<string, TraderStats>();
+  for (const row of data || []) {
+    const wins = row.cli_wins || 0;
+    const losses = row.cli_losses || 0;
+    const resolvedCount = wins + losses;
+
+    // Only use CLI data if we have meaningful win/loss counts
+    if (resolvedCount > 0 && row.closed_pnl_usd != null) {
+      statsMap.set(row.trader_address, {
+        trader_address: row.trader_address,
+        wins,
+        losses,
+        resolved_count: resolvedCount,
+        total_buy_cost: row.open_value_usd || 0,
+        realized_pl: row.closed_pnl_usd || 0,
+        source: "cli",
+      });
+    }
+  }
+
+  return statsMap;
 }
 
 /**
  * Paginate through ALL trades for a trader (no truncation).
  * Returns up to MAX_TRADES_PER_TRADER rows.
+ * FALLBACK: Only used for traders without CLI snapshot data.
  */
 async function fetchAllTrades(
   traderAddress: string,
@@ -95,52 +138,57 @@ async function fetchResolvedMarkets(
 }
 
 /**
- * Discover traders by paginating through trades ordered by amount desc.
- * Also includes existing top_traders to avoid dropping them if they had
- * a quiet period.
+ * Discover traders for FALLBACK computation (only those without CLI data).
+ * Uses existing top_traders + limited trade discovery.
  */
-async function discoverTraders(maxTraders: number): Promise<string[]> {
+async function discoverTradersForFallback(
+  cliAddresses: Set<string>,
+  maxTraders: number
+): Promise<string[]> {
   const traderSet = new Set<string>();
 
-  // 1) Paginate through trades to find active traders
-  let offset = 0;
-  const maxDiscoveryRows = 2000;
-  while (offset < maxDiscoveryRows) {
-    const { data, error } = await supabase
-      .from("trades")
-      .select("trader_address")
-      .gt("amount", 50)
-      .order("amount", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-
-    if (error) {
-      console.error(`discoverTraders error at offset ${offset}:`, error.message);
-      break;
-    }
-    if (!data || data.length === 0) break;
-
-    for (const row of data) {
-      if (row.trader_address) traderSet.add(row.trader_address);
-    }
-    if (data.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-
-  // 2) Also include existing top_traders so they get re-evaluated
+  // 1) Include existing top_traders so they get re-evaluated
   const { data: existing } = await supabase
     .from("top_traders")
     .select("trader_address")
     .limit(200);
 
   for (const row of existing || []) {
-    if (row.trader_address) traderSet.add(row.trader_address);
+    if (row.trader_address && !cliAddresses.has(row.trader_address)) {
+      traderSet.add(row.trader_address);
+    }
   }
 
-  console.log(`Discovered ${traderSet.size} unique traders (from trades + existing)`);
-  // Prioritize existing top_traders so they always get re-evaluated
-  const existingAddrs = (existing || []).map(r => r.trader_address).filter(Boolean);
-  const newAddrs = Array.from(traderSet).filter(a => !existingAddrs.includes(a));
-  return [...existingAddrs, ...newAddrs].slice(0, maxTraders);
+  // 2) Only scan trades if we need more traders (lighter discovery)
+  if (traderSet.size < maxTraders) {
+    let offset = 0;
+    const maxDiscoveryRows = 1000; // Reduced from 2000 — CLI handles primary discovery
+    while (offset < maxDiscoveryRows) {
+      const { data, error } = await supabase
+        .from("trades")
+        .select("trader_address")
+        .gt("amount", 50)
+        .order("amount", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error(`discoverTraders error at offset ${offset}:`, error.message);
+        break;
+      }
+      if (!data || data.length === 0) break;
+
+      for (const row of data) {
+        if (row.trader_address && !cliAddresses.has(row.trader_address)) {
+          traderSet.add(row.trader_address);
+        }
+      }
+      if (data.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+  }
+
+  console.log(`Fallback discovery: ${traderSet.size} traders (excluding ${cliAddresses.size} with CLI data)`);
+  return Array.from(traderSet).slice(0, maxTraders);
 }
 
 serve(async (req: Request) => {
@@ -148,16 +196,34 @@ serve(async (req: Request) => {
   const limit = parseInt(url.searchParams.get("limit") || "50");
   const minResolved = parseInt(url.searchParams.get("min_resolved") || "5");
 
-  console.log(`Refresh top traders (all-time): limit=${limit}, min_resolved=${minResolved}`);
+  console.log(`Refresh top traders (hybrid): limit=${limit}, min_resolved=${minResolved}`);
 
   try {
-    // Discover traders with paginated query
-    const uniqueTraders = await discoverTraders(100);
-    console.log(`Processing ${uniqueTraders.length} unique traders`);
+    // ── Phase 1: CLI ground-truth data (no trades table scanning) ──
+    const cliStatsMap = await fetchCliStats();
+    console.log(`CLI data available for ${cliStatsMap.size} traders`);
 
     const traderStats: TraderStats[] = [];
+    let cliUsed = 0;
 
-    for (const traderAddress of uniqueTraders) {
+    // Use CLI data directly — these traders skip trades table entirely
+    for (const [addr, stats] of cliStatsMap) {
+      if (stats.resolved_count >= minResolved) {
+        traderStats.push(stats);
+        cliUsed++;
+      }
+    }
+    console.log(`Using CLI data for ${cliUsed} traders (${minResolved}+ resolved)`);
+
+    // ── Phase 2: Trade-based fallback for traders without CLI data ──
+    const cliAddresses = new Set(cliStatsMap.keys());
+    const fallbackTraders = await discoverTradersForFallback(cliAddresses, 100);
+    let fallbackUsed = 0;
+
+    for (const traderAddress of fallbackTraders) {
+      // Skip if already have CLI data
+      if (cliAddresses.has(traderAddress)) continue;
+
       // Paginate through ALL trades for this trader
       const trades = await fetchAllTrades(traderAddress, "market_id, outcome, amount, price", {
         minPrice: 0.05,
@@ -213,10 +279,13 @@ serve(async (req: Request) => {
         resolved_count: resolvedCount,
         total_buy_cost: totalBuyCost,
         realized_pl: realizedPl,
+        source: "trades",
       });
+      fallbackUsed++;
     }
 
-    console.log(`Calculated stats for ${traderStats.length} traders with ${minResolved}+ resolved markets`);
+    console.log(`Computed trade-based stats for ${fallbackUsed} additional traders`);
+    console.log(`Total: ${traderStats.length} traders (${cliUsed} CLI + ${fallbackUsed} trades)`);
 
     // Sort by realized P/L and assign ranks
     traderStats.sort((a, b) => b.realized_pl - a.realized_pl);
@@ -265,13 +334,16 @@ serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         success: true,
-        processed: uniqueTraders.length,
+        mode: "hybrid",
+        cli_traders: cliUsed,
+        fallback_traders: fallbackUsed,
         updated: upsertCount,
-        top3: topTraders.slice(0, 3).map(t => ({
+        top5: topTraders.slice(0, 5).map(t => ({
           address: t.trader_address.slice(0, 10) + "...",
           wins: t.wins,
           losses: t.losses,
           pl: Math.round(t.realized_pl).toLocaleString(),
+          source: t.source,
         })),
       }),
       { headers: { "Content-Type": "application/json" } }
