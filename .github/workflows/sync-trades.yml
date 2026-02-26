@@ -14,8 +14,33 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Polymarket CLI
+        id: cli-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.polymarket
+            /usr/local/bin/polymarket
+          key: polymarket-cli-v1
+
+      - name: Install Polymarket CLI
+        if: steps.cli-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL https://raw.githubusercontent.com/Polymarket/polymarket-cli/main/install.sh | sh
+          echo "$HOME/.polymarket/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Add CLI to PATH
+        if: steps.cli-cache.outputs.cache-hit == 'true'
+        run: |
+          echo "$HOME/.polymarket/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Sync trades from Polymarket
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
@@ -173,6 +198,13 @@ jobs:
             echo "Error: refresh-top-traders failed with status $http_code"
             exit 1
           fi
+
+      - name: CLI Trader Portfolio Validation
+        continue-on-error: true
+        run: bash .github/scripts/cli-portfolio-validation.sh
+        env:
+          SUPABASE_URL: https://smuktlgclwvaxnduuinm.supabase.co
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Run paper copy trading
         run: |
