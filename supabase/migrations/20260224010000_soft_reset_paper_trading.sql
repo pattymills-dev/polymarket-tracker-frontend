@@ -13,8 +13,7 @@ UPDATE paper_positions SET epoch = 1;
 
 -- 3. Cancel all currently OPEN positions (entered under old rules)
 UPDATE paper_positions
-SET status = 'CANCELED',
-    notes = COALESCE(notes, '') || ' [canceled: strategy v2 reset]'
+SET status = 'CANCELED'
 WHERE status = 'OPEN';
 
 -- 4. Rebuild the P/L summary view to only count current epoch
