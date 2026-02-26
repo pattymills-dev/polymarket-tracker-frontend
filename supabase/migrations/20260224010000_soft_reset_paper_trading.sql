@@ -16,7 +16,18 @@ UPDATE paper_positions
 SET status = 'CANCELED'
 WHERE status = 'OPEN';
 
--- 4. Rebuild the P/L summary view to only count current epoch
+-- 4. Recreate paper_positions_with_price so it includes the new epoch column
+CREATE OR REPLACE VIEW paper_positions_with_price AS
+SELECT
+  p.*,
+  mp.price AS current_price,
+  mp.updated_at AS price_ts
+FROM paper_positions p
+LEFT JOIN market_prices mp
+  ON mp.market_id = p.market_id
+  AND mp.outcome = p.outcome;
+
+-- 5. Rebuild the P/L summary view to only count current epoch
 DROP VIEW IF EXISTS paper_portfolio_pnl_summary;
 
 CREATE OR REPLACE VIEW paper_portfolio_pnl_summary AS
@@ -66,7 +77,7 @@ FROM paper_portfolios p
 LEFT JOIN realized r ON r.portfolio_id = p.id
 LEFT JOIN unrealized u ON u.portfolio_id = p.id;
 
--- 5. Reset starting_usd to $500 (clean baseline)
+-- 6. Reset starting_usd to $500 (clean baseline)
 UPDATE paper_portfolios SET starting_usd = 500;
 
 -- Verify
