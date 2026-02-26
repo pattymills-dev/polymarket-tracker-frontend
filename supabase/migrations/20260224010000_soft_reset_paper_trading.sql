@@ -17,7 +17,11 @@ SET status = 'CANCELED'
 WHERE status = 'OPEN';
 
 -- 4. Recreate paper_positions_with_price so it includes the new epoch column
-CREATE OR REPLACE VIEW paper_positions_with_price AS
+--    Must DROP first because column order changed (epoch added to paper_positions)
+DROP VIEW IF EXISTS paper_portfolio_pnl_summary;
+DROP VIEW IF EXISTS paper_positions_with_price;
+
+CREATE VIEW paper_positions_with_price AS
 SELECT
   p.*,
   mp.price AS current_price,
@@ -28,9 +32,7 @@ LEFT JOIN market_prices mp
   AND mp.outcome = p.outcome;
 
 -- 5. Rebuild the P/L summary view to only count current epoch
-DROP VIEW IF EXISTS paper_portfolio_pnl_summary;
-
-CREATE OR REPLACE VIEW paper_portfolio_pnl_summary AS
+CREATE VIEW paper_portfolio_pnl_summary AS
 WITH current_epoch AS (
   SELECT MAX(epoch) AS epoch FROM paper_positions
 ),
