@@ -2161,7 +2161,7 @@ setMarketStats({
                                 className={isRetro ? 'grid grid-cols-2 gap-3 mt-3 pt-3' : 'grid grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-slate-800/50'}
                                 style={isRetro ? { borderTop: `1px solid ${retroColors.border}` } : {}}
                               >
-                                <div>
+                                <div className="min-w-0">
                                   <p
                                     className={isRetro ? '' : 'text-xs text-slate-500 uppercase tracking-wide'}
                                     style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
@@ -2169,13 +2169,13 @@ setMarketStats({
                                     {traderSortBy === 'copyable' ? 'P/L (30D)' : 'Total P/L'}
                                   </p>
                                   <p
-                                    className={isRetro ? 'font-mono' : `font-bold font-mono text-base ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
-                                    style={isRetro ? { color: trader.total_pl >= 0 ? retroColors.numbers : retroColors.loss, fontWeight: 600, fontSize: '1.1rem' } : {}}
+                                    className={isRetro ? 'font-mono truncate' : `font-bold font-mono text-sm truncate ${trader.total_pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
+                                    style={isRetro ? { color: trader.total_pl >= 0 ? retroColors.numbers : retroColors.loss, fontWeight: 600, fontSize: '0.95rem' } : {}}
                                   >
                                     {trader.total_pl >= 0 ? '+' : ''}{formatCurrency(trader.total_pl)}
                                   </p>
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                   <p
                                     className={isRetro ? '' : 'text-xs text-slate-500 uppercase tracking-wide'}
                                     style={isRetro ? { fontSize: '0.7rem', color: retroColors.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' } : {}}
@@ -2183,8 +2183,8 @@ setMarketStats({
                                     {traderSortBy === 'copyable' ? 'ROI (30D)' : 'ROI'}
                                   </p>
                                   <p
-                                    className={isRetro ? 'font-mono' : 'font-bold font-mono text-base'}
-                                    style={isRetro ? { fontSize: '1.1rem', fontWeight: 600, color: roiPct != null && roiPct >= 0 ? retroColors.numbers : retroColors.loss } : {}}
+                                    className={isRetro ? 'font-mono truncate' : 'font-bold font-mono text-sm truncate'}
+                                    style={isRetro ? { fontSize: '0.95rem', fontWeight: 600, color: roiPct != null && roiPct >= 0 ? retroColors.numbers : retroColors.loss } : {}}
                                   >
                                     <span style={isRetro ? {} : { color: roiPct != null && roiPct >= 0 ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)' }}>
                                       {roiPct == null ? '—' : `${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(1)}%`}

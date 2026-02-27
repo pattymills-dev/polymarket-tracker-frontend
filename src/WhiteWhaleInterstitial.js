@@ -294,6 +294,7 @@ const WhiteWhaleInterstitial = ({ onComplete }) => {
           fontSize: 'clamp(1.5rem, 5vw, 2.5rem)',
           color: sonarGreen,
           letterSpacing: '0.12em',
+          whiteSpace: 'nowrap',
           textShadow: `0 0 12px rgba(79, 184, 120, 0.3)`,
           position: 'relative',
           zIndex: 1,
