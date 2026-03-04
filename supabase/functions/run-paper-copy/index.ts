@@ -53,13 +53,13 @@ type PaperPortfolio = {
 
 const DEFAULT_COPY_FACTOR = 0.1;
 const DEFAULT_PRICE_PENALTY = 0.01;
-const DEFAULT_MIN_PRICE = 0.05;
+const DEFAULT_MIN_PRICE = 0.45; // Raised from 0.05 — longshots (<45¢) bleed: 7% WR at <30¢, 36% at 30-50¢
 const DEFAULT_MAX_PRICE = 0.80;
 const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
 const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.6;
 const DEFAULT_MARKET_EXPOSURE_CAP_PCT = 0.2;
-const DEFAULT_FIXED_USD_PER_TRADE = 10;
+const DEFAULT_FIXED_USD_PER_TRADE = 25; // Raised from $10 — amplify edge on 50¢+ trades (67-91% WR)
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
 const SIZING_METHOD = "fixed_stake";
@@ -68,14 +68,18 @@ const PRICE_RULE = "source_price_plus_penalty";
 // Data freshness check - don't copy if rankings are stale
 const MAX_RANKINGS_AGE_HOURS = 24; // Skip copying if data is older than 24 hours
 
-// Position limits per trader - prevent overexposure to traders on losing streaks
-const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 3;
+// Position limits per trader - loosened to avoid blocking profitable traders
+const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 8; // Raised from 3 — position_cap_reached was 22% of skips
 
 // Default rank gate - only copy from traders in top N (can be overridden per trader)
-const DEFAULT_MAX_COPYABLE_RANK = 20;
+const DEFAULT_MAX_COPYABLE_RANK = 30; // Raised from 20 — rank_gate was 37% of all skips
 
 // Rank decay threshold - if a trader falls this many spots, flag them
 const RANK_DECAY_WARNING_THRESHOLD = 10;
+
+// Paper win-rate auto-gate - skip traders whose paper performance is poor
+const PAPER_WIN_RATE_MIN = 0.50;            // 50% win rate floor
+const PAPER_WIN_RATE_MIN_POSITIONS = 10;    // Only apply after 10+ settled positions
 
 // Market category filters - esports markets have been unprofitable
 // Blacklist slugs that start with these prefixes
@@ -289,6 +293,40 @@ serve(async (req) => {
             const wallet = String(row.source_wallet).toLowerCase();
             openPositionCountMap.set(wallet, (openPositionCountMap.get(wallet) ?? 0) + 1);
           }
+        }
+      }
+    }
+
+    // Load paper win/loss counts per trader for the win-rate gate
+    const paperWinRateMap = new Map<string, { wins: number; losses: number; total: number; winRate: number }>();
+    if (wallets.length > 0) {
+      const { data: settledPositions, error: settledError } = await supabase
+        .from("paper_positions")
+        .select("source_wallet, pnl_usd")
+        .eq("portfolio_id", portfolioId)
+        .eq("status", "SETTLED")
+        .in("source_wallet", wallets);
+
+      if (settledError) {
+        console.warn("Failed to load paper performance:", settledError.message);
+      } else {
+        for (const pos of settledPositions || []) {
+          if (pos?.source_wallet) {
+            const w = String(pos.source_wallet).toLowerCase();
+            const current = paperWinRateMap.get(w) ?? { wins: 0, losses: 0, total: 0, winRate: 0 };
+            current.total += 1;
+            if ((toNumber(pos.pnl_usd) ?? 0) > 0) {
+              current.wins += 1;
+            } else {
+              current.losses += 1;
+            }
+            current.winRate = current.total > 0 ? current.wins / current.total : 0;
+            paperWinRateMap.set(w, current);
+          }
+        }
+        // Log paper performance for diagnostics
+        for (const [w, stats] of paperWinRateMap) {
+          console.log(`Paper performance ${w.slice(0, 10)}...: ${stats.wins}W-${stats.losses}L (${(stats.winRate * 100).toFixed(1)}%) from ${stats.total} settled`);
         }
       }
     }
@@ -759,6 +797,39 @@ serve(async (req) => {
             console.warn(`RANK DECAY: ${wallet} dropped from #${previousRank} to #${currentRank} (${rankDrop} spots)`);
             // Log but don't skip - the rank gate above will handle if they've fallen out of range
           }
+        }
+
+        // Paper win-rate gate - auto-skip traders with poor paper performance
+        const paperStats = paperWinRateMap.get(wallet);
+        if (paperStats && paperStats.total >= PAPER_WIN_RATE_MIN_POSITIONS && paperStats.winRate < PAPER_WIN_RATE_MIN) {
+          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "paper_win_rate_gate");
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "paper_win_rate_gate",
+            source_trade_id: trade.tx_hash,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side,
+            source_price: price,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+            copy_factor: copyFactor,
+            max_trader_exposure_pct: maxTraderExposurePct,
+            min_price: minPrice,
+            max_price: maxPrice,
+            allow_sells: allowSells,
+            ranking_snapshot: rankingSnapshot,
+            paper_wins: paperStats.wins,
+            paper_losses: paperStats.losses,
+            paper_win_rate: paperStats.winRate,
+            paper_min_positions: PAPER_WIN_RATE_MIN_POSITIONS,
+            paper_min_win_rate: PAPER_WIN_RATE_MIN,
+          });
+          continue;
         }
 
         const minRoi = toNumber(traderRaw.min_realized_roi_30d);
