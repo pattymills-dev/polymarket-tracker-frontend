@@ -188,7 +188,7 @@ serve(async (req) => {
     // Fetch recent trades - optimized for 15-minute intervals
     // Polymarket Data API enforces low limit/offset caps, so we filter server-side.
     const PAGE_SIZE = Number.isFinite(pageSizeParam) && pageSizeParam > 0 ? pageSizeParam : 500;
-    const MAX_PAGES = Number.isFinite(maxPagesParam) && maxPagesParam > 0 ? maxPagesParam : 10;  // Stop early if API returns 400/404 (offset cap)
+    const MAX_PAGES = Number.isFinite(maxPagesParam) && maxPagesParam > 0 ? maxPagesParam : 5;  // Reduced from 10 to stay under 60s edge function timeout
     const START_OFFSET = Number.isFinite(startOffsetParam) && startOffsetParam > 0 ? startOffsetParam : 0;
 
     // Store ALL trades >= $100 for better position tracking (lowered from $1k)
@@ -523,7 +523,7 @@ serve(async (req) => {
       const positionUpdateTrades = rows.filter(r => r.trader_address && r.market_id && (r.amount || 0) >= 500);
 
       // Process in smaller batches to avoid timeouts
-      const BATCH_SIZE = 50;
+      const BATCH_SIZE = 20;  // Reduced from 50 to lower concurrent DB pressure
       for (let i = 0; i < positionUpdateTrades.length; i += BATCH_SIZE) {
         const batch = positionUpdateTrades.slice(i, i + BATCH_SIZE);
 
