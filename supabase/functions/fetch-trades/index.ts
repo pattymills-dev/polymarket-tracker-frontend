@@ -1047,13 +1047,10 @@ serve(async (req) => {
 
     hitMaxPages = pageCount >= MAX_PAGES && !stoppedByEmptyPage;
 
-    // Recalculate trader stats after storing all trades
-    const { error: statsError } = await supabase.rpc('recalculate_trader_stats');
-    if (statsError) {
-      console.error("Error recalculating trader stats:", statsError);
-    } else {
-      console.log("Trader stats recalculated successfully");
-    }
+    // NOTE: recalculate_trader_stats removed — full-table GROUP BY now exceeds
+    // statement timeout as trades table has grown. trader_stats is still populated
+    // by individual update_wallet_activity RPCs during trade processing above.
+    console.log("Skipping recalculate_trader_stats (exceeds statement timeout)");
 
     // Refresh trader rankings (critical for alerts)
     const { error: rankingsError } = await supabase.rpc('refresh_trader_rankings');
