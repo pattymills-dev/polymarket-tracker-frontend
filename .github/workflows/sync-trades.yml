@@ -115,7 +115,7 @@ jobs:
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=1440")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "Response (paper copy): $body"
@@ -324,3 +324,20 @@ jobs:
         env:
           SUPABASE_URL: https://smuktlgclwvaxnduuinm.supabase.co
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Send paper PnL Telegram update (since reset)
+        if: steps.profile.outputs.hourly == 'true'
+        continue-on-error: true
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/paper-pnl-telegram-alert?scope=since_reset")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (paper pnl telegram): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Warning: paper-pnl-telegram-alert returned $http_code"
+          fi

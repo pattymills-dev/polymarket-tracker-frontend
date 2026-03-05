@@ -18,6 +18,13 @@ function cleanString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 type PolymarketUrlInput = {
   eventSlug?: string | null;
   marketSlug?: string | null;
@@ -55,8 +62,10 @@ type TradeMeta = {
 
 function formatTraderLine(meta: TradeMeta | null): string {
   if (!meta) return "";
-  const address = cleanString(meta.traderAddress);
-  const name = cleanString(meta.traderPseudonym) ?? cleanString(meta.traderName);
+  const addressRaw = cleanString(meta.traderAddress);
+  const nameRaw = cleanString(meta.traderPseudonym) ?? cleanString(meta.traderName);
+  const address = addressRaw ? escapeHtml(addressRaw) : null;
+  const name = nameRaw ? escapeHtml(nameRaw) : null;
 
   if (!address && !name) return "";
   if (name && address) return `\n👤 Trader: ${name} (${address})`;
@@ -84,7 +93,8 @@ async function sendTelegramAlert(alert: any, meta: TradeMeta | null): Promise<vo
       ? `\n\n🔗 <a href="${polymarketUrl}">View on Polymarket</a>`
       : '';
 
-    const text = `${alert.message}${traderLine}${polymarketLink}`;
+    const safeMessage = escapeHtml(String(alert.message ?? ""));
+    const text = `${safeMessage}${traderLine}${polymarketLink}`;
 
     const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
@@ -1000,11 +1010,11 @@ serve(async (req) => {
             // 1. copyable - High ROI traders worth tailing
             // 2. dormant_whale - Potential insider signal (wallet inactive 180+ days)
             // 3. isolated_contact - Rare trader + thin market + outsized bet
-            // NOT sent: tail_risk (auto-watchlist only — too noisy for Telegram)
+            // 4. tail_risk - Large extreme-price bets (rate-limited by globalRemaining)
             // NOT sent: whale_position (stored for website only)
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'copyable' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact')) {
+                  (alert.type === 'copyable' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact' || alert.type === 'tail_risk')) {
                 const meta = tradeMetaByHash.get(alert.trade_hash) ?? null;
                 await sendTelegramAlert(alert, meta);
               }
