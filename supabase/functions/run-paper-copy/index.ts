@@ -62,6 +62,7 @@ const DEFAULT_MARKET_EXPOSURE_CAP_PCT = 0.2;
 const DEFAULT_FIXED_USD_PER_TRADE = 25; // Raised from $10 — amplify edge on 50¢+ trades (67-91% WR)
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
+const DEFAULT_MAX_TRADE_AGE_MINUTES = 10; // Avoid late/backfilled entries that are no longer actionable
 const SIZING_METHOD = "fixed_stake";
 const PRICE_RULE = "source_price_plus_penalty";
 
@@ -113,8 +114,15 @@ serve(async (req) => {
     const requestUrl = new URL(req.url);
     const dryRun = requestUrl.searchParams.get("dry_run") === "1";
     const limitParam = toNumber(requestUrl.searchParams.get("limit"));
+    const maxTradeAgeMinutesParam = toNumber(
+      requestUrl.searchParams.get("max_trade_age_minutes"),
+    );
     const maxTradesPerWallet =
       limitParam && limitParam > 0 ? Math.floor(limitParam) : DEFAULT_LIMIT;
+    const maxTradeAgeMinutes =
+      maxTradeAgeMinutesParam && maxTradeAgeMinutesParam > 0
+        ? Math.floor(maxTradeAgeMinutesParam)
+        : DEFAULT_MAX_TRADE_AGE_MINUTES;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -513,10 +521,62 @@ serve(async (req) => {
       summary.trades_scanned += trades.length;
 
       let maxSeen = lastSeen;
+      let earliestRetryableTradeTs: Date | null = null;
 
       for (const trade of trades) {
         const tradeTs = trade.timestamp ? new Date(trade.timestamp) : null;
         if (tradeTs && tradeTs > maxSeen) maxSeen = tradeTs;
+
+        if (!tradeTs || Number.isNaN(tradeTs.getTime())) {
+          logTradeSkip(
+            trade.tx_hash ?? null,
+            wallet,
+            trade.market_id ?? null,
+            "missing_trade_timestamp",
+          );
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "missing_trade_timestamp",
+            source_trade_id: trade.tx_hash ?? null,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id ?? null,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side: trade.side ?? null,
+            source_price: trade.price ?? null,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+          });
+          continue;
+        }
+
+        const tradeAgeMinutes = (now.getTime() - tradeTs.getTime()) / (1000 * 60);
+        if (tradeAgeMinutes > maxTradeAgeMinutes) {
+          logTradeSkip(
+            trade.tx_hash ?? null,
+            wallet,
+            trade.market_id ?? null,
+            "stale_trade",
+          );
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "stale_trade",
+            source_trade_id: trade.tx_hash ?? null,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id ?? null,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side: trade.side ?? null,
+            source_price: trade.price ?? null,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+          });
+          continue;
+        }
 
         const ranking = rankingMap.get(wallet);
         const rankingSnapshot = ranking
@@ -1182,6 +1242,12 @@ serve(async (req) => {
 
           if (insertError) {
             console.warn("Insert failed:", insertError.message);
+            if (
+              !earliestRetryableTradeTs ||
+              tradeTs < earliestRetryableTradeTs
+            ) {
+              earliestRetryableTradeTs = tradeTs;
+            }
             logTradeSkip(
               trade.tx_hash,
               wallet,
@@ -1317,11 +1383,26 @@ serve(async (req) => {
       }
 
       if (!dryRun && maxSeen && maxSeen > lastSeen) {
+        let safeCursor = maxSeen;
+        if (earliestRetryableTradeTs) {
+          const rewind = new Date(earliestRetryableTradeTs.getTime() - 1000);
+          if (rewind < safeCursor) {
+            safeCursor = rewind;
+          }
+          console.warn(
+            `Retryable copy failure for ${wallet}; rewinding cursor to ${safeCursor.toISOString()}`,
+          );
+        }
+
+        if (safeCursor <= lastSeen) {
+          continue;
+        }
+
         const { error: updateError } = await supabase
           .from("copy_state")
           .upsert({
             wallet,
-            last_seen_ts: maxSeen.toISOString(),
+            last_seen_ts: safeCursor.toISOString(),
             updated_at: now.toISOString(),
           });
 
