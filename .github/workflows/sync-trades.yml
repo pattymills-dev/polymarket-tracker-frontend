@@ -5,6 +5,15 @@ on:
     # Run every 15 minutes
     - cron: '*/15 * * * *'
   workflow_dispatch: # Allow manual trigger
+    inputs:
+      run_maintenance:
+        description: "Also run hourly/daily maintenance steps"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 # Prevent concurrent runs from cancelling each other
 concurrency:
@@ -49,8 +58,10 @@ jobs:
           daily=false
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            hourly=true
-            daily=true
+            if [ "${{ github.event.inputs.run_maintenance }}" = "true" ]; then
+              hourly=true
+              daily=true
+            fi
           else
             minute=$(date -u +%M)
             hour=$(date -u +%H)
