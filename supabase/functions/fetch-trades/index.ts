@@ -472,15 +472,13 @@ serve(async (req) => {
       const copyableAddresses = new Set((copyableRankings || []).map((t: any) => t.trader_address?.toLowerCase()));
       const copyableMap = new Map((copyableRankings || []).map((t: any) => [t.trader_address?.toLowerCase(), t]));
 
-      // Global alert rate limit (only for alerts that go to Telegram)
-      // whale_position alerts are stored but NOT sent to Telegram, so don't count them
+      // Global alert rate limit for Telegram-routed inside-trading signals only.
       const globalSince = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       const { count: recentGlobalAlerts } = await supabase
         .from("alerts")
         .select("id", { count: "exact", head: true })
         .gte("created_at", globalSince)
-        .in("type", ["copyable", "dormant_whale", "isolated_contact"])
-        .not("type", "eq", "whale_position");  // Exclude whale_position from rate limit
+        .in("type", ["dormant_whale", "isolated_contact"]);
       let globalRemaining = Math.max(0, GLOBAL_ALERTS_PER_HOUR - (recentGlobalAlerts || 0));
 
       // Heater-aware dedupe: fetch recent alerts with rank/score for material-change detection
@@ -657,7 +655,7 @@ serve(async (req) => {
         };
 
         // Copyable alert (30D) with heater-aware dedupe
-        if (isCopyable && r.amount >= COPYABLE_ALERT_MIN_TRADE_SIZE && globalRemaining > 0) {
+        if (isCopyable && r.amount >= COPYABLE_ALERT_MIN_TRADE_SIZE) {
           const rank = safeNumber(copyableInfo?.copyable_rank_30d) || 0;
           const score = safeNumber(copyableInfo?.copy_score_30d) || 0;
           const copyableTraderRoi = safeNumber(copyableInfo?.realized_roi_30d);
@@ -775,7 +773,6 @@ serve(async (req) => {
             message: `🎯 ELITE TRADER #${rank} (30D) ${confidenceDots}\n[${record}] ${winRatePct}% Win | ROI ${roiPct}% | P/L $${plText}\n$${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
             sent: false,
           });
-          globalRemaining -= 1;
         }
 
         // Collect candidates for Isolated Contact (will batch check after loop)
@@ -789,7 +786,7 @@ serve(async (req) => {
 
         // TAIL RISK: Large bet at extreme price (<10¢ or >90¢) — any trader, any status
         // This DELIBERATELY triggers on extreme prices (the opposite of copyable alerts which SUPPRESS them)
-        if (globalRemaining > 0 && r.amount >= 5000 && priceNum != null) {
+        if (r.amount >= 5000 && priceNum != null) {
           if (priceNum < 0.10 || priceNum > 0.90) {
             alertRows.push({
               type: "tail_risk",
@@ -806,7 +803,6 @@ serve(async (req) => {
               message: `🔥 TAIL RISK: $${Math.round(r.amount).toLocaleString()} ${betDirection} at ${Math.round(priceNum * 100)}¢ on ${r.market_title || r.market_id}`,
               sent: false,
             });
-            globalRemaining -= 1;
           }
         }
       }
@@ -1006,15 +1002,13 @@ serve(async (req) => {
             // Build a set of newly inserted trade_hashes
             const insertedHashes = new Set(newAlerts.map((a: any) => a.trade_hash));
 
-            // Send Telegram for:
-            // 1. copyable - High ROI traders worth tailing
-            // 2. dormant_whale - Potential insider signal (wallet inactive 180+ days)
-            // 3. isolated_contact - Rare trader + thin market + outsized bet
-            // 4. tail_risk - Large extreme-price bets (rate-limited by globalRemaining)
-            // NOT sent: whale_position (stored for website only)
+            // Send Telegram for high-signal inside-trading indicators only:
+            // 1. dormant_whale
+            // 2. isolated_contact
+            // NOT sent: copyable, tail_risk, whale_position
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'copyable' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact' || alert.type === 'tail_risk')) {
+                  (alert.type === 'dormant_whale' || alert.type === 'isolated_contact')) {
                 const meta = tradeMetaByHash.get(alert.trade_hash) ?? null;
                 await sendTelegramAlert(alert, meta);
               }
