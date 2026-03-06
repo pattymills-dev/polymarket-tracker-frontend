@@ -21,6 +21,7 @@ function clamp(value: number, min: number, max: number): number {
 type CopyTrader = {
   wallet: string | null;
   enabled: boolean | null;
+  pinned: boolean | null;
   copy_factor: number | string | null;
   min_usd: number | string | null;
   max_usd: number | string | null;
@@ -59,7 +60,8 @@ const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
 const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.6;
 const DEFAULT_MARKET_EXPOSURE_CAP_PCT = 0.2;
-const DEFAULT_FIXED_USD_PER_TRADE = 25; // Raised from $10 — amplify edge on 50¢+ trades (67-91% WR)
+const DEFAULT_FIXED_USD_PER_TRADE = 10;
+const SAFETY_MAX_FIXED_USD_PER_TRADE = 10;
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
 const DEFAULT_MAX_TRADE_AGE_MINUTES = 10; // Avoid late/backfilled entries that are no longer actionable
@@ -73,7 +75,11 @@ const MAX_RANKINGS_AGE_HOURS = 24; // Skip copying if data is older than 24 hour
 const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 8; // Raised from 3 — position_cap_reached was 22% of skips
 
 // Default rank gate - only copy from traders in top N (can be overridden per trader)
-const DEFAULT_MAX_COPYABLE_RANK = 30; // Raised from 20 — rank_gate was 37% of all skips
+const DEFAULT_MAX_COPYABLE_RANK = 15;
+const DEFAULT_MIN_RESOLVED_TRADES_30D = 40;
+const DEFAULT_MIN_CONFIDENCE_30D = 0.6;
+const DEFAULT_PER_TRADER_COOLDOWN_MINUTES = 240;
+const DEFAULT_MAX_ENTRIES_PER_TRADER_MARKET_24H = 1;
 
 // Rank decay threshold - if a trader falls this many spots, flag them
 const RANK_DECAY_WARNING_THRESHOLD = 10;
@@ -103,6 +109,17 @@ function isBlacklistedMarket(slug: string | null): boolean {
   if (!slug) return false;
   const lowerSlug = slug.toLowerCase();
   return BLACKLISTED_SLUG_PREFIXES.some(prefix => lowerSlug.startsWith(prefix));
+}
+
+function isTemporarilyPausedTotalsMarket(
+  title: string | null,
+  slug: string | null,
+): boolean {
+  const haystack = `${title ?? ""} ${slug ?? ""}`.toLowerCase();
+  return haystack.includes(" o/u ") ||
+    haystack.includes("over/under") ||
+    haystack.includes("total points") ||
+    haystack.includes("-ou-");
 }
 
 serve(async (req) => {
@@ -371,8 +388,12 @@ serve(async (req) => {
     const portfolioMarketExposureCapPct =
       toNumber(portfolio.market_exposure_cap_pct) ??
         DEFAULT_MARKET_EXPOSURE_CAP_PCT;
-    const fixedUsdPerTrade = toNumber(portfolio.fixed_usd_per_trade) ??
+    const configuredFixedUsdPerTrade = toNumber(portfolio.fixed_usd_per_trade) ??
       DEFAULT_FIXED_USD_PER_TRADE;
+    const fixedUsdPerTrade = Math.min(
+      configuredFixedUsdPerTrade,
+      SAFETY_MAX_FIXED_USD_PER_TRADE,
+    );
 
     const now = new Date();
     let copyRunId: string | null = null;
@@ -787,6 +808,32 @@ serve(async (req) => {
           continue;
         }
 
+        if (isTemporarilyPausedTotalsMarket(trade.market_title, trade.market_slug)) {
+          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "totals_market_paused");
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "totals_market_paused",
+            source_trade_id: trade.tx_hash,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side,
+            source_price: price,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+            copy_factor: copyFactor,
+            max_trader_exposure_pct: maxTraderExposurePct,
+            min_price: minPrice,
+            max_price: maxPrice,
+            allow_sells: allowSells,
+            ranking_snapshot: rankingSnapshot,
+          });
+          continue;
+        }
+
         // Position cap check - prevent too many concurrent positions from one trader
         const maxOpenPositions = toNumber(traderRaw.max_open_positions) ?? DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER;
         const currentPositionCount = openPositionCountMap.get(wallet) ?? 0;
@@ -985,7 +1032,8 @@ serve(async (req) => {
           continue;
         }
 
-        const minResolvedTrades = toNumber(traderRaw.min_resolved_trades_30d);
+        const minResolvedTrades = toNumber(traderRaw.min_resolved_trades_30d) ??
+          DEFAULT_MIN_RESOLVED_TRADES_30D;
         if (
           minResolvedTrades != null &&
           (!ranking || toNumber(ranking.resolved_trades_30d) == null ||
@@ -1021,7 +1069,8 @@ serve(async (req) => {
           continue;
         }
 
-        const minConfidence = toNumber(traderRaw.min_confidence_30d);
+        const minConfidence = toNumber(traderRaw.min_confidence_30d) ??
+          DEFAULT_MIN_CONFIDENCE_30D;
         if (
           minConfidence != null &&
           (!ranking || toNumber(ranking.confidence_30d) == null ||
@@ -1148,9 +1197,68 @@ serve(async (req) => {
           continue;
         }
 
-        const cooldownMinutes = toNumber(
+        const configuredCooldownMinutes = toNumber(
           traderRaw.per_trader_cooldown_minutes ?? traderRaw.cooldown_minutes,
-        ) ?? 0;
+        );
+        const cooldownMinutes = configuredCooldownMinutes != null &&
+            configuredCooldownMinutes > 0
+          ? configuredCooldownMinutes
+          : DEFAULT_PER_TRADER_COOLDOWN_MINUTES;
+
+        if (tradeTs) {
+          const dailyCutoff = new Date(
+            tradeTs.getTime() - 24 * 60 * 60 * 1000,
+          ).toISOString();
+          const { data: recentDayEntries, error: dailyCapError } = await supabase
+            .from("paper_positions")
+            .select("id")
+            .eq("portfolio_id", portfolioId)
+            .eq("source_wallet", wallet)
+            .eq("market_id", trade.market_id)
+            .neq("status", "CANCELED")
+            .gte("entry_ts", dailyCutoff)
+            .limit(DEFAULT_MAX_ENTRIES_PER_TRADER_MARKET_24H);
+
+          if (dailyCapError) {
+            console.warn("Daily trader/market cap lookup failed:", dailyCapError.message);
+          } else if (
+            recentDayEntries &&
+            recentDayEntries.length >= DEFAULT_MAX_ENTRIES_PER_TRADER_MARKET_24H
+          ) {
+            logTradeSkip(
+              trade.tx_hash,
+              wallet,
+              trade.market_id,
+              "trader_market_daily_cap",
+            );
+            await recordDecision({
+              decision: "SKIPPED",
+              reason: "trader_market_daily_cap",
+              source_trade_id: trade.tx_hash,
+              source_wallet: wallet,
+              source_trade_ts: trade.timestamp ?? null,
+              market_id: trade.market_id,
+              market_slug: trade.market_slug ?? null,
+              market_title: trade.market_title ?? null,
+              outcome: trade.outcome ?? null,
+              side,
+              source_price: price,
+              entry_price: entryPrice,
+              price_penalty: penalty,
+              sizing_method: SIZING_METHOD,
+              fixed_usd_per_trade: fixedUsdPerTrade,
+              copy_factor: copyFactor,
+              max_trader_exposure_pct: maxTraderExposurePct,
+              min_price: minPrice,
+              max_price: maxPrice,
+              allow_sells: allowSells,
+              usd_size: usdSize,
+              ranking_snapshot: rankingSnapshot,
+            });
+            continue;
+          }
+        }
+
         if (cooldownMinutes > 0 && tradeTs) {
           const cutoff = new Date(
             tradeTs.getTime() - cooldownMinutes * 60 * 1000,
@@ -1162,6 +1270,7 @@ serve(async (req) => {
             .eq("portfolio_id", portfolioId)
             .eq("source_wallet", wallet)
             .eq("market_id", trade.market_id)
+            .neq("status", "CANCELED")
             .gte("entry_ts", cutoff)
             .limit(1);
 
