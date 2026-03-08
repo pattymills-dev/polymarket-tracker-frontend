@@ -326,7 +326,7 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Send paper PnL Telegram update (since reset fallback)
-        if: steps.profile.outputs.hourly == 'true'
+        if: always() && steps.profile.outputs.hourly == 'true'
         continue-on-error: true
         run: |
           hour=$(date -u +%H)
