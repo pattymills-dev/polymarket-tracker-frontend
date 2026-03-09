@@ -286,24 +286,11 @@ serve(async (req) => {
       }
 
       const metrics = aggregatePositions((positions || []) as PositionWithPriceRow[]);
-      const resetIso = new Date(reset.reset_at).toISOString();
 
       let message = "PAPER COPY (since reset)";
-      message += `\nReset at: ${resetIso}`;
-      if (reset.label) {
-        message += `\nLabel: ${reset.label}`;
-      }
       message += `\nCopied trades: ${metrics.countPositions}`;
-      message += `\nStaked: ${formatAbsUsd(metrics.totalStaked)}`;
-      message += `\nOpen: ${metrics.openCount} | Settled: ${metrics.settledCount}`;
+      message += `\nOpen positions: ${metrics.openCount} | Settled: ${metrics.settledCount}`;
       message += `\nProjected P/L: ${formatUsd(metrics.projectedTotal)} (Realized: ${formatUsd(metrics.realizedPnl)}, Unrealized: ${formatUsd(metrics.unrealizedPnl)})`;
-
-      if (metrics.missingPrices > 0) {
-        message += `\nMissing prices: ${metrics.missingPrices}`;
-      }
-
-      message += `\nTop traders: ${buildTopList(metrics.pnlByTrader)}`;
-      message += `\nTop markets: ${buildTopList(metrics.pnlByMarket)}`;
 
       if (!dryRun) {
         await sendTelegramMessage(message);
@@ -318,7 +305,7 @@ serve(async (req) => {
             id: reset.id ?? null,
             portfolio_id: reset.portfolio_id ?? null,
             label: reset.label ?? null,
-            reset_at: resetIso,
+            reset_at: new Date(reset.reset_at).toISOString(),
           },
           count_positions: metrics.countPositions,
           open_count: metrics.openCount,

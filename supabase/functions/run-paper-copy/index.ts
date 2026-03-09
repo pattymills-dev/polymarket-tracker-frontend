@@ -87,6 +87,8 @@ const RANK_DECAY_WARNING_THRESHOLD = 10;
 // Paper win-rate auto-gate - skip traders whose paper performance is poor
 const PAPER_WIN_RATE_MIN = 0.50;            // 50% win rate floor
 const PAPER_WIN_RATE_MIN_POSITIONS = 10;    // Only apply after 10+ settled positions
+const PAPER_LOSS_GATE_MIN_POSITIONS = 4;    // Apply drawdown gate after a small sample
+const PAPER_REALIZED_LOSS_GATE_USD = -20;   // Stop copying traders who lose $20+ in paper
 
 // Market category filters - esports markets have been unprofitable
 // Blacklist slugs that start with these prefixes
@@ -323,7 +325,13 @@ serve(async (req) => {
     }
 
     // Load paper win/loss counts per trader for the win-rate gate
-    const paperWinRateMap = new Map<string, { wins: number; losses: number; total: number; winRate: number }>();
+    const paperWinRateMap = new Map<string, {
+      wins: number;
+      losses: number;
+      total: number;
+      winRate: number;
+      realizedPnl: number;
+    }>();
     if (wallets.length > 0) {
       const { data: settledPositions, error: settledError } = await supabase
         .from("paper_positions")
@@ -338,20 +346,30 @@ serve(async (req) => {
         for (const pos of settledPositions || []) {
           if (pos?.source_wallet) {
             const w = String(pos.source_wallet).toLowerCase();
-            const current = paperWinRateMap.get(w) ?? { wins: 0, losses: 0, total: 0, winRate: 0 };
+            const pnl = toNumber(pos.pnl_usd) ?? 0;
+            const current = paperWinRateMap.get(w) ?? {
+              wins: 0,
+              losses: 0,
+              total: 0,
+              winRate: 0,
+              realizedPnl: 0,
+            };
             current.total += 1;
-            if ((toNumber(pos.pnl_usd) ?? 0) > 0) {
+            if (pnl > 0) {
               current.wins += 1;
             } else {
               current.losses += 1;
             }
+            current.realizedPnl += pnl;
             current.winRate = current.total > 0 ? current.wins / current.total : 0;
             paperWinRateMap.set(w, current);
           }
         }
         // Log paper performance for diagnostics
         for (const [w, stats] of paperWinRateMap) {
-          console.log(`Paper performance ${w.slice(0, 10)}...: ${stats.wins}W-${stats.losses}L (${(stats.winRate * 100).toFixed(1)}%) from ${stats.total} settled`);
+          console.log(
+            `Paper performance ${w.slice(0, 10)}...: ${stats.wins}W-${stats.losses}L (${(stats.winRate * 100).toFixed(1)}%) from ${stats.total} settled, pnl=${stats.realizedPnl.toFixed(2)}`,
+          );
         }
       }
     }
@@ -935,6 +953,39 @@ serve(async (req) => {
             paper_win_rate: paperStats.winRate,
             paper_min_positions: PAPER_WIN_RATE_MIN_POSITIONS,
             paper_min_win_rate: PAPER_WIN_RATE_MIN,
+          });
+          continue;
+        }
+
+        if (
+          paperStats &&
+          paperStats.total >= PAPER_LOSS_GATE_MIN_POSITIONS &&
+          paperStats.realizedPnl <= PAPER_REALIZED_LOSS_GATE_USD
+        ) {
+          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "paper_realized_loss_gate");
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "paper_realized_loss_gate",
+            source_trade_id: trade.tx_hash,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side,
+            source_price: price,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+            copy_factor: copyFactor,
+            max_trader_exposure_pct: maxTraderExposurePct,
+            min_price: minPrice,
+            max_price: maxPrice,
+            allow_sells: allowSells,
+            ranking_snapshot: rankingSnapshot,
+            paper_positions: paperStats.total,
+            paper_realized_pnl: paperStats.realizedPnl,
+            paper_loss_gate_usd: PAPER_REALIZED_LOSS_GATE_USD,
           });
           continue;
         }
