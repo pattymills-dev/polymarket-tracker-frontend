@@ -287,8 +287,8 @@ serve(async (req) => {
 
       const metrics = aggregatePositions((positions || []) as PositionWithPriceRow[]);
 
-      let message = "PAPER COPY (since reset)";
-      message += `\nCopied trades: ${metrics.countPositions}`;
+      let message = "PAPER PORTFOLIO (since reset)";
+      message += `\nTrades: ${metrics.countPositions}`;
       message += `\nOpen positions: ${metrics.openCount} | Settled: ${metrics.settledCount}`;
       message += `\nProjected P/L: ${formatUsd(metrics.projectedTotal)} (Realized: ${formatUsd(metrics.realizedPnl)}, Unrealized: ${formatUsd(metrics.unrealizedPnl)})`;
 

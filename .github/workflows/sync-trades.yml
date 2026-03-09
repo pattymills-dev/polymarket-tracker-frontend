@@ -65,10 +65,11 @@ jobs:
           else
             minute=$(date -u +%M)
             hour=$(date -u +%H)
-            if [ "$minute" = "00" ]; then
+            # GitHub scheduled runs can start a few minutes late; treat first quarter-hour as the hourly window.
+            if [ $((10#$minute)) -lt 15 ]; then
               hourly=true
             fi
-            if [ "$hour" = "00" ] && [ "$minute" = "00" ]; then
+            if [ "$hour" = "00" ] && [ $((10#$minute)) -lt 15 ]; then
               daily=true
             fi
           fi
@@ -127,6 +128,7 @@ jobs:
           fi
 
       - name: Run structural paper trading
+        continue-on-error: true
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \

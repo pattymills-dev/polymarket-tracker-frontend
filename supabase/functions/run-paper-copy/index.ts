@@ -52,19 +52,30 @@ type PaperPortfolio = {
   fixed_usd_per_trade: number | string | null;
 };
 
+type OpenCopyPositionWithPrice = {
+  id: string;
+  source_wallet: string | null;
+  market_id: string | null;
+  shares: number | string | null;
+  usd_size: number | string | null;
+  current_price: number | string | null;
+  entry_ts: string | null;
+};
+
 const DEFAULT_COPY_FACTOR = 0.1;
 const DEFAULT_PRICE_PENALTY = 0.01;
 const DEFAULT_MIN_PRICE = 0.45; // Raised from 0.05 — longshots (<45¢) bleed: 7% WR at <30¢, 36% at 30-50¢
-const DEFAULT_MAX_PRICE = 0.80;
+const DEFAULT_MAX_PRICE = 0.68; // Avoid expensive favorites with poor payoff asymmetry
 const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
-const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.6;
-const DEFAULT_MARKET_EXPOSURE_CAP_PCT = 0.2;
+const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.35;
+const DEFAULT_MARKET_EXPOSURE_CAP_PCT = 0.08;
 const DEFAULT_FIXED_USD_PER_TRADE = 10;
 const SAFETY_MAX_FIXED_USD_PER_TRADE = 10;
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
 const DEFAULT_MAX_TRADE_AGE_MINUTES = 10; // Avoid late/backfilled entries that are no longer actionable
+const MAX_NEW_POSITIONS_PER_RUN = 6; // Keep activity focused and avoid burst overtrading
 const SIZING_METHOD = "fixed_stake";
 const PRICE_RULE = "source_price_plus_penalty";
 
@@ -90,6 +101,12 @@ const PAPER_WIN_RATE_MIN_POSITIONS = 10;    // Only apply after 10+ settled posi
 const PAPER_LOSS_GATE_MIN_POSITIONS = 4;    // Apply drawdown gate after a small sample
 const PAPER_REALIZED_LOSS_GATE_USD = -20;   // Stop copying traders who lose $20+ in paper
 
+// Copy lane risk controls: close before resolution when drift edge is captured/lost.
+const COPY_TAKE_PROFIT_PCT = 0.12;
+const COPY_STOP_LOSS_PCT = -0.22;
+const COPY_SOFT_MAX_HOLD_HOURS = 8;
+const COPY_HARD_MAX_HOLD_HOURS = 20;
+
 // Market category filters - esports markets have been unprofitable
 // Blacklist slugs that start with these prefixes
 const BLACKLISTED_SLUG_PREFIXES = [
@@ -106,11 +123,59 @@ const BLACKLISTED_SLUG_PREFIXES = [
   "r6siege-",  // Rainbow Six Siege
 ];
 
+// Sports moneyline/spread markets have dominated drawdown in this portfolio.
+const SPORTS_SLUG_PREFIXES = [
+  "nba-",
+  "nhl-",
+  "nfl-",
+  "mlb-",
+  "wnba-",
+  "cbb-",
+  "ncaa-",
+  "ncaaf-",
+  "epl-",
+  "mls-",
+  "lal-",
+  "ligue1-",
+  "seriea-",
+  "bundesliga-",
+  "ufc-",
+  "mma-",
+  "atp-",
+  "wta-",
+  "pga-",
+  "f1-",
+  "nascar-",
+];
+
+const SPORTS_TITLE_HINTS = [
+  " vs. ",
+  " o/u ",
+  "over/under",
+  "spread:",
+  "moneyline",
+  " first half",
+  " period ",
+  " quarter ",
+];
+
 // Helper to check if a market slug is blacklisted
 function isBlacklistedMarket(slug: string | null): boolean {
   if (!slug) return false;
   const lowerSlug = slug.toLowerCase();
   return BLACKLISTED_SLUG_PREFIXES.some(prefix => lowerSlug.startsWith(prefix));
+}
+
+function isBroadSportsMarket(
+  title: string | null,
+  slug: string | null,
+): boolean {
+  const lowerSlug = (slug ?? "").toLowerCase();
+  if (SPORTS_SLUG_PREFIXES.some((prefix) => lowerSlug.startsWith(prefix))) {
+    return true;
+  }
+  const lowerTitle = (title ?? "").toLowerCase();
+  return SPORTS_TITLE_HINTS.some((hint) => lowerTitle.includes(hint));
 }
 
 function isTemporarilyPausedTotalsMarket(
@@ -421,6 +486,7 @@ serve(async (req) => {
       wallets_processed: 0,
       trades_scanned: 0,
       positions_created: 0,
+      positions_closed_risk: 0,
       cursors_updated: 0,
       skipped: 0,
       skip_reasons: {} as Record<string, number>,
@@ -478,6 +544,84 @@ serve(async (req) => {
         }: ${reason}`,
       );
     };
+
+    const copiedSignalKeysThisRun = new Set<string>();
+
+    // Risk-first behavior: close copy positions pre-resolution when edge is captured/lost.
+    const { data: openCopyRows, error: openCopyRowsError } = await supabase
+      .from("paper_positions_with_price")
+      .select("id,source_wallet,market_id,shares,usd_size,current_price,entry_ts")
+      .eq("portfolio_id", portfolioId)
+      .eq("strategy_lane", "copy")
+      .eq("status", "OPEN")
+      .limit(5000);
+
+    if (openCopyRowsError) {
+      console.warn("Failed to load open copy positions for risk manager:", openCopyRowsError.message);
+    } else {
+      const nowIso = now.toISOString();
+      for (const row of (openCopyRows || []) as OpenCopyPositionWithPrice[]) {
+        const currentPrice = toNumber(row.current_price);
+        const shares = toNumber(row.shares) ?? 0;
+        const usdSize = toNumber(row.usd_size) ?? 0;
+        if (currentPrice == null || usdSize <= 0 || shares <= 0) continue;
+
+        const pnlUsd = shares * currentPrice - usdSize;
+        const pnlPct = pnlUsd / usdSize;
+        const holdHours = row.entry_ts
+          ? (now.getTime() - new Date(row.entry_ts).getTime()) / (1000 * 60 * 60)
+          : 0;
+
+        let exitReason: string | null = null;
+        if (pnlPct >= COPY_TAKE_PROFIT_PCT) {
+          exitReason = "copy_take_profit";
+        } else if (pnlPct <= COPY_STOP_LOSS_PCT) {
+          exitReason = "copy_stop_loss";
+        } else if (holdHours >= COPY_HARD_MAX_HOLD_HOURS) {
+          exitReason = "copy_time_stop";
+        } else if (holdHours >= COPY_SOFT_MAX_HOLD_HOURS && pnlPct >= -0.02) {
+          exitReason = "copy_time_exit";
+        }
+        if (!exitReason) continue;
+
+        if (!dryRun) {
+          const { error: closeError } = await supabase
+            .from("paper_positions")
+            .update({
+              status: "SETTLED",
+              exit_price: currentPrice,
+              exit_ts: nowIso,
+              pnl_usd: pnlUsd,
+              exit_reason: exitReason,
+              updated_at: nowIso,
+            })
+            .eq("id", row.id)
+            .eq("status", "OPEN")
+            .eq("strategy_lane", "copy");
+          if (closeError) {
+            console.warn(`Failed to risk-close copy position ${row.id}:`, closeError.message);
+            noteSkip("copy_risk_close_failed");
+            continue;
+          }
+        }
+
+        summary.positions_closed_risk += 1;
+        openTotalUsd = Math.max(0, openTotalUsd - usdSize);
+        const rowWallet = row.source_wallet?.toLowerCase();
+        if (rowWallet) {
+          const nextExposure = Math.max(0, (openTraderMap.get(rowWallet) ?? 0) - usdSize);
+          openTraderMap.set(rowWallet, nextExposure);
+          const nextCount = Math.max(0, (openPositionCountMap.get(rowWallet) ?? 0) - 1);
+          openPositionCountMap.set(rowWallet, nextCount);
+        }
+        if (row.market_id && openMarketMap.has(row.market_id)) {
+          openMarketMap.set(
+            row.market_id,
+            Math.max(0, (openMarketMap.get(row.market_id) ?? 0) - usdSize),
+          );
+        }
+      }
+    }
 
     for (const traderRaw of traders as CopyTrader[]) {
       const wallet = traderRaw.wallet?.toLowerCase() ?? null;
@@ -563,6 +707,31 @@ serve(async (req) => {
       let earliestRetryableTradeTs: Date | null = null;
 
       for (const trade of trades) {
+        if (summary.positions_created >= MAX_NEW_POSITIONS_PER_RUN) {
+          logTradeSkip(
+            trade.tx_hash ?? null,
+            wallet,
+            trade.market_id ?? null,
+            "run_position_cap",
+          );
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "run_position_cap",
+            source_trade_id: trade.tx_hash ?? null,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id ?? null,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side: trade.side ?? null,
+            source_price: trade.price ?? null,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+          });
+          continue;
+        }
+
         const tradeTs = trade.timestamp ? new Date(trade.timestamp) : null;
         if (tradeTs && tradeTs > maxSeen) maxSeen = tradeTs;
 
@@ -831,6 +1000,59 @@ serve(async (req) => {
           await recordDecision({
             decision: "SKIPPED",
             reason: "totals_market_paused",
+            source_trade_id: trade.tx_hash,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side,
+            source_price: price,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+            copy_factor: copyFactor,
+            max_trader_exposure_pct: maxTraderExposurePct,
+            min_price: minPrice,
+            max_price: maxPrice,
+            allow_sells: allowSells,
+            ranking_snapshot: rankingSnapshot,
+          });
+          continue;
+        }
+
+        if (isBroadSportsMarket(trade.market_title, trade.market_slug)) {
+          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "sports_market_paused");
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "sports_market_paused",
+            source_trade_id: trade.tx_hash,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side,
+            source_price: price,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+            copy_factor: copyFactor,
+            max_trader_exposure_pct: maxTraderExposurePct,
+            min_price: minPrice,
+            max_price: maxPrice,
+            allow_sells: allowSells,
+            ranking_snapshot: rankingSnapshot,
+          });
+          continue;
+        }
+
+        const signalKey = `${wallet}:${trade.market_id}:${(trade.outcome ?? "").toLowerCase()}:${side}`;
+        if (copiedSignalKeysThisRun.has(signalKey)) {
+          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "duplicate_signal_same_run");
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "duplicate_signal_same_run",
             source_trade_id: trade.tx_hash,
             source_wallet: wallet,
             source_trade_ts: trade.timestamp ?? null,
@@ -1447,6 +1669,7 @@ serve(async (req) => {
 
           if (inserted && inserted.length > 0) {
             summary.positions_created += 1;
+            copiedSignalKeysThisRun.add(signalKey);
             openTotalUsd += usdSize;
             openTraderMap.set(wallet, currentTraderExposure + usdSize);
             openMarketMap.set(trade.market_id, currentMarketExposure + usdSize);
@@ -1512,6 +1735,7 @@ serve(async (req) => {
           }
         } else {
           summary.positions_created += 1;
+          copiedSignalKeysThisRun.add(signalKey);
           openTotalUsd += usdSize;
           openTraderMap.set(wallet, currentTraderExposure + usdSize);
           openMarketMap.set(trade.market_id, currentMarketExposure + usdSize);
