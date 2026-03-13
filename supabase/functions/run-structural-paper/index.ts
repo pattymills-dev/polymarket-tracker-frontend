@@ -27,6 +27,9 @@ const MAX_OUTCOME_PRICE = 0.97;
 const MIN_MARKET_LIQUIDITY = 10000;
 const MIN_MINUTES_TO_CLOSE = 180;
 const FORCE_EXIT_MINUTES_TO_CLOSE = 45;
+const DISCOVERY_MARKET_LIMIT = 250;
+const LATENCY_BPS = 12;
+const DEFAULT_FEE_BPS = 0;
 
 const TAKE_PROFIT_SUM_DELTA = 0.015;
 const STOP_LOSS_SUM_DELTA = 0.03;
@@ -256,6 +259,10 @@ type QuoteSummary = {
   tokenId: string;
   bestBid: number | null;
   bestAsk: number | null;
+  feeBps: number;
+  latencyBps: number;
+  bidAfterCosts: number | null;
+  askWithCosts: number | null;
   bidDepth: number;
   askDepth: number;
   midpoint: number | null;
@@ -266,6 +273,21 @@ type QuoteSummary = {
   bids: OrderBookLevel[];
   asks: OrderBookLevel[];
 };
+
+function normalizeFeeBps(value: unknown): number {
+  const n = toNumber(value);
+  if (n == null || n < 0) return DEFAULT_FEE_BPS;
+  if (n <= 1) return n * 10_000;
+  return n;
+}
+
+function applyBuyCosts(price: number, feeBps: number, latencyBps: number): number {
+  return price * (1 + (feeBps + latencyBps) / 10_000);
+}
+
+function applySellCosts(price: number, feeBps: number, latencyBps: number): number {
+  return price * Math.max(0, 1 - (feeBps + latencyBps) / 10_000);
+}
 
 async function enrichMarketsFromGamma(markets: MarketMeta[]): Promise<Map<string, Partial<MarketMeta>>> {
   const updates = new Map<string, Partial<MarketMeta>>();
@@ -317,7 +339,9 @@ async function enrichMarketsFromGamma(markets: MarketMeta[]): Promise<Map<string
 
 async function fetchOrderBooks(tokenIds: string[]): Promise<Map<string, QuoteSummary>> {
   const quotes = new Map<string, QuoteSummary>();
-  for (const tokenId of tokenIds) {
+  if (tokenIds.length === 0) return quotes;
+
+  const loadSingle = async (tokenId: string) => {
     try {
       const book = await fetchJson(`${CLOB_URL}/book?token_id=${encodeURIComponent(tokenId)}`);
       const bids = parseLevels((book as any)?.bids);
@@ -328,6 +352,10 @@ async function fetchOrderBooks(tokenIds: string[]): Promise<Map<string, QuoteSum
         tokenId,
         bestBid,
         bestAsk,
+        feeBps: DEFAULT_FEE_BPS,
+        latencyBps: LATENCY_BPS,
+        bidAfterCosts: bestBid,
+        askWithCosts: bestAsk,
         bidDepth: totalDepth(bids),
         askDepth: totalDepth(asks),
         midpoint: midpoint(bestBid, bestAsk),
@@ -341,8 +369,82 @@ async function fetchOrderBooks(tokenIds: string[]): Promise<Map<string, QuoteSum
     } catch (error) {
       console.warn(`Failed to fetch order book for token ${tokenId}:`, String(error));
     }
+  };
+
+  try {
+    const response = await fetch(`${CLOB_URL}/books`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token_ids: tokenIds }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const books = Array.isArray(payload)
+      ? payload
+      : Array.isArray((payload as any)?.books)
+      ? (payload as any).books
+      : [];
+    for (const book of books) {
+      const tokenId = typeof (book as any)?.asset_id === "string"
+        ? (book as any).asset_id
+        : typeof (book as any)?.token_id === "string"
+        ? (book as any).token_id
+        : typeof (book as any)?.tokenId === "string"
+        ? (book as any).tokenId
+        : null;
+      if (!tokenId) continue;
+      const bids = parseLevels((book as any)?.bids);
+      const asks = parseLevels((book as any)?.asks);
+      const bestBid = bids[0]?.price ?? null;
+      const bestAsk = asks[0]?.price ?? null;
+      quotes.set(tokenId, {
+        tokenId,
+        bestBid,
+        bestAsk,
+        feeBps: DEFAULT_FEE_BPS,
+        latencyBps: LATENCY_BPS,
+        bidAfterCosts: bestBid,
+        askWithCosts: bestAsk,
+        bidDepth: totalDepth(bids),
+        askDepth: totalDepth(asks),
+        midpoint: midpoint(bestBid, bestAsk),
+        tickSize: toNumber((book as any)?.tick_size),
+        minOrderSize: toNumber((book as any)?.min_order_size),
+        negRisk: typeof (book as any)?.neg_risk === "boolean" ? (book as any).neg_risk : null,
+        quoteTs: new Date().toISOString(),
+        bids,
+        asks,
+      });
+    }
+  } catch (error) {
+    console.warn("Batch order book fetch failed, falling back to single-book requests:", String(error));
+  }
+
+  const missing = tokenIds.filter((tokenId) => !quotes.has(tokenId));
+  for (const tokenId of missing) {
+    await loadSingle(tokenId);
   }
   return quotes;
+}
+
+async function fetchFeeRates(tokenIds: string[]): Promise<Map<string, number>> {
+  const feeRates = new Map<string, number>();
+  for (const tokenId of tokenIds) {
+    try {
+      const payload = await fetchJson(`${CLOB_URL}/fee-rate?token_id=${encodeURIComponent(tokenId)}`);
+      const feeBps = normalizeFeeBps(
+        (payload as any)?.fee_rate_bps ??
+          (payload as any)?.feeRateBps ??
+          (payload as any)?.fee_rate ??
+          (payload as any)?.feeRate,
+      );
+      feeRates.set(tokenId, feeBps);
+    } catch (error) {
+      console.warn(`Failed to fetch fee rate for token ${tokenId}:`, String(error));
+      feeRates.set(tokenId, DEFAULT_FEE_BPS);
+    }
+  }
+  return feeRates;
 }
 
 serve(async (req) => {
@@ -403,9 +505,6 @@ serve(async (req) => {
 
     const now = new Date();
     const nowIso = now.toISOString();
-    const staleCutoffIso = new Date(
-      now.getTime() - MAX_PRICE_AGE_MINUTES * 60 * 1000,
-    ).toISOString();
     const dailyCutoffIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const maxOpenExposureUsd = portfolioEquityUsd * maxTotalExposurePct;
     const dailyGroupCap = Math.max(
@@ -521,58 +620,18 @@ serve(async (req) => {
         .filter((v): v is string => Boolean(v)),
     );
 
-    const { data: recentPrices, error: recentPricesError } = await supabase
-      .from("market_prices")
-      .select("market_id, outcome, price, updated_at")
-      .gte("updated_at", staleCutoffIso)
-      .order("updated_at", { ascending: false })
-      .limit(5000);
-    if (recentPricesError) {
-      throw new Error(`Failed to load market_prices: ${recentPricesError.message}`);
-    }
-
-    const pricesByMarket = new Map<string, MarketPrice[]>();
-    for (const row of (recentPrices || []) as MarketPrice[]) {
-      if (!row.market_id || !row.outcome) continue;
-      if (!pricesByMarket.has(row.market_id)) pricesByMarket.set(row.market_id, []);
-      pricesByMarket.get(row.market_id)!.push(row);
-    }
-
-    const candidateMarkets: Array<{
-      market_id: string;
-      outcomes: MarketPrice[];
-      sum_price: number;
-      edge: number;
-    }> = [];
-
-    for (const [marketId, rows] of pricesByMarket.entries()) {
-      const dedup = new Map<string, MarketPrice>();
-      for (const row of rows) {
-        if (!dedup.has(row.outcome)) dedup.set(row.outcome, row);
-      }
-      const outcomes = Array.from(dedup.values());
-      if (outcomes.length !== 2) continue;
-      const p0 = toNumber(outcomes[0].price);
-      const p1 = toNumber(outcomes[1].price);
-      if (p0 == null || p1 == null) continue;
-      if (p0 <= MIN_OUTCOME_PRICE || p1 <= MIN_OUTCOME_PRICE) continue;
-      if (p0 >= MAX_OUTCOME_PRICE || p1 >= MAX_OUTCOME_PRICE) continue;
-      const sumPrice = p0 + p1;
-      const edge = 1 - sumPrice;
-      if (sumPrice > MAX_ENTRY_SUM || edge < MIN_ENTRY_EDGE) continue;
-      candidateMarkets.push({
-        market_id: marketId,
-        outcomes,
-        sum_price: sumPrice,
-        edge,
-      });
-    }
-
-    summary.markets_scanned = pricesByMarket.size;
-    summary.opportunities_found = candidateMarkets.length;
-
-    const candidateIds = candidateMarkets.map((c) => c.market_id);
     const marketMetaMap = new Map<string, MarketMeta>();
+    const { data: discoveryMarkets, error: discoveryMarketsError } = await supabase
+      .from("markets")
+      .select("id, question, slug, winning_outcome, liquidity, stats_updated_at, close_time, outcome_token_map")
+      .is("winning_outcome", null)
+      .order("liquidity", { ascending: false, nullsFirst: false })
+      .limit(DISCOVERY_MARKET_LIMIT);
+    if (discoveryMarketsError) {
+      throw new Error(`Failed to load discovery markets: ${discoveryMarketsError.message}`);
+    }
+
+    const candidateIds = (discoveryMarkets || []).map((row) => row.id).filter(Boolean);
     const allMetaIds = Array.from(new Set([...openMarketIds, ...candidateIds]));
     if (allMetaIds.length > 0) {
       for (let i = 0; i < allMetaIds.length; i += 200) {
@@ -592,6 +651,10 @@ serve(async (req) => {
           }
         }
       }
+    }
+
+    for (const row of (discoveryMarkets || []) as MarketMeta[]) {
+      marketMetaMap.set(row.id, row);
     }
 
     const enrichUpdates = await enrichMarketsFromGamma(Array.from(marketMetaMap.values()));
@@ -644,21 +707,80 @@ serve(async (req) => {
         token_id: tokenId,
       });
     }
-    for (const candidate of candidateMarkets) {
-      const meta = marketMetaMap.get(candidate.market_id);
+    const discoveryTargets = new Map<string, { market_id: string; outcome: string; token_id: string }>();
+    for (const marketId of candidateIds) {
+      const meta = marketMetaMap.get(marketId);
       const tokenMap = parseOutcomeTokenMap(meta?.outcome_token_map ?? null);
-      for (const outcomeRow of candidate.outcomes) {
-        const tokenId = getOutcomeTokenId(tokenMap, outcomeRow.outcome);
+      if (!tokenMap) continue;
+      for (const [outcome, tokenId] of Object.entries(tokenMap)) {
         if (!tokenId) continue;
-        quoteTargets.set(`${candidate.market_id}:${outcomeRow.outcome}`, {
-          market_id: candidate.market_id,
-          outcome: outcomeRow.outcome,
+        const target = {
+          market_id: marketId,
+          outcome,
           token_id: tokenId,
-        });
+        };
+        discoveryTargets.set(`${marketId}:${outcome}`, target);
+        quoteTargets.set(`${marketId}:${outcome}`, target);
       }
     }
 
     const quoteMap = await fetchOrderBooks(Array.from(new Set(Array.from(quoteTargets.values()).map((q) => q.token_id))));
+    const rawCandidateMarkets: Array<{
+      market_id: string;
+      outcomes: Array<{ outcome: string; tokenId: string; quote: QuoteSummary }>;
+      sum_price: number;
+      edge: number;
+    }> = [];
+
+    for (const marketId of candidateIds) {
+      const meta = marketMetaMap.get(marketId);
+      const tokenMap = parseOutcomeTokenMap(meta?.outcome_token_map ?? null);
+      if (!tokenMap) continue;
+      const outcomes = Object.entries(tokenMap)
+        .map(([outcome, tokenId]) => ({
+          outcome,
+          tokenId,
+          quote: quoteMap.get(tokenId) ?? null,
+        }))
+        .filter((row): row is { outcome: string; tokenId: string; quote: QuoteSummary } => Boolean(row.quote));
+      if (outcomes.length !== 2) continue;
+      const ask0 = outcomes[0].quote.bestAsk;
+      const ask1 = outcomes[1].quote.bestAsk;
+      if (ask0 == null || ask1 == null) continue;
+      if (ask0 <= MIN_OUTCOME_PRICE || ask1 <= MIN_OUTCOME_PRICE) continue;
+      if (ask0 >= MAX_OUTCOME_PRICE || ask1 >= MAX_OUTCOME_PRICE) continue;
+      const sumPrice = ask0 + ask1;
+      const edge = 1 - sumPrice;
+      if (sumPrice > MAX_ENTRY_SUM || edge < MIN_ENTRY_EDGE) continue;
+      rawCandidateMarkets.push({
+        market_id: marketId,
+        outcomes,
+        sum_price: sumPrice,
+        edge,
+      });
+    }
+
+    summary.markets_scanned = candidateIds.length;
+    summary.opportunities_found = rawCandidateMarkets.length;
+
+    const feeTokenIds = Array.from(new Set([
+      ...openRows
+        .map((pos) => {
+          const tokenMap = parseOutcomeTokenMap(openMarketMetaMap.get(pos.market_id)?.outcome_token_map ?? null);
+          return getOutcomeTokenId(tokenMap, pos.outcome);
+        })
+        .filter((v): v is string => Boolean(v)),
+      ...rawCandidateMarkets.flatMap((candidate) => candidate.outcomes.map((row) => row.tokenId)),
+    ]));
+    const feeRateMap = await fetchFeeRates(feeTokenIds);
+
+    for (const quote of quoteMap.values()) {
+      const feeBps = feeRateMap.get(quote.tokenId) ?? DEFAULT_FEE_BPS;
+      quote.feeBps = feeBps;
+      quote.latencyBps = LATENCY_BPS;
+      quote.bidAfterCosts = quote.bestBid == null ? null : applySellCosts(quote.bestBid, feeBps, LATENCY_BPS);
+      quote.askWithCosts = quote.bestAsk == null ? null : applyBuyCosts(quote.bestAsk, feeBps, LATENCY_BPS);
+    }
 
     if (!dryRun && quoteTargets.size > 0) {
       const quoteRows = Array.from(quoteTargets.values()).map((target) => {
@@ -669,6 +791,10 @@ serve(async (req) => {
           token_id: target.token_id,
           best_bid: quote?.bestBid ?? null,
           best_ask: quote?.bestAsk ?? null,
+          fee_bps: quote?.feeBps ?? DEFAULT_FEE_BPS,
+          latency_bps: quote?.latencyBps ?? LATENCY_BPS,
+          bid_after_costs: quote?.bidAfterCosts ?? quote?.bestBid ?? null,
+          ask_with_costs: quote?.askWithCosts ?? quote?.bestAsk ?? null,
           bid_depth: quote?.bidDepth ?? null,
           ask_depth: quote?.askDepth ?? null,
           midpoint: quote?.midpoint ?? null,
@@ -715,12 +841,14 @@ serve(async (req) => {
 
       const shares0 = toNumber(legs[0].shares) ?? 0;
       const shares1 = toNumber(legs[1].shares) ?? 0;
-      const exitPx0 = weightedAveragePrice(quote0.bids, shares0);
-      const exitPx1 = weightedAveragePrice(quote1.bids, shares1);
-      if (exitPx0 == null || exitPx1 == null) {
+      const rawExitPx0 = weightedAveragePrice(quote0.bids, shares0);
+      const rawExitPx1 = weightedAveragePrice(quote1.bids, shares1);
+      if (rawExitPx0 == null || rawExitPx1 == null) {
         noteSkip("insufficient_exit_depth");
         continue;
       }
+      const exitPx0 = applySellCosts(rawExitPx0, quote0.feeBps, quote0.latencyBps);
+      const exitPx1 = applySellCosts(rawExitPx1, quote1.feeBps, quote1.latencyBps);
 
       const totalUsd = legs.reduce((acc, row) => acc + (toNumber(row.usd_size) ?? 0), 0);
       const minShares = Math.min(...legs.map((row) => toNumber(row.shares) ?? Number.POSITIVE_INFINITY));
@@ -786,9 +914,9 @@ serve(async (req) => {
       summary.groups_closed += 1;
     }
 
-    candidateMarkets.sort((a, b) => b.edge - a.edge);
+    rawCandidateMarkets.sort((a, b) => b.edge - a.edge);
 
-    for (const candidate of candidateMarkets) {
+    for (const candidate of rawCandidateMarkets) {
       if (summary.groups_opened >= maxNewGroups) break;
       if (recentGroups.size + summary.groups_opened >= dailyGroupCap) {
         noteSkip("daily_group_cap");
@@ -827,27 +955,8 @@ serve(async (req) => {
         continue;
       }
 
-      const tokenMap = parseOutcomeTokenMap(marketMeta.outcome_token_map);
-      if (!tokenMap) {
-        noteSkip("missing_token_map");
-        continue;
-      }
-
-      const legQuotes = candidate.outcomes.map((outcomeRow) => {
-        const tokenId = getOutcomeTokenId(tokenMap, outcomeRow.outcome);
-        return {
-          outcome: outcomeRow.outcome,
-          tokenId,
-          quote: tokenId ? quoteMap.get(tokenId) ?? null : null,
-        };
-      });
-
-      if (legQuotes.some((leg) => !leg.tokenId || !leg.quote)) {
-        noteSkip("missing_order_book");
-        continue;
-      }
-
-      const bestAskSum = legQuotes.reduce((acc, leg) => acc + ((leg.quote?.bestAsk) ?? Number.NaN), 0);
+      const legQuotes = candidate.outcomes;
+      const bestAskSum = legQuotes.reduce((acc, leg) => acc + ((leg.quote.askWithCosts) ?? Number.NaN), 0);
       if (!Number.isFinite(bestAskSum) || bestAskSum > MAX_ENTRY_SUM) {
         noteSkip("entry_sum_too_high");
         continue;
@@ -875,12 +984,15 @@ serve(async (req) => {
       }
 
       let shares = totalUsd / bestAskSum;
-      const actualAsks = legQuotes.map((leg) => weightedAveragePrice(leg.quote!.asks, shares));
+      const actualAsks = legQuotes.map((leg) => weightedAveragePrice(leg.quote.asks, shares));
       if (actualAsks.some((px) => px == null)) {
         noteSkip("insufficient_entry_depth");
         continue;
       }
-      const actualAskSum = actualAsks.reduce((acc, px) => acc + (px ?? 0), 0);
+      const actualAskSum = actualAsks.reduce(
+        (acc, px, index) => acc + applyBuyCosts(px ?? 0, legQuotes[index].quote.feeBps, legQuotes[index].quote.latencyBps),
+        0,
+      );
       const actualEdge = 1 - actualAskSum;
       if (actualEdge < MIN_NET_ENTRY_EDGE) {
         noteSkip("net_edge_too_small");
@@ -898,12 +1010,15 @@ serve(async (req) => {
       }
 
       shares = totalUsd / actualAskSum;
-      const entryPrices = legQuotes.map((leg) => weightedAveragePrice(leg.quote!.asks, shares));
+      const entryPrices = legQuotes.map((leg) => weightedAveragePrice(leg.quote.asks, shares));
       if (entryPrices.some((px) => px == null)) {
         noteSkip("insufficient_entry_depth");
         continue;
       }
-      const finalEntrySum = entryPrices.reduce((acc, px) => acc + (px ?? 0), 0);
+      const finalEntrySum = entryPrices.reduce(
+        (acc, px, index) => acc + applyBuyCosts(px ?? 0, legQuotes[index].quote.feeBps, legQuotes[index].quote.latencyBps),
+        0,
+      );
       const finalEdge = 1 - finalEntrySum;
       if (finalEdge < MIN_NET_ENTRY_EDGE) {
         noteSkip("net_edge_too_small");
@@ -912,9 +1027,10 @@ serve(async (req) => {
 
       const groupId = `${STRATEGY_WALLET}:${candidate.market_id}:${Date.now()}:${summary.groups_opened + 1}`;
       const legs = candidate.outcomes.map((outcomeRow, idx) => {
-        const marketQuote = legQuotes[idx].quote!;
-        const bestAsk = marketQuote.bestAsk ?? entryPrices[idx] ?? 0;
-        const entryPrice = entryPrices[idx] ?? bestAsk;
+        const marketQuote = legQuotes[idx].quote;
+        const rawBestAsk = marketQuote.bestAsk ?? entryPrices[idx] ?? 0;
+        const rawEntryPrice = entryPrices[idx] ?? rawBestAsk;
+        const entryPrice = applyBuyCosts(rawEntryPrice, marketQuote.feeBps, marketQuote.latencyBps);
         return {
           portfolio_id: portfolioId,
           source_wallet: STRATEGY_WALLET,
@@ -925,9 +1041,9 @@ serve(async (req) => {
           market_title: marketMeta.question ?? null,
           outcome: outcomeRow.outcome,
           side: "BUY",
-          source_price: bestAsk,
+          source_price: rawBestAsk,
           entry_price: entryPrice,
-          price_penalty: entryPrice - bestAsk,
+          price_penalty: entryPrice - rawBestAsk,
           copy_factor: null,
           entry_ts: nowIso,
           usd_size: shares * entryPrice,
