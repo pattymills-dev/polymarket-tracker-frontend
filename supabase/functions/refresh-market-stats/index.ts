@@ -12,6 +12,61 @@ function toIsoIfValid(value: unknown): string | null {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
+function parseMaybeJson(value: unknown): unknown {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function buildOutcomeTokenMap(gammaData: any): Record<string, string> | null {
+  const tokenMap: Record<string, string> = {};
+
+  const tokensRaw = parseMaybeJson(gammaData?.tokens);
+  if (Array.isArray(tokensRaw)) {
+    for (const token of tokensRaw) {
+      const outcome = typeof token?.outcome === "string" ? token.outcome.trim() : "";
+      const tokenId = typeof token?.token_id === "string"
+        ? token.token_id.trim()
+        : typeof token?.tokenId === "string"
+        ? token.tokenId.trim()
+        : "";
+      if (outcome && tokenId) {
+        tokenMap[outcome] = tokenId;
+      }
+    }
+  }
+
+  if (Object.keys(tokenMap).length > 0) {
+    return tokenMap;
+  }
+
+  const outcomesRaw = parseMaybeJson(gammaData?.outcomes);
+  const clobTokenIdsRaw = parseMaybeJson(
+    gammaData?.clobTokenIds ?? gammaData?.clobTokenIDs ?? gammaData?.clob_token_ids,
+  );
+  const outcomes = Array.isArray(outcomesRaw) ? outcomesRaw : [];
+  const tokenIds = Array.isArray(clobTokenIdsRaw) ? clobTokenIdsRaw : [];
+  if (outcomes.length === tokenIds.length && outcomes.length > 0) {
+    outcomes.forEach((outcome, index) => {
+      if (typeof outcome === "string" && typeof tokenIds[index] === "string") {
+        tokenMap[outcome.trim()] = tokenIds[index].trim();
+      }
+    });
+  }
+
+  return Object.keys(tokenMap).length > 0 ? tokenMap : null;
+}
+
 /**
  * Refresh market stats (volume_24h, liquidity) from Polymarket Gamma API
  * This should run every 15 minutes via cron to keep market stats fresh
@@ -97,19 +152,19 @@ serve(async (req) => {
       const gammaMap = new Map();
       const gammaSlugMap = new Map();
       for (const gm of allGammaMarkets) {
-        if (gm.conditionId) {
-          gammaMap.set(gm.conditionId, gm);
+        if (typeof gm.conditionId === "string" && gm.conditionId.length > 0) {
+          gammaMap.set(normalizeKey(gm.conditionId), gm);
         }
         if (typeof gm.slug === "string" && gm.slug.length > 0) {
-          gammaSlugMap.set(gm.slug, gm);
+          gammaSlugMap.set(normalizeKey(gm.slug), gm);
         }
       }
 
       // Update our markets with the Gamma data
       for (const market of markets) {
-        const gammaData = gammaMap.get(market.id) ||
+        const gammaData = gammaMap.get(normalizeKey(market.id)) ||
           (typeof market.slug === "string" && market.slug.length > 0
-            ? gammaSlugMap.get(market.slug)
+            ? gammaSlugMap.get(normalizeKey(market.slug))
             : null);
 
         if (gammaData) {
@@ -123,6 +178,7 @@ serve(async (req) => {
             toIsoIfValid(gammaData.closeTime) ||
             toIsoIfValid(gammaData.closedTime) ||
             toIsoIfValid(gammaData.umaEndDate);
+          const outcomeTokenMap = buildOutcomeTokenMap(gammaData);
 
           const { error: updateError } = await supabase
             .from("markets")
@@ -130,6 +186,7 @@ serve(async (req) => {
               volume_24h: volume24h,
               liquidity: liquidity,
               close_time: closeTime,
+              outcome_token_map: outcomeTokenMap,
               stats_updated_at: new Date().toISOString(),
             })
             .eq("id", market.id);

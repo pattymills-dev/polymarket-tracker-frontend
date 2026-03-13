@@ -10,7 +10,10 @@ const corsHeaders = {
 const STRATEGY_WALLET = "structural_parity_engine";
 const STRATEGY_LANE = "structural";
 const STRATEGY_TAG = "yes_no_parity";
-const EXECUTION_TYPE = "limit_sim_buffered";
+const EXECUTION_TYPE = "clob_book_sim";
+
+const CLOB_URL = "https://clob.polymarket.com";
+const GAMMA_URL = "https://gamma-api.polymarket.com";
 
 const MAX_PRICE_AGE_MINUTES = 30;
 const MAX_NEW_GROUPS_PER_RUN = 3;
@@ -24,7 +27,6 @@ const MAX_OUTCOME_PRICE = 0.97;
 const MIN_MARKET_LIQUIDITY = 10000;
 const MIN_MINUTES_TO_CLOSE = 180;
 const FORCE_EXIT_MINUTES_TO_CLOSE = 45;
-const ENTRY_BUFFER_BPS = 40;
 
 const TAKE_PROFIT_SUM_DELTA = 0.015;
 const STOP_LOSS_SUM_DELTA = 0.03;
@@ -93,6 +95,126 @@ function looksIntradayMarket(slug: string | null, title: string | null): boolean
   return /up-or-down|15m|30m|1h|this hour|today at|by \d{1,2}(am|pm)\b/.test(haystack);
 }
 
+function parseMaybeJson(value: unknown): unknown {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function buildOutcomeTokenMap(raw: any): Record<string, string> | null {
+  const tokenMap: Record<string, string> = {};
+  const tokensRaw = parseMaybeJson(raw?.tokens);
+  if (Array.isArray(tokensRaw)) {
+    for (const token of tokensRaw) {
+      const outcome = typeof token?.outcome === "string" ? token.outcome.trim() : "";
+      const tokenId = typeof token?.token_id === "string"
+        ? token.token_id.trim()
+        : typeof token?.tokenId === "string"
+        ? token.tokenId.trim()
+        : "";
+      if (outcome && tokenId) {
+        tokenMap[outcome] = tokenId;
+      }
+    }
+  }
+  if (Object.keys(tokenMap).length > 0) return tokenMap;
+
+  const outcomesRaw = parseMaybeJson(raw?.outcomes);
+  const tokenIdsRaw = parseMaybeJson(raw?.clobTokenIds ?? raw?.clobTokenIDs ?? raw?.clob_token_ids);
+  const outcomes = Array.isArray(outcomesRaw) ? outcomesRaw : [];
+  const tokenIds = Array.isArray(tokenIdsRaw) ? tokenIdsRaw : [];
+  if (outcomes.length === tokenIds.length && outcomes.length > 0) {
+    for (let i = 0; i < outcomes.length; i++) {
+      if (typeof outcomes[i] === "string" && typeof tokenIds[i] === "string") {
+        tokenMap[outcomes[i].trim()] = tokenIds[i].trim();
+      }
+    }
+  }
+  return Object.keys(tokenMap).length > 0 ? tokenMap : null;
+}
+
+function parseOutcomeTokenMap(value: unknown): Record<string, string> | null {
+  const parsed = parseMaybeJson(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const tokenMap: Record<string, string> = {};
+  for (const [outcome, tokenId] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof outcome === "string" && typeof tokenId === "string" && outcome.trim() && tokenId.trim()) {
+      tokenMap[outcome.trim()] = tokenId.trim();
+    }
+  }
+  return Object.keys(tokenMap).length > 0 ? tokenMap : null;
+}
+
+function getOutcomeTokenId(
+  tokenMap: Record<string, string> | null,
+  outcome: string | null,
+): string | null {
+  if (!tokenMap || !outcome) return null;
+  if (tokenMap[outcome]) return tokenMap[outcome];
+  const normalizedOutcome = normalizeKey(outcome);
+  for (const [label, tokenId] of Object.entries(tokenMap)) {
+    if (normalizeKey(label) === normalizedOutcome) return tokenId;
+  }
+  return null;
+}
+
+type OrderBookLevel = {
+  price: number;
+  size: number;
+};
+
+function parseLevels(levels: unknown): OrderBookLevel[] {
+  if (!Array.isArray(levels)) return [];
+  return levels
+    .map((level) => ({
+      price: toNumber((level as any)?.price),
+      size: toNumber((level as any)?.size),
+    }))
+    .filter((level): level is OrderBookLevel => level.price != null && level.size != null && level.size > 0);
+}
+
+function totalDepth(levels: OrderBookLevel[]): number {
+  return levels.reduce((acc, level) => acc + level.size, 0);
+}
+
+function weightedAveragePrice(levels: OrderBookLevel[], sharesNeeded: number): number | null {
+  if (!Number.isFinite(sharesNeeded) || sharesNeeded <= 0) return null;
+  let remaining = sharesNeeded;
+  let cost = 0;
+  for (const level of levels) {
+    const take = Math.min(level.size, remaining);
+    cost += take * level.price;
+    remaining -= take;
+    if (remaining <= 1e-9) {
+      return cost / sharesNeeded;
+    }
+  }
+  return null;
+}
+
+function midpoint(bestBid: number | null, bestAsk: number | null): number | null {
+  if (bestBid == null || bestAsk == null) return null;
+  return (bestBid + bestAsk) / 2;
+}
+
+async function fetchJson(url: string, init?: RequestInit) {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${url}`);
+  }
+  return await response.json();
+}
+
 type PaperPortfolio = {
   id: number | string | null;
   starting_usd: number | string | null;
@@ -127,7 +249,101 @@ type MarketMeta = {
   liquidity: number | string | null;
   stats_updated_at: string | null;
   close_time: string | null;
+  outcome_token_map: unknown;
 };
+
+type QuoteSummary = {
+  tokenId: string;
+  bestBid: number | null;
+  bestAsk: number | null;
+  bidDepth: number;
+  askDepth: number;
+  midpoint: number | null;
+  tickSize: number | null;
+  minOrderSize: number | null;
+  negRisk: boolean | null;
+  quoteTs: string;
+  bids: OrderBookLevel[];
+  asks: OrderBookLevel[];
+};
+
+async function enrichMarketsFromGamma(markets: MarketMeta[]): Promise<Map<string, Partial<MarketMeta>>> {
+  const updates = new Map<string, Partial<MarketMeta>>();
+  for (const market of markets) {
+    const hasTokenMap = parseOutcomeTokenMap(market.outcome_token_map);
+    if (hasTokenMap && market.close_time) continue;
+
+    let gammaMarket: any = null;
+    if (market.slug) {
+      try {
+        gammaMarket = await fetchJson(`${GAMMA_URL}/markets/slug/${market.slug}`);
+      } catch {
+        gammaMarket = null;
+      }
+    }
+
+    if (!gammaMarket && market.id) {
+      try {
+        const rows = await fetchJson(
+          `${GAMMA_URL}/markets?condition_ids=${encodeURIComponent(market.id)}`,
+        );
+        if (Array.isArray(rows) && rows[0]) {
+          gammaMarket = rows[0];
+        }
+      } catch {
+        gammaMarket = null;
+      }
+    }
+
+    if (!gammaMarket) continue;
+
+    updates.set(market.id, {
+      question: market.question ?? gammaMarket.question ?? gammaMarket.title ?? null,
+      slug: market.slug ?? gammaMarket.slug ?? null,
+      liquidity: toNumber(gammaMarket.liquidityNum) ?? toNumber(gammaMarket.liquidity),
+      close_time:
+        toIsoIfValid(gammaMarket.endDateIso) ||
+        toIsoIfValid(gammaMarket.end_date_iso) ||
+        toIsoIfValid(gammaMarket.endDate) ||
+        toIsoIfValid(gammaMarket.end_date) ||
+        toIsoIfValid(gammaMarket.closeTime) ||
+        toIsoIfValid(gammaMarket.closedTime) ||
+        toIsoIfValid(gammaMarket.umaEndDate),
+      outcome_token_map: buildOutcomeTokenMap(gammaMarket),
+    });
+  }
+  return updates;
+}
+
+async function fetchOrderBooks(tokenIds: string[]): Promise<Map<string, QuoteSummary>> {
+  const quotes = new Map<string, QuoteSummary>();
+  for (const tokenId of tokenIds) {
+    try {
+      const book = await fetchJson(`${CLOB_URL}/book?token_id=${encodeURIComponent(tokenId)}`);
+      const bids = parseLevels((book as any)?.bids);
+      const asks = parseLevels((book as any)?.asks);
+      const bestBid = bids[0]?.price ?? null;
+      const bestAsk = asks[0]?.price ?? null;
+      quotes.set(tokenId, {
+        tokenId,
+        bestBid,
+        bestAsk,
+        bidDepth: totalDepth(bids),
+        askDepth: totalDepth(asks),
+        midpoint: midpoint(bestBid, bestAsk),
+        tickSize: toNumber((book as any)?.tick_size),
+        minOrderSize: toNumber((book as any)?.min_order_size),
+        negRisk: typeof (book as any)?.neg_risk === "boolean" ? (book as any).neg_risk : null,
+        quoteTs: new Date().toISOString(),
+        bids,
+        asks,
+      });
+    } catch (error) {
+      console.warn(`Failed to fetch order book for token ${tokenId}:`, String(error));
+    }
+  }
+  return quotes;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -231,7 +447,7 @@ serve(async (req) => {
             min_net_edge: MIN_NET_ENTRY_EDGE,
             min_market_liquidity: MIN_MARKET_LIQUIDITY,
             min_minutes_to_close: MIN_MINUTES_TO_CLOSE,
-            entry_buffer_bps: ENTRY_BUFFER_BPS,
+            quote_source: EXECUTION_TYPE,
           },
         })
         .select("id")
@@ -264,27 +480,12 @@ serve(async (req) => {
     }
 
     const openMarketIds = Array.from(new Set(openRows.map((r) => r.market_id).filter(Boolean)));
-    const priceMap = new Map<string, MarketPrice>();
-    if (openMarketIds.length > 0) {
-      const { data: pricesForOpen, error: pricesForOpenError } = await supabase
-        .from("market_prices")
-        .select("market_id, outcome, price, updated_at")
-        .in("market_id", openMarketIds);
-      if (pricesForOpenError) {
-        console.warn("Failed to load prices for open structural groups:", pricesForOpenError.message);
-      } else {
-        for (const row of (pricesForOpen || []) as MarketPrice[]) {
-          priceMap.set(`${row.market_id}:${row.outcome}`, row);
-        }
-      }
-    }
-
     const resolvedMarketSet = new Set<string>();
     const openMarketMetaMap = new Map<string, MarketMeta>();
     if (openMarketIds.length > 0) {
       const { data: openMarkets, error: openMarketsError } = await supabase
         .from("markets")
-        .select("id, winning_outcome, close_time, question, slug, liquidity, stats_updated_at")
+        .select("id, winning_outcome, close_time, question, slug, liquidity, stats_updated_at, outcome_token_map")
         .in("id", openMarketIds);
       if (openMarketsError) {
         console.warn("Failed to load market resolution for open groups:", openMarketsError.message);
@@ -296,102 +497,6 @@ serve(async (req) => {
           }
         }
       }
-    }
-
-    for (const [, legs] of openGroups.entries()) {
-      if (legs.length !== 2) {
-        noteSkip("invalid_open_group_legs");
-        continue;
-      }
-      const marketId = legs[0].market_id;
-      if (!marketId) {
-        noteSkip("invalid_open_group_market");
-        continue;
-      }
-
-      if (resolvedMarketSet.has(marketId)) {
-        noteSkip("resolved_market_wait_for_settlement");
-        continue;
-      }
-
-      const p0 = priceMap.get(`${marketId}:${legs[0].outcome}`);
-      const p1 = priceMap.get(`${marketId}:${legs[1].outcome}`);
-      const px0 = toNumber(p0?.price);
-      const px1 = toNumber(p1?.price);
-      if (px0 == null || px1 == null) {
-        noteSkip("missing_open_leg_price");
-        continue;
-      }
-      const ts0 = p0?.updated_at ? new Date(p0.updated_at) : null;
-      const ts1 = p1?.updated_at ? new Date(p1.updated_at) : null;
-      if (!ts0 || !ts1 || ts0.toISOString() < staleCutoffIso || ts1.toISOString() < staleCutoffIso) {
-        noteSkip("stale_open_leg_price");
-        continue;
-      }
-
-      const totalUsd = legs.reduce((acc, row) => acc + (toNumber(row.usd_size) ?? 0), 0);
-      const minShares = Math.min(...legs.map((row) => toNumber(row.shares) ?? Number.POSITIVE_INFINITY));
-      if (!Number.isFinite(minShares) || minShares <= 0 || totalUsd <= 0) {
-        noteSkip("invalid_open_leg_size");
-        continue;
-      }
-
-      const entryTs = legs
-        .map((row) => row.entry_ts)
-        .filter((v): v is string => Boolean(v))
-        .sort()[0];
-      const holdHours = entryTs
-        ? (now.getTime() - new Date(entryTs).getTime()) / (1000 * 60 * 60)
-        : 0;
-      const entrySum = totalUsd / minShares;
-      const currentSum = px0 + px1;
-      const openMarketMeta = openMarketMetaMap.get(marketId);
-      const minutesToClose = getMinutesUntil(now, toIsoIfValid(openMarketMeta?.close_time ?? null));
-
-      let exitReason: string | null = null;
-      if (currentSum >= entrySum + TAKE_PROFIT_SUM_DELTA) {
-        exitReason = "take_profit";
-      } else if (currentSum <= entrySum - STOP_LOSS_SUM_DELTA) {
-        exitReason = "stop_loss";
-      } else if (minutesToClose != null && minutesToClose <= FORCE_EXIT_MINUTES_TO_CLOSE) {
-        exitReason = "close_time_guard";
-      } else if (holdHours >= HARD_MAX_HOLD_HOURS) {
-        exitReason = "time_stop";
-      } else if (holdHours >= SOFT_MAX_HOLD_HOURS && currentSum > entrySum) {
-        exitReason = "time_take_profit";
-      }
-      if (!exitReason) continue;
-
-      if (!dryRun) {
-        for (const leg of legs) {
-          const currentPx = leg.outcome === legs[0].outcome ? px0 : px1;
-          const shares = toNumber(leg.shares) ?? 0;
-          const usdSize = toNumber(leg.usd_size) ?? 0;
-          const pnlUsd = shares * currentPx - usdSize;
-          const { error: closeError } = await supabase
-            .from("paper_positions")
-            .update({
-              status: "SETTLED",
-              exit_price: currentPx,
-              exit_ts: nowIso,
-              pnl_usd: pnlUsd,
-              exit_reason: exitReason,
-              updated_at: nowIso,
-            })
-            .eq("id", leg.id)
-            .eq("status", "OPEN");
-          if (closeError) {
-            console.warn(`Failed to close structural leg ${leg.id}:`, closeError.message);
-            noteSkip("close_update_failed");
-            continue;
-          }
-          summary.legs_closed += 1;
-        }
-      } else {
-        summary.legs_closed += 2;
-      }
-      openTotalUsd = Math.max(0, openTotalUsd - totalUsd);
-      summary.groups_closed += 1;
     }
 
     const { data: recentLaneRows, error: recentLaneError } = await supabase
@@ -468,12 +573,13 @@ serve(async (req) => {
 
     const candidateIds = candidateMarkets.map((c) => c.market_id);
     const marketMetaMap = new Map<string, MarketMeta>();
-    if (candidateIds.length > 0) {
-      for (let i = 0; i < candidateIds.length; i += 200) {
-        const batch = candidateIds.slice(i, i + 200);
+    const allMetaIds = Array.from(new Set([...openMarketIds, ...candidateIds]));
+    if (allMetaIds.length > 0) {
+      for (let i = 0; i < allMetaIds.length; i += 200) {
+        const batch = allMetaIds.slice(i, i + 200);
         const { data: marketsBatch, error: marketsError } = await supabase
           .from("markets")
-          .select("id, question, slug, winning_outcome, liquidity, stats_updated_at, close_time")
+          .select("id, question, slug, winning_outcome, liquidity, stats_updated_at, close_time, outcome_token_map")
           .in("id", batch);
         if (marketsError) {
           console.warn("Failed to load markets for structural scan:", marketsError.message);
@@ -481,8 +587,203 @@ serve(async (req) => {
         }
         for (const row of (marketsBatch || []) as MarketMeta[]) {
           marketMetaMap.set(row.id, row);
+          if (openMarketMetaMap.has(row.id)) {
+            openMarketMetaMap.set(row.id, row);
+          }
         }
       }
+    }
+
+    const enrichUpdates = await enrichMarketsFromGamma(Array.from(marketMetaMap.values()));
+    if (enrichUpdates.size > 0) {
+      const updateRows: Array<Record<string, unknown>> = [];
+      for (const [marketId, patch] of enrichUpdates.entries()) {
+        const existing = marketMetaMap.get(marketId);
+        const merged: MarketMeta = {
+          id: marketId,
+          question: (patch.question as string | null) ?? existing?.question ?? null,
+          slug: (patch.slug as string | null) ?? existing?.slug ?? null,
+          winning_outcome: existing?.winning_outcome ?? null,
+          liquidity: patch.liquidity ?? existing?.liquidity ?? null,
+          stats_updated_at: existing?.stats_updated_at ?? null,
+          close_time: (patch.close_time as string | null) ?? existing?.close_time ?? null,
+          outcome_token_map: patch.outcome_token_map ?? existing?.outcome_token_map ?? null,
+        };
+        marketMetaMap.set(marketId, merged);
+        if (openMarketMetaMap.has(marketId)) {
+          openMarketMetaMap.set(marketId, merged);
+        }
+        updateRows.push({
+          id: marketId,
+          question: merged.question,
+          slug: merged.slug,
+          liquidity: merged.liquidity,
+          close_time: merged.close_time,
+          outcome_token_map: merged.outcome_token_map,
+        });
+      }
+
+      if (!dryRun && updateRows.length > 0) {
+        const { error: updateMetaError } = await supabase
+          .from("markets")
+          .upsert(updateRows, { onConflict: "id" });
+        if (updateMetaError) {
+          console.warn("Failed to persist enriched market metadata:", updateMetaError.message);
+        }
+      }
+    }
+
+    const quoteTargets = new Map<string, { market_id: string; outcome: string; token_id: string }>();
+    for (const pos of openRows) {
+      const tokenMap = parseOutcomeTokenMap(openMarketMetaMap.get(pos.market_id)?.outcome_token_map ?? null);
+      const tokenId = getOutcomeTokenId(tokenMap, pos.outcome);
+      if (!tokenId) continue;
+      quoteTargets.set(`${pos.market_id}:${pos.outcome}`, {
+        market_id: pos.market_id,
+        outcome: pos.outcome,
+        token_id: tokenId,
+      });
+    }
+    for (const candidate of candidateMarkets) {
+      const meta = marketMetaMap.get(candidate.market_id);
+      const tokenMap = parseOutcomeTokenMap(meta?.outcome_token_map ?? null);
+      for (const outcomeRow of candidate.outcomes) {
+        const tokenId = getOutcomeTokenId(tokenMap, outcomeRow.outcome);
+        if (!tokenId) continue;
+        quoteTargets.set(`${candidate.market_id}:${outcomeRow.outcome}`, {
+          market_id: candidate.market_id,
+          outcome: outcomeRow.outcome,
+          token_id: tokenId,
+        });
+      }
+    }
+
+    const quoteMap = await fetchOrderBooks(Array.from(new Set(Array.from(quoteTargets.values()).map((q) => q.token_id))));
+
+    if (!dryRun && quoteTargets.size > 0) {
+      const quoteRows = Array.from(quoteTargets.values()).map((target) => {
+        const quote = quoteMap.get(target.token_id);
+        return {
+          market_id: target.market_id,
+          outcome: target.outcome,
+          token_id: target.token_id,
+          best_bid: quote?.bestBid ?? null,
+          best_ask: quote?.bestAsk ?? null,
+          bid_depth: quote?.bidDepth ?? null,
+          ask_depth: quote?.askDepth ?? null,
+          midpoint: quote?.midpoint ?? null,
+          last_trade_price: null,
+          tick_size: quote?.tickSize ?? null,
+          min_order_size: quote?.minOrderSize ?? null,
+          neg_risk: quote?.negRisk ?? null,
+          quote_ts: quote?.quoteTs ?? nowIso,
+          updated_at: nowIso,
+        };
+      });
+      const { error: quotesError } = await supabase
+        .from("market_quotes")
+        .upsert(quoteRows, { onConflict: "market_id,outcome" });
+      if (quotesError) {
+        console.warn("Failed to upsert market quotes:", quotesError.message);
+      }
+    }
+
+    for (const [, legs] of openGroups.entries()) {
+      if (legs.length !== 2) {
+        noteSkip("invalid_open_group_legs");
+        continue;
+      }
+      const marketId = legs[0].market_id;
+      if (!marketId) {
+        noteSkip("invalid_open_group_market");
+        continue;
+      }
+
+      if (resolvedMarketSet.has(marketId)) {
+        noteSkip("resolved_market_wait_for_settlement");
+        continue;
+      }
+
+      const marketMeta = openMarketMetaMap.get(marketId);
+      const tokenMap = parseOutcomeTokenMap(marketMeta?.outcome_token_map ?? null);
+      const quote0 = quoteMap.get(getOutcomeTokenId(tokenMap, legs[0].outcome) ?? "");
+      const quote1 = quoteMap.get(getOutcomeTokenId(tokenMap, legs[1].outcome) ?? "");
+      if (!quote0 || !quote1) {
+        noteSkip("missing_open_leg_quote");
+        continue;
+      }
+
+      const shares0 = toNumber(legs[0].shares) ?? 0;
+      const shares1 = toNumber(legs[1].shares) ?? 0;
+      const exitPx0 = weightedAveragePrice(quote0.bids, shares0);
+      const exitPx1 = weightedAveragePrice(quote1.bids, shares1);
+      if (exitPx0 == null || exitPx1 == null) {
+        noteSkip("insufficient_exit_depth");
+        continue;
+      }
+
+      const totalUsd = legs.reduce((acc, row) => acc + (toNumber(row.usd_size) ?? 0), 0);
+      const minShares = Math.min(...legs.map((row) => toNumber(row.shares) ?? Number.POSITIVE_INFINITY));
+      if (!Number.isFinite(minShares) || minShares <= 0 || totalUsd <= 0) {
+        noteSkip("invalid_open_leg_size");
+        continue;
+      }
+
+      const entryTs = legs
+        .map((row) => row.entry_ts)
+        .filter((v): v is string => Boolean(v))
+        .sort()[0];
+      const holdHours = entryTs
+        ? (now.getTime() - new Date(entryTs).getTime()) / (1000 * 60 * 60)
+        : 0;
+      const entrySum = totalUsd / minShares;
+      const currentSum = exitPx0 + exitPx1;
+      const minutesToClose = getMinutesUntil(now, toIsoIfValid(marketMeta?.close_time ?? null));
+
+      let exitReason: string | null = null;
+      if (currentSum >= entrySum + TAKE_PROFIT_SUM_DELTA) {
+        exitReason = "take_profit";
+      } else if (currentSum <= entrySum - STOP_LOSS_SUM_DELTA) {
+        exitReason = "stop_loss";
+      } else if (minutesToClose != null && minutesToClose <= FORCE_EXIT_MINUTES_TO_CLOSE) {
+        exitReason = "close_time_guard";
+      } else if (holdHours >= HARD_MAX_HOLD_HOURS) {
+        exitReason = "time_stop";
+      } else if (holdHours >= SOFT_MAX_HOLD_HOURS && currentSum > entrySum) {
+        exitReason = "time_take_profit";
+      }
+      if (!exitReason) continue;
+
+      if (!dryRun) {
+        for (const leg of legs) {
+          const shares = toNumber(leg.shares) ?? 0;
+          const usdSize = toNumber(leg.usd_size) ?? 0;
+          const exitPrice = leg.outcome === legs[0].outcome ? exitPx0 : exitPx1;
+          const pnlUsd = shares * exitPrice - usdSize;
+          const { error: closeError } = await supabase
+            .from("paper_positions")
+            .update({
+              status: "SETTLED",
+              exit_price: exitPrice,
+              exit_ts: nowIso,
+              pnl_usd: pnlUsd,
+              exit_reason: exitReason,
+              updated_at: nowIso,
+            })
+            .eq("id", leg.id)
+            .eq("status", "OPEN");
+          if (closeError) {
+            console.warn(`Failed to close structural leg ${leg.id}:`, closeError.message);
+            noteSkip("close_update_failed");
+            continue;
+          }
+          summary.legs_closed += 1;
+        }
+      } else {
+        summary.legs_closed += 2;
+      }
+      openTotalUsd = Math.max(0, openTotalUsd - totalUsd);
+      summary.groups_closed += 1;
     }
 
     candidateMarkets.sort((a, b) => b.edge - a.edge);
@@ -516,8 +817,7 @@ serve(async (req) => {
         noteSkip("thin_market");
         continue;
       }
-      const closeTimeIso = toIsoIfValid(marketMeta.close_time);
-      const minutesToClose = getMinutesUntil(now, closeTimeIso);
+      const minutesToClose = getMinutesUntil(now, toIsoIfValid(marketMeta.close_time));
       if (minutesToClose != null && minutesToClose <= MIN_MINUTES_TO_CLOSE) {
         noteSkip("too_close_to_resolution");
         continue;
@@ -527,20 +827,68 @@ serve(async (req) => {
         continue;
       }
 
-      const entryBuffer = candidate.sum_price * (ENTRY_BUFFER_BPS / 10_000);
-      const bufferedEntrySum = candidate.sum_price + entryBuffer;
-      const netEdge = 1 - bufferedEntrySum;
-      if (netEdge < MIN_NET_ENTRY_EDGE) {
+      const tokenMap = parseOutcomeTokenMap(marketMeta.outcome_token_map);
+      if (!tokenMap) {
+        noteSkip("missing_token_map");
+        continue;
+      }
+
+      const legQuotes = candidate.outcomes.map((outcomeRow) => {
+        const tokenId = getOutcomeTokenId(tokenMap, outcomeRow.outcome);
+        return {
+          outcome: outcomeRow.outcome,
+          tokenId,
+          quote: tokenId ? quoteMap.get(tokenId) ?? null : null,
+        };
+      });
+
+      if (legQuotes.some((leg) => !leg.tokenId || !leg.quote)) {
+        noteSkip("missing_order_book");
+        continue;
+      }
+
+      const bestAskSum = legQuotes.reduce((acc, leg) => acc + ((leg.quote?.bestAsk) ?? Number.NaN), 0);
+      if (!Number.isFinite(bestAskSum) || bestAskSum > MAX_ENTRY_SUM) {
+        noteSkip("entry_sum_too_high");
+        continue;
+      }
+
+      const indicativeEdge = 1 - bestAskSum;
+      if (indicativeEdge < MIN_NET_ENTRY_EDGE) {
         noteSkip("net_edge_too_small");
         continue;
       }
 
-      const sizeFactor = clamp(netEdge / MIN_NET_ENTRY_EDGE, 0.60, 2.20);
+      const sizeFactor = clamp(indicativeEdge / MIN_NET_ENTRY_EDGE, 0.60, 2.20);
       const liquidityCapUsd = marketLiquidity > 0
         ? clamp(marketLiquidity * 0.0005, MIN_STRUCTURAL_USD, MAX_STRUCTURAL_USD)
         : baseUsd;
-      const totalUsd = clamp(
+      let totalUsd = clamp(
         Math.min(baseUsd * sizeFactor, liquidityCapUsd),
+        MIN_STRUCTURAL_USD,
+        MAX_STRUCTURAL_USD,
+      );
+
+      if (openTotalUsd + totalUsd > maxOpenExposureUsd) {
+        noteSkip("total_exposure_cap");
+        continue;
+      }
+
+      let shares = totalUsd / bestAskSum;
+      const actualAsks = legQuotes.map((leg) => weightedAveragePrice(leg.quote!.asks, shares));
+      if (actualAsks.some((px) => px == null)) {
+        noteSkip("insufficient_entry_depth");
+        continue;
+      }
+      const actualAskSum = actualAsks.reduce((acc, px) => acc + (px ?? 0), 0);
+      const actualEdge = 1 - actualAskSum;
+      if (actualEdge < MIN_NET_ENTRY_EDGE) {
+        noteSkip("net_edge_too_small");
+        continue;
+      }
+
+      totalUsd = clamp(
+        Math.min(baseUsd * clamp(actualEdge / MIN_NET_ENTRY_EDGE, 0.60, 2.20), liquidityCapUsd),
         MIN_STRUCTURAL_USD,
         MAX_STRUCTURAL_USD,
       );
@@ -549,18 +897,24 @@ serve(async (req) => {
         continue;
       }
 
-      const shares = totalUsd / bufferedEntrySum;
-      if (!Number.isFinite(shares) || shares <= 0) {
-        noteSkip("invalid_share_size");
+      shares = totalUsd / actualAskSum;
+      const entryPrices = legQuotes.map((leg) => weightedAveragePrice(leg.quote!.asks, shares));
+      if (entryPrices.some((px) => px == null)) {
+        noteSkip("insufficient_entry_depth");
+        continue;
+      }
+      const finalEntrySum = entryPrices.reduce((acc, px) => acc + (px ?? 0), 0);
+      const finalEdge = 1 - finalEntrySum;
+      if (finalEdge < MIN_NET_ENTRY_EDGE) {
+        noteSkip("net_edge_too_small");
         continue;
       }
 
       const groupId = `${STRATEGY_WALLET}:${candidate.market_id}:${Date.now()}:${summary.groups_opened + 1}`;
       const legs = candidate.outcomes.map((outcomeRow, idx) => {
-        const sourcePx = toNumber(outcomeRow.price) ?? 0;
-        const priceWeight = candidate.sum_price > 0 ? sourcePx / candidate.sum_price : 0.5;
-        const pricePenalty = entryBuffer * priceWeight;
-        const entryPx = sourcePx + pricePenalty;
+        const marketQuote = legQuotes[idx].quote!;
+        const bestAsk = marketQuote.bestAsk ?? entryPrices[idx] ?? 0;
+        const entryPrice = entryPrices[idx] ?? bestAsk;
         return {
           portfolio_id: portfolioId,
           source_wallet: STRATEGY_WALLET,
@@ -571,20 +925,20 @@ serve(async (req) => {
           market_title: marketMeta.question ?? null,
           outcome: outcomeRow.outcome,
           side: "BUY",
-          source_price: sourcePx,
-          entry_price: entryPx,
-          price_penalty: pricePenalty,
+          source_price: bestAsk,
+          entry_price: entryPrice,
+          price_penalty: entryPrice - bestAsk,
           copy_factor: null,
           entry_ts: nowIso,
-          usd_size: shares * entryPx,
+          usd_size: shares * entryPrice,
           shares,
           status: "OPEN",
-          sizing_method: "structural_parity_fractional_kelly",
+          sizing_method: "structural_parity_clob_book",
           fixed_usd_per_trade: baseUsd,
           strategy_lane: STRATEGY_LANE,
           strategy_tag: STRATEGY_TAG,
           execution_type: EXECUTION_TYPE,
-          edge_bps: netEdge * 10000,
+          edge_bps: finalEdge * 10000,
           structural_group_id: groupId,
           updated_at: nowIso,
         };
@@ -634,12 +988,12 @@ serve(async (req) => {
         const lanes = ["copy", "structural"];
         const inserts: Array<Record<string, unknown>> = [];
         for (const lane of lanes) {
-          const laneRows = rows.filter((r) => (r.strategy_lane || "copy") === lane);
-          const settled = laneRows.filter((r) => r.status === "SETTLED");
-          const open = laneRows.filter((r) => r.status === "OPEN");
+          const laneRows = rows.filter((r: any) => (r.strategy_lane || "copy") === lane);
+          const settled = laneRows.filter((r: any) => r.status === "SETTLED");
+          const open = laneRows.filter((r: any) => r.status === "OPEN");
 
-          const realized = settled.reduce((acc, r) => acc + (toNumber(r.pnl_usd) ?? 0), 0);
-          const unrealized = open.reduce((acc, r) => {
+          const realized = settled.reduce((acc: number, r: any) => acc + (toNumber(r.pnl_usd) ?? 0), 0);
+          const unrealized = open.reduce((acc: number, r: any) => {
             const shares = toNumber(r.shares) ?? 0;
             const currentPrice = toNumber(r.current_price);
             const usdSize = toNumber(r.usd_size) ?? 0;
@@ -648,28 +1002,28 @@ serve(async (req) => {
           }, 0);
 
           const holdMinutes = settled
-            .map((r) => {
+            .map((r: any) => {
               if (!r.entry_ts || !r.exit_ts) return null;
               const mins = (new Date(r.exit_ts).getTime() - new Date(r.entry_ts).getTime()) / (1000 * 60);
               return Number.isFinite(mins) && mins >= 0 ? mins : null;
             })
-            .filter((v): v is number => v != null);
+            .filter((v: any): v is number => v != null);
 
           const edgeRows = laneRows
-            .map((r) => ({
+            .map((r: any) => ({
               size: toNumber(r.usd_size),
               edge: toNumber(r.edge_bps),
             }))
-            .filter((r) => r.size != null && r.edge != null) as Array<{ size: number; edge: number }>;
+            .filter((r: any) => r.size != null && r.edge != null) as Array<{ size: number; edge: number }>;
 
-          const limitRows = laneRows.filter((r) => String(r.execution_type || "").toLowerCase().includes("limit"));
-          const preResolutionSettles = settled.filter((r) => r.exit_reason != null);
+          const limitRows = laneRows.filter((r: any) => String(r.execution_type || "").toLowerCase().includes("clob"));
+          const preResolutionSettles = settled.filter((r: any) => r.exit_reason != null);
           const resolutionPnl = settled
-            .filter((r) => r.exit_reason == null)
-            .reduce((acc, r) => acc + (toNumber(r.pnl_usd) ?? 0), 0);
+            .filter((r: any) => r.exit_reason == null)
+            .reduce((acc: number, r: any) => acc + (toNumber(r.pnl_usd) ?? 0), 0);
           const structuralPnl = settled
-            .filter((r) => r.exit_reason != null)
-            .reduce((acc, r) => acc + (toNumber(r.pnl_usd) ?? 0), 0);
+            .filter((r: any) => r.exit_reason != null)
+            .reduce((acc: number, r: any) => acc + (toNumber(r.pnl_usd) ?? 0), 0);
 
           let profitSource = "none";
           if (Math.abs(structuralPnl) > Math.abs(resolutionPnl) && Math.abs(structuralPnl) > 0) {
