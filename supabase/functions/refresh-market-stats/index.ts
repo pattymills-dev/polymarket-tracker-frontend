@@ -6,6 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function toIsoIfValid(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
 /**
  * Refresh market stats (volume_24h, liquidity) from Polymarket Gamma API
  * This should run every 15 minutes via cron to keep market stats fresh
@@ -89,25 +95,41 @@ serve(async (req) => {
 
       // Build a map of conditionId -> market data for fast lookup
       const gammaMap = new Map();
+      const gammaSlugMap = new Map();
       for (const gm of allGammaMarkets) {
         if (gm.conditionId) {
           gammaMap.set(gm.conditionId, gm);
+        }
+        if (typeof gm.slug === "string" && gm.slug.length > 0) {
+          gammaSlugMap.set(gm.slug, gm);
         }
       }
 
       // Update our markets with the Gamma data
       for (const market of markets) {
-        const gammaData = gammaMap.get(market.id);
+        const gammaData = gammaMap.get(market.id) ||
+          (typeof market.slug === "string" && market.slug.length > 0
+            ? gammaSlugMap.get(market.slug)
+            : null);
 
         if (gammaData) {
           const volume24h = parseFloat(gammaData.volume24hr) || 0;
           const liquidity = parseFloat(gammaData.liquidityNum) || parseFloat(gammaData.liquidity) || 0;
+          const closeTime =
+            toIsoIfValid(gammaData.endDateIso) ||
+            toIsoIfValid(gammaData.end_date_iso) ||
+            toIsoIfValid(gammaData.endDate) ||
+            toIsoIfValid(gammaData.end_date) ||
+            toIsoIfValid(gammaData.closeTime) ||
+            toIsoIfValid(gammaData.closedTime) ||
+            toIsoIfValid(gammaData.umaEndDate);
 
           const { error: updateError } = await supabase
             .from("markets")
             .update({
               volume_24h: volume24h,
               liquidity: liquidity,
+              close_time: closeTime,
               stats_updated_at: new Date().toISOString(),
             })
             .eq("id", market.id);

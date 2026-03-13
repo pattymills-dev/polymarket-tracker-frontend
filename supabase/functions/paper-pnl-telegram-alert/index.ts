@@ -34,6 +34,8 @@ function buildTopList(map: Map<string, number>, limit = 5): string {
 type AlertScope = "window" | "all_time" | "since_reset";
 
 type PositionWithPriceRow = {
+  strategy_lane: string | null;
+  structural_group_id: string | null;
   source_wallet: string | null;
   market_id: string | null;
   market_title: string | null;
@@ -46,6 +48,7 @@ type PositionWithPriceRow = {
 
 type AggregateMetrics = {
   countPositions: number;
+  countStructuralGroups: number;
   openCount: number;
   settledCount: number;
   totalStaked: number;
@@ -53,24 +56,36 @@ type AggregateMetrics = {
   unrealizedPnl: number;
   projectedTotal: number;
   missingPrices: number;
+  laneProjected: Record<string, number>;
   pnlByTrader: Map<string, number>;
   pnlByMarket: Map<string, number>;
 };
 
 function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
   let countPositions = 0;
+  const structuralGroups = new Set<string>();
   let openCount = 0;
   let settledCount = 0;
   let totalStaked = 0;
   let realizedPnl = 0;
   let unrealizedPnl = 0;
   let missingPrices = 0;
+  const laneProjected: Record<string, number> = {
+    copy: 0,
+    structural: 0,
+  };
   const pnlByTrader = new Map<string, number>();
   const pnlByMarket = new Map<string, number>();
 
   for (const row of rows || []) {
     if (row.status === "CANCELED") continue;
     countPositions += 1;
+    const lane = (row.strategy_lane || "copy").toLowerCase() === "structural"
+      ? "structural"
+      : "copy";
+    if (lane === "structural" && row.structural_group_id) {
+      structuralGroups.add(row.structural_group_id);
+    }
     const usdSize = toNumber(row.usd_size) ?? 0;
     totalStaked += usdSize;
 
@@ -80,6 +95,7 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
       const pnl = toNumber(row.pnl_usd) ?? 0;
       realizedPnl += pnl;
       pnlContribution = pnl;
+      laneProjected[lane] += pnl;
     } else if (row.status === "OPEN") {
       openCount += 1;
       const currentPrice = toNumber(row.current_price);
@@ -91,6 +107,7 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
       const pnl = shares * currentPrice - usdSize;
       unrealizedPnl += pnl;
       pnlContribution = pnl;
+      laneProjected[lane] += pnl;
     }
 
     if (pnlContribution !== 0) {
@@ -107,6 +124,7 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
 
   return {
     countPositions,
+    countStructuralGroups: structuralGroups.size,
     openCount,
     settledCount,
     totalStaked,
@@ -114,6 +132,7 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
     unrealizedPnl,
     projectedTotal: realizedPnl + unrealizedPnl,
     missingPrices,
+    laneProjected,
     pnlByTrader,
     pnlByMarket,
   };
@@ -270,7 +289,7 @@ serve(async (req) => {
       let sinceResetQuery = supabase
         .from("paper_positions_with_price")
         .select(
-          "portfolio_id,source_wallet,market_id,market_title,status,usd_size,shares,pnl_usd,entry_ts,current_price",
+          "portfolio_id,strategy_lane,structural_group_id,source_wallet,market_id,market_title,status,usd_size,shares,pnl_usd,entry_ts,current_price",
         )
         .gte("entry_ts", reset.reset_at)
         .order("entry_ts", { ascending: false })
@@ -286,11 +305,15 @@ serve(async (req) => {
       }
 
       const metrics = aggregatePositions((positions || []) as PositionWithPriceRow[]);
+      const tradeLine = metrics.countStructuralGroups > 0
+        ? `${metrics.countPositions} legs across ${metrics.countStructuralGroups} structural groups`
+        : String(metrics.countPositions);
 
       let message = "PAPER PORTFOLIO (since reset)";
-      message += `\nTrades: ${metrics.countPositions}`;
+      message += `\nTrades: ${tradeLine}`;
       message += `\nOpen positions: ${metrics.openCount} | Settled: ${metrics.settledCount}`;
       message += `\nProjected P/L: ${formatUsd(metrics.projectedTotal)} (Realized: ${formatUsd(metrics.realizedPnl)}, Unrealized: ${formatUsd(metrics.unrealizedPnl)})`;
+      message += `\nLane split: structural ${formatUsd(metrics.laneProjected.structural || 0)} | copy ${formatUsd(metrics.laneProjected.copy || 0)}`;
 
       if (!dryRun) {
         await sendTelegramMessage(message);
@@ -308,12 +331,14 @@ serve(async (req) => {
             reset_at: new Date(reset.reset_at).toISOString(),
           },
           count_positions: metrics.countPositions,
+          count_structural_groups: metrics.countStructuralGroups,
           open_count: metrics.openCount,
           settled_count: metrics.settledCount,
           total_staked: metrics.totalStaked,
           realized_pnl: metrics.realizedPnl,
           unrealized_pnl: metrics.unrealizedPnl,
           projected_total_pnl: metrics.projectedTotal,
+          lane_projected: metrics.laneProjected,
           missing_prices: metrics.missingPrices,
           message,
         }),

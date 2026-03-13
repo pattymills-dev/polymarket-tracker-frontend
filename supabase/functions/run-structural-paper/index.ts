@@ -10,15 +10,21 @@ const corsHeaders = {
 const STRATEGY_WALLET = "structural_parity_engine";
 const STRATEGY_LANE = "structural";
 const STRATEGY_TAG = "yes_no_parity";
-const EXECUTION_TYPE = "limit_sim";
+const EXECUTION_TYPE = "limit_sim_buffered";
 
 const MAX_PRICE_AGE_MINUTES = 30;
-const MAX_NEW_GROUPS_PER_RUN = 2;
-const DAILY_GROUP_CAP = 6;
+const MAX_NEW_GROUPS_PER_RUN = 3;
+const DAILY_GROUP_CAP = 12;
+const MAX_STRUCTURAL_EXPOSURE_PCT = 0.35;
 const MIN_ENTRY_EDGE = 0.02;
+const MIN_NET_ENTRY_EDGE = 0.015;
 const MAX_ENTRY_SUM = 0.97;
 const MIN_OUTCOME_PRICE = 0.03;
 const MAX_OUTCOME_PRICE = 0.97;
+const MIN_MARKET_LIQUIDITY = 10000;
+const MIN_MINUTES_TO_CLOSE = 180;
+const FORCE_EXIT_MINUTES_TO_CLOSE = 45;
+const ENTRY_BUFFER_BPS = 40;
 
 const TAKE_PROFIT_SUM_DELTA = 0.015;
 const STOP_LOSS_SUM_DELTA = 0.03;
@@ -69,6 +75,24 @@ function pearsonCorrelation(xs: number[], ys: number[]): number | null {
   return cov / Math.sqrt(varX * varY);
 }
 
+function toIsoIfValid(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function getMinutesUntil(now: Date, isoValue: string | null): number | null {
+  if (!isoValue) return null;
+  const ts = Date.parse(isoValue);
+  if (!Number.isFinite(ts)) return null;
+  return (ts - now.getTime()) / (1000 * 60);
+}
+
+function looksIntradayMarket(slug: string | null, title: string | null): boolean {
+  const haystack = `${slug ?? ""} ${title ?? ""}`.toLowerCase();
+  return /up-or-down|15m|30m|1h|this hour|today at|by \d{1,2}(am|pm)\b/.test(haystack);
+}
+
 type PaperPortfolio = {
   id: number | string | null;
   starting_usd: number | string | null;
@@ -100,6 +124,9 @@ type MarketMeta = {
   question: string | null;
   slug: string | null;
   winning_outcome: string | null;
+  liquidity: number | string | null;
+  stats_updated_at: string | null;
+  close_time: string | null;
 };
 
 serve(async (req) => {
@@ -151,7 +178,8 @@ serve(async (req) => {
     const startingUsd = toNumber((portfolio as PaperPortfolio).starting_usd) ?? 500;
     const portfolioEquityUsd = toNumber(equityRow?.equity_usd) ?? startingUsd;
     let openTotalUsd = toNumber(openRow?.open_usd) ?? 0;
-    const maxTotalExposurePct = toNumber((portfolio as PaperPortfolio).max_total_exposure_pct) ?? 0.6;
+    const configuredExposurePct = toNumber((portfolio as PaperPortfolio).max_total_exposure_pct) ?? 0.6;
+    const maxTotalExposurePct = Math.min(configuredExposurePct, MAX_STRUCTURAL_EXPOSURE_PCT);
     const baseUsd = Math.min(
       toNumber((portfolio as PaperPortfolio).fixed_usd_per_trade) ?? DEFAULT_BASE_USD,
       DEFAULT_BASE_USD,
@@ -163,6 +191,11 @@ serve(async (req) => {
       now.getTime() - MAX_PRICE_AGE_MINUTES * 60 * 1000,
     ).toISOString();
     const dailyCutoffIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const maxOpenExposureUsd = portfolioEquityUsd * maxTotalExposurePct;
+    const dailyGroupCap = Math.max(
+      DAILY_GROUP_CAP,
+      Math.floor(maxOpenExposureUsd / Math.max(baseUsd, MIN_STRUCTURAL_USD)),
+    );
 
     let structuralRunId: string | null = null;
     const summary = {
@@ -193,7 +226,12 @@ serve(async (req) => {
           notes: {
             strategy: STRATEGY_TAG,
             max_new_groups: maxNewGroups,
+            daily_group_cap: dailyGroupCap,
             stale_cutoff_minutes: MAX_PRICE_AGE_MINUTES,
+            min_net_edge: MIN_NET_ENTRY_EDGE,
+            min_market_liquidity: MIN_MARKET_LIQUIDITY,
+            min_minutes_to_close: MIN_MINUTES_TO_CLOSE,
+            entry_buffer_bps: ENTRY_BUFFER_BPS,
           },
         })
         .select("id")
@@ -242,15 +280,17 @@ serve(async (req) => {
     }
 
     const resolvedMarketSet = new Set<string>();
+    const openMarketMetaMap = new Map<string, MarketMeta>();
     if (openMarketIds.length > 0) {
       const { data: openMarkets, error: openMarketsError } = await supabase
         .from("markets")
-        .select("id, winning_outcome")
+        .select("id, winning_outcome, close_time, question, slug, liquidity, stats_updated_at")
         .in("id", openMarketIds);
       if (openMarketsError) {
         console.warn("Failed to load market resolution for open groups:", openMarketsError.message);
       } else {
-        for (const row of openMarkets || []) {
+        for (const row of (openMarkets || []) as MarketMeta[]) {
+          openMarketMetaMap.set(row.id, row);
           if (row?.id && row?.winning_outcome) {
             resolvedMarketSet.add(String(row.id));
           }
@@ -305,12 +345,16 @@ serve(async (req) => {
         : 0;
       const entrySum = totalUsd / minShares;
       const currentSum = px0 + px1;
+      const openMarketMeta = openMarketMetaMap.get(marketId);
+      const minutesToClose = getMinutesUntil(now, toIsoIfValid(openMarketMeta?.close_time ?? null));
 
       let exitReason: string | null = null;
       if (currentSum >= entrySum + TAKE_PROFIT_SUM_DELTA) {
         exitReason = "take_profit";
       } else if (currentSum <= entrySum - STOP_LOSS_SUM_DELTA) {
         exitReason = "stop_loss";
+      } else if (minutesToClose != null && minutesToClose <= FORCE_EXIT_MINUTES_TO_CLOSE) {
+        exitReason = "close_time_guard";
       } else if (holdHours >= HARD_MAX_HOLD_HOURS) {
         exitReason = "time_stop";
       } else if (holdHours >= SOFT_MAX_HOLD_HOURS && currentSum > entrySum) {
@@ -429,7 +473,7 @@ serve(async (req) => {
         const batch = candidateIds.slice(i, i + 200);
         const { data: marketsBatch, error: marketsError } = await supabase
           .from("markets")
-          .select("id, question, slug, winning_outcome")
+          .select("id, question, slug, winning_outcome, liquidity, stats_updated_at, close_time")
           .in("id", batch);
         if (marketsError) {
           console.warn("Failed to load markets for structural scan:", marketsError.message);
@@ -442,11 +486,10 @@ serve(async (req) => {
     }
 
     candidateMarkets.sort((a, b) => b.edge - a.edge);
-    const maxOpenExposureUsd = portfolioEquityUsd * maxTotalExposurePct;
 
     for (const candidate of candidateMarkets) {
       if (summary.groups_opened >= maxNewGroups) break;
-      if (recentGroups.size + summary.groups_opened >= DAILY_GROUP_CAP) {
+      if (recentGroups.size + summary.groups_opened >= dailyGroupCap) {
         noteSkip("daily_group_cap");
         break;
       }
@@ -468,15 +511,45 @@ serve(async (req) => {
         noteSkip("market_already_resolved");
         continue;
       }
+      const marketLiquidity = toNumber(marketMeta.liquidity) ?? 0;
+      if (marketLiquidity > 0 && marketLiquidity < MIN_MARKET_LIQUIDITY) {
+        noteSkip("thin_market");
+        continue;
+      }
+      const closeTimeIso = toIsoIfValid(marketMeta.close_time);
+      const minutesToClose = getMinutesUntil(now, closeTimeIso);
+      if (minutesToClose != null && minutesToClose <= MIN_MINUTES_TO_CLOSE) {
+        noteSkip("too_close_to_resolution");
+        continue;
+      }
+      if (minutesToClose == null && looksIntradayMarket(marketMeta.slug, marketMeta.question)) {
+        noteSkip("intraday_market");
+        continue;
+      }
 
-      const kellyLike = clamp(candidate.edge / 0.05, 0.25, 1.5);
-      const totalUsd = clamp(baseUsd * kellyLike, MIN_STRUCTURAL_USD, MAX_STRUCTURAL_USD);
+      const entryBuffer = candidate.sum_price * (ENTRY_BUFFER_BPS / 10_000);
+      const bufferedEntrySum = candidate.sum_price + entryBuffer;
+      const netEdge = 1 - bufferedEntrySum;
+      if (netEdge < MIN_NET_ENTRY_EDGE) {
+        noteSkip("net_edge_too_small");
+        continue;
+      }
+
+      const sizeFactor = clamp(netEdge / MIN_NET_ENTRY_EDGE, 0.60, 2.20);
+      const liquidityCapUsd = marketLiquidity > 0
+        ? clamp(marketLiquidity * 0.0005, MIN_STRUCTURAL_USD, MAX_STRUCTURAL_USD)
+        : baseUsd;
+      const totalUsd = clamp(
+        Math.min(baseUsd * sizeFactor, liquidityCapUsd),
+        MIN_STRUCTURAL_USD,
+        MAX_STRUCTURAL_USD,
+      );
       if (openTotalUsd + totalUsd > maxOpenExposureUsd) {
         noteSkip("total_exposure_cap");
         continue;
       }
 
-      const shares = totalUsd / candidate.sum_price;
+      const shares = totalUsd / bufferedEntrySum;
       if (!Number.isFinite(shares) || shares <= 0) {
         noteSkip("invalid_share_size");
         continue;
@@ -484,7 +557,10 @@ serve(async (req) => {
 
       const groupId = `${STRATEGY_WALLET}:${candidate.market_id}:${Date.now()}:${summary.groups_opened + 1}`;
       const legs = candidate.outcomes.map((outcomeRow, idx) => {
-        const px = toNumber(outcomeRow.price) ?? 0;
+        const sourcePx = toNumber(outcomeRow.price) ?? 0;
+        const priceWeight = candidate.sum_price > 0 ? sourcePx / candidate.sum_price : 0.5;
+        const pricePenalty = entryBuffer * priceWeight;
+        const entryPx = sourcePx + pricePenalty;
         return {
           portfolio_id: portfolioId,
           source_wallet: STRATEGY_WALLET,
@@ -495,12 +571,12 @@ serve(async (req) => {
           market_title: marketMeta.question ?? null,
           outcome: outcomeRow.outcome,
           side: "BUY",
-          source_price: px,
-          entry_price: px,
-          price_penalty: 0,
+          source_price: sourcePx,
+          entry_price: entryPx,
+          price_penalty: pricePenalty,
           copy_factor: null,
           entry_ts: nowIso,
-          usd_size: shares * px,
+          usd_size: shares * entryPx,
           shares,
           status: "OPEN",
           sizing_method: "structural_parity_fractional_kelly",
@@ -508,7 +584,7 @@ serve(async (req) => {
           strategy_lane: STRATEGY_LANE,
           strategy_tag: STRATEGY_TAG,
           execution_type: EXECUTION_TYPE,
-          edge_bps: candidate.edge * 10000,
+          edge_bps: netEdge * 10000,
           structural_group_id: groupId,
           updated_at: nowIso,
         };
