@@ -145,19 +145,35 @@ jobs:
             exit 1
           fi
 
-      - name: Run structural paper trading
+      - name: Run anomaly paper trading
         continue-on-error: true
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-structural-paper")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-anomaly")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
-          echo "Response (structural paper): $body"
+          echo "Response (anomaly paper): $body"
           echo "HTTP Status: $http_code"
           if [ "$http_code" -ge 400 ]; then
-            echo "Error: run-structural-paper failed with status $http_code"
+            echo "Error: run-paper-anomaly failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Capture lead-lag snapshots
+        continue-on-error: true
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/capture-lead-lag")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (lead-lag capture): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: capture-lead-lag failed with status $http_code"
             exit 1
           fi
 
@@ -384,7 +400,7 @@ jobs:
             exit 1
           fi
 
-      - name: Send daily strategy lane report (copy vs structural)
+      - name: Send daily strategy lane report
         if: always() && steps.profile.outputs.daily == 'true'
         continue-on-error: true
         run: |

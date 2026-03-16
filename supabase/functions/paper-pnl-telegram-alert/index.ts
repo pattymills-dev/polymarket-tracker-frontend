@@ -73,6 +73,7 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
   const laneProjected: Record<string, number> = {
     copy: 0,
     structural: 0,
+    anomaly: 0,
   };
   const pnlByTrader = new Map<string, number>();
   const pnlByMarket = new Map<string, number>();
@@ -82,7 +83,8 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
     countPositions += 1;
     const lane = (row.strategy_lane || "copy").toLowerCase() === "structural"
       ? "structural"
-      : "copy";
+      : (row.strategy_lane || "copy").toLowerCase();
+    laneProjected[lane] = laneProjected[lane] || 0;
     if (lane === "structural" && row.structural_group_id) {
       structuralGroups.add(row.structural_group_id);
     }
@@ -313,7 +315,11 @@ serve(async (req) => {
       message += `\nTrades: ${tradeLine}`;
       message += `\nOpen positions: ${metrics.openCount} | Settled: ${metrics.settledCount}`;
       message += `\nProjected P/L: ${formatUsd(metrics.projectedTotal)} (Realized: ${formatUsd(metrics.realizedPnl)}, Unrealized: ${formatUsd(metrics.unrealizedPnl)})`;
-      message += `\nLane split: structural ${formatUsd(metrics.laneProjected.structural || 0)} | copy ${formatUsd(metrics.laneProjected.copy || 0)}`;
+      const laneLine = Object.entries(metrics.laneProjected)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([lane, pnl]) => `${lane} ${formatUsd(pnl)}`)
+        .join(" | ");
+      message += `\nLane split: ${laneLine}`;
 
       if (!dryRun) {
         await sendTelegramMessage(message);

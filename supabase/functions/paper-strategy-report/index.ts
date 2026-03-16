@@ -104,12 +104,20 @@ serve(async (req) => {
 
     const now = new Date();
     const h24Cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-    const lanes = ["copy", "structural"];
+    const lanes = Array.from(
+      new Set(
+        ((positions || []) as PositionRow[])
+          .map((r) => (r.strategy_lane || "copy").toLowerCase()),
+      ),
+    );
+    for (const defaultLane of ["copy", "structural", "anomaly"]) {
+      if (!lanes.includes(defaultLane)) lanes.push(defaultLane);
+    }
     const laneMetrics: Record<string, Record<string, number>> = {};
 
     for (const lane of lanes) {
       const rows = ((positions || []) as PositionRow[]).filter(
-        (r) => (r.strategy_lane || "copy") === lane,
+        (r) => (r.strategy_lane || "copy").toLowerCase() === lane,
       );
       const openRows = rows.filter((r) => r.status === "OPEN");
       const settledRows = rows.filter((r) => r.status === "SETTLED");
@@ -136,13 +144,16 @@ serve(async (req) => {
       };
     }
 
-    const copy = laneMetrics.copy;
-    const structural = laneMetrics.structural;
     let message = "PAPER STRATEGY SPLIT (since reset)";
     message += `\nLabel: ${reset.label ?? "n/a"}`;
-    message += `\ncopy: trades ${copy.trades} | open ${copy.open} | settled ${copy.settled} | projected ${formatUsd(copy.projected)}`;
-    message += `\nstructural: trades ${structural.trades} | open ${structural.open} | settled ${structural.settled} | projected ${formatUsd(structural.projected)}`;
-    message += `\n24h realized: copy ${formatUsd(copy.realized24h)} | structural ${formatUsd(structural.realized24h)}`;
+    for (const lane of lanes) {
+      const metrics = laneMetrics[lane];
+      message += `\n${lane}: trades ${metrics.trades} | open ${metrics.open} | settled ${metrics.settled} | projected ${formatUsd(metrics.projected)}`;
+    }
+    const realized24hLine = lanes
+      .map((lane) => `${lane} ${formatUsd(laneMetrics[lane].realized24h)}`)
+      .join(" | ");
+    message += `\n24h realized: ${realized24hLine}`;
 
     if (!dryRun) {
       await sendTelegramMessage(message);
@@ -166,4 +177,3 @@ serve(async (req) => {
     );
   }
 });
-
