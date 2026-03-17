@@ -130,35 +130,6 @@ function isBlacklistedMarket(slug: string | null): boolean {
   return BLACKLISTED_SLUG_PREFIXES.some(prefix => lowerSlug.startsWith(prefix));
 }
 
-function isDerivedSportsMarket(
-  title: string | null,
-  slug: string | null,
-): boolean {
-  const haystack = `${title ?? ""} ${slug ?? ""}`.toLowerCase();
-  return haystack.includes(" o/u ") ||
-    haystack.includes("over/under") ||
-    haystack.includes("spread:") ||
-    haystack.includes("moneyline") ||
-    haystack.includes(" first half") ||
-    haystack.includes(" period ") ||
-    haystack.includes(" quarter ") ||
-    haystack.includes(" map ") ||
-    haystack.includes("set 1") ||
-    haystack.includes("-spread-") ||
-    haystack.includes("-ou-");
-}
-
-function isTemporarilyPausedTotalsMarket(
-  title: string | null,
-  slug: string | null,
-): boolean {
-  const haystack = `${title ?? ""} ${slug ?? ""}`.toLowerCase();
-  return haystack.includes(" o/u ") ||
-    haystack.includes("over/under") ||
-    haystack.includes("total points") ||
-    haystack.includes("-ou-");
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -944,58 +915,6 @@ serve(async (req) => {
           await recordDecision({
             decision: "SKIPPED",
             reason: "blacklisted_market_category",
-            source_trade_id: trade.tx_hash,
-            source_wallet: wallet,
-            source_trade_ts: trade.timestamp ?? null,
-            market_id: trade.market_id,
-            market_slug: trade.market_slug ?? null,
-            market_title: trade.market_title ?? null,
-            outcome: trade.outcome ?? null,
-            side,
-            source_price: price,
-            sizing_method: SIZING_METHOD,
-            fixed_usd_per_trade: fixedUsdPerTrade,
-            copy_factor: copyFactor,
-            max_trader_exposure_pct: maxTraderExposurePct,
-            min_price: minPrice,
-            max_price: maxPrice,
-            allow_sells: allowSells,
-            ranking_snapshot: rankingSnapshot,
-          });
-          continue;
-        }
-
-        if (isTemporarilyPausedTotalsMarket(trade.market_title, trade.market_slug)) {
-          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "totals_market_paused");
-          await recordDecision({
-            decision: "SKIPPED",
-            reason: "totals_market_paused",
-            source_trade_id: trade.tx_hash,
-            source_wallet: wallet,
-            source_trade_ts: trade.timestamp ?? null,
-            market_id: trade.market_id,
-            market_slug: trade.market_slug ?? null,
-            market_title: trade.market_title ?? null,
-            outcome: trade.outcome ?? null,
-            side,
-            source_price: price,
-            sizing_method: SIZING_METHOD,
-            fixed_usd_per_trade: fixedUsdPerTrade,
-            copy_factor: copyFactor,
-            max_trader_exposure_pct: maxTraderExposurePct,
-            min_price: minPrice,
-            max_price: maxPrice,
-            allow_sells: allowSells,
-            ranking_snapshot: rankingSnapshot,
-          });
-          continue;
-        }
-
-        if (isDerivedSportsMarket(trade.market_title, trade.market_slug)) {
-          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "derived_market_paused");
-          await recordDecision({
-            decision: "SKIPPED",
-            reason: "derived_market_paused",
             source_trade_id: trade.tx_hash,
             source_wallet: wallet,
             source_trade_ts: trade.timestamp ?? null,
