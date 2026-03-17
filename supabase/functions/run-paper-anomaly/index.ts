@@ -63,48 +63,6 @@ const BLACKLISTED_SLUG_PREFIXES = [
   "sol-updown-",
 ];
 
-const SPORTS_SLUG_PREFIXES = [
-  "nba-",
-  "nhl-",
-  "nfl-",
-  "mlb-",
-  "wnba-",
-  "cbb-",
-  "ncaa-",
-  "ncaaf-",
-  "epl-",
-  "mls-",
-  "lal-",
-  "ligue1-",
-  "seriea-",
-  "bundesliga-",
-  "ufc-",
-  "mma-",
-  "atp-",
-  "wta-",
-  "pga-",
-  "f1-",
-  "nascar-",
-  "spl-",
-  "ere-",
-  "bl2-",
-  "elc-",
-];
-
-const SPORTS_TITLE_HINTS = [
-  " vs. ",
-  " o/u ",
-  "over/under",
-  "spread:",
-  "moneyline",
-  " first half",
-  " period ",
-  " quarter ",
-  " map ",
-  "set 1",
-  "winner",
-];
-
 const ALERT_WEIGHTS: Record<string, number> = {
   dormant_whale: 4,
   isolated_contact: 4,
@@ -364,11 +322,19 @@ function isBlacklistedMarket(slug: string | null): boolean {
   return BLACKLISTED_SLUG_PREFIXES.some((prefix) => lowerSlug.startsWith(prefix));
 }
 
-function isBroadSportsMarket(title: string | null, slug: string | null): boolean {
-  const lowerSlug = (slug ?? "").toLowerCase();
-  if (SPORTS_SLUG_PREFIXES.some((prefix) => lowerSlug.startsWith(prefix))) return true;
-  const lowerTitle = (title ?? "").toLowerCase();
-  return SPORTS_TITLE_HINTS.some((hint) => lowerTitle.includes(hint));
+function isDerivedSportsMarket(title: string | null, slug: string | null): boolean {
+  const haystack = `${title ?? ""} ${slug ?? ""}`.toLowerCase();
+  return haystack.includes(" o/u ") ||
+    haystack.includes("over/under") ||
+    haystack.includes("spread:") ||
+    haystack.includes("moneyline") ||
+    haystack.includes(" first half") ||
+    haystack.includes(" period ") ||
+    haystack.includes(" quarter ") ||
+    haystack.includes(" map ") ||
+    haystack.includes("set 1") ||
+    haystack.includes("-spread-") ||
+    haystack.includes("-ou-");
 }
 
 async function enrichMarketsFromGamma(markets: MarketMeta[]): Promise<Map<string, Partial<MarketMeta>>> {
@@ -769,7 +735,7 @@ serve(async (req) => {
         if (!trade.tx_hash || !trade.market_id || !trade.outcome || !tradeTs || tradeAgeMinutes == null || tradeAgeMinutes > maxTradeAgeMinutes) continue;
         if (side !== "BUY" || price == null || price <= 0 || price >= 1 || amount == null || amount <= 0) continue;
         if (price < MIN_PRICE || price > MAX_PRICE) continue;
-        if (isBlacklistedMarket(trade.market_slug) || isBroadSportsMarket(trade.market_title, trade.market_slug)) continue;
+        if (isBlacklistedMarket(trade.market_slug) || isDerivedSportsMarket(trade.market_title, trade.market_slug)) continue;
 
         const medianBet = Math.max(toNumber(ranking.median_bet_30d) ?? 0, 1);
         const sizeRatio = amount / medianBet;

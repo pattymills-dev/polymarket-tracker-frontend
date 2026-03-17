@@ -123,42 +123,6 @@ const BLACKLISTED_SLUG_PREFIXES = [
   "r6siege-",  // Rainbow Six Siege
 ];
 
-// Sports moneyline/spread markets have dominated drawdown in this portfolio.
-const SPORTS_SLUG_PREFIXES = [
-  "nba-",
-  "nhl-",
-  "nfl-",
-  "mlb-",
-  "wnba-",
-  "cbb-",
-  "ncaa-",
-  "ncaaf-",
-  "epl-",
-  "mls-",
-  "lal-",
-  "ligue1-",
-  "seriea-",
-  "bundesliga-",
-  "ufc-",
-  "mma-",
-  "atp-",
-  "wta-",
-  "pga-",
-  "f1-",
-  "nascar-",
-];
-
-const SPORTS_TITLE_HINTS = [
-  " vs. ",
-  " o/u ",
-  "over/under",
-  "spread:",
-  "moneyline",
-  " first half",
-  " period ",
-  " quarter ",
-];
-
 // Helper to check if a market slug is blacklisted
 function isBlacklistedMarket(slug: string | null): boolean {
   if (!slug) return false;
@@ -166,16 +130,22 @@ function isBlacklistedMarket(slug: string | null): boolean {
   return BLACKLISTED_SLUG_PREFIXES.some(prefix => lowerSlug.startsWith(prefix));
 }
 
-function isBroadSportsMarket(
+function isDerivedSportsMarket(
   title: string | null,
   slug: string | null,
 ): boolean {
-  const lowerSlug = (slug ?? "").toLowerCase();
-  if (SPORTS_SLUG_PREFIXES.some((prefix) => lowerSlug.startsWith(prefix))) {
-    return true;
-  }
-  const lowerTitle = (title ?? "").toLowerCase();
-  return SPORTS_TITLE_HINTS.some((hint) => lowerTitle.includes(hint));
+  const haystack = `${title ?? ""} ${slug ?? ""}`.toLowerCase();
+  return haystack.includes(" o/u ") ||
+    haystack.includes("over/under") ||
+    haystack.includes("spread:") ||
+    haystack.includes("moneyline") ||
+    haystack.includes(" first half") ||
+    haystack.includes(" period ") ||
+    haystack.includes(" quarter ") ||
+    haystack.includes(" map ") ||
+    haystack.includes("set 1") ||
+    haystack.includes("-spread-") ||
+    haystack.includes("-ou-");
 }
 
 function isTemporarilyPausedTotalsMarket(
@@ -1021,11 +991,11 @@ serve(async (req) => {
           continue;
         }
 
-        if (isBroadSportsMarket(trade.market_title, trade.market_slug)) {
-          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "sports_market_paused");
+        if (isDerivedSportsMarket(trade.market_title, trade.market_slug)) {
+          logTradeSkip(trade.tx_hash, wallet, trade.market_id, "derived_market_paused");
           await recordDecision({
             decision: "SKIPPED",
-            reason: "sports_market_paused",
+            reason: "derived_market_paused",
             source_trade_id: trade.tx_hash,
             source_wallet: wallet,
             source_trade_ts: trade.timestamp ?? null,
