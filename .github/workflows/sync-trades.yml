@@ -244,6 +244,24 @@ jobs:
             exit 1
           fi
 
+      - name: Sync market resolutions (UI recent top traders)
+        if: steps.profile.outputs.hourly == 'true'
+        continue-on-error: true
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/sync-market-resolutions?batch=150&mode=ui_recent&days=7&top_traders=10&per_trader_trades=50")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (ui_recent): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: sync-resolutions (ui_recent) failed with status $http_code"
+            exit 1
+          fi
+
       - name: Sync crypto updown resolutions (recent window)
         if: steps.profile.outputs.hourly == 'true'
         continue-on-error: true
@@ -331,6 +349,24 @@ jobs:
           echo "HTTP Status: $http_code"
           if [ "$http_code" -ge 400 ]; then
             echo "Error: sync-resolutions (due) failed with status $http_code"
+            exit 1
+          fi
+
+      - name: Monitor resolution sync backlog
+        if: steps.profile.outputs.hourly == 'true'
+        continue-on-error: true
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X GET \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/resolution-sync-monitor?stale_hours=24&sports_days=7&top_traders=10&per_trader_trades=50")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response (resolution-sync-monitor): $body"
+          echo "HTTP Status: $http_code"
+          if [ "$http_code" -ge 400 ]; then
+            echo "Error: resolution-sync-monitor failed with status $http_code"
             exit 1
           fi
 
