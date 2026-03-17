@@ -112,12 +112,12 @@ jobs:
           fi
 
       - name: Run paper copy trading
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_maintenance == 'true'
+        continue-on-error: true
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=60")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=20")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "Response (paper copy): $body"

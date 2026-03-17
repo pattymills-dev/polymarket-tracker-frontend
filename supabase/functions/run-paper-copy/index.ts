@@ -64,8 +64,8 @@ type OpenCopyPositionWithPrice = {
 
 const DEFAULT_COPY_FACTOR = 0.1;
 const DEFAULT_PRICE_PENALTY = 0.01;
-const DEFAULT_MIN_PRICE = 0.45; // Raised from 0.05 — longshots (<45¢) bleed: 7% WR at <30¢, 36% at 30-50¢
-const DEFAULT_MAX_PRICE = 0.68; // Avoid expensive favorites with poor payoff asymmetry
+const DEFAULT_MIN_PRICE = 0.15; // Let curated top traders express moderate underdog conviction without reopening deep longshot bleed.
+const DEFAULT_MAX_PRICE = 0.92; // Allow late, high-conviction entries from elite traders near resolution.
 const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
 const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.35;
@@ -74,7 +74,7 @@ const DEFAULT_FIXED_USD_PER_TRADE = 10;
 const SAFETY_MAX_FIXED_USD_PER_TRADE = 10;
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
-const DEFAULT_MAX_TRADE_AGE_MINUTES = 10; // Avoid late/backfilled entries that are no longer actionable
+const DEFAULT_MAX_TRADE_AGE_MINUTES = 20; // Match the 15-minute workflow cadence without backfilling stale flow.
 const MAX_NEW_POSITIONS_PER_RUN = 6; // Keep activity focused and avoid burst overtrading
 const SIZING_METHOD = "fixed_stake";
 const PRICE_RULE = "source_price_plus_penalty";
@@ -82,13 +82,13 @@ const PRICE_RULE = "source_price_plus_penalty";
 // Data freshness check - don't copy if rankings are stale
 const MAX_RANKINGS_AGE_HOURS = 24; // Skip copying if data is older than 24 hours
 
-// Position limits per trader - loosened to avoid blocking profitable traders
-const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 8; // Raised from 3 — position_cap_reached was 22% of skips
+// Position limits per trader - keep exposure concentrated within the curated shortlist.
+const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 3;
 
-// Default rank gate - only copy from traders in top N (can be overridden per trader)
-const DEFAULT_MAX_COPYABLE_RANK = 15;
-const DEFAULT_MIN_RESOLVED_TRADES_30D = 40;
-const DEFAULT_MIN_CONFIDENCE_30D = 0.6;
+// Default shortlist gates - runtime fallback if a copy_traders row is missing explicit thresholds.
+const DEFAULT_MAX_COPYABLE_RANK = 25;
+const DEFAULT_MIN_RESOLVED_TRADES_30D = 25;
+const DEFAULT_MIN_CONFIDENCE_30D = 2;
 const DEFAULT_PER_TRADER_COOLDOWN_MINUTES = 240;
 const DEFAULT_MAX_ENTRIES_PER_TRADER_MARKET_24H = 1;
 
