@@ -2,8 +2,8 @@ name: Sync Polymarket Trades
 
 on:
   schedule:
-    # Run every 15 minutes
-    - cron: '*/15 * * * *'
+    # Run every 5 minutes (testing faster polling)
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Allow manual trigger
     inputs:
       run_maintenance:
@@ -115,7 +115,7 @@ jobs:
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=1440")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=10")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "Response (paper copy): $body"

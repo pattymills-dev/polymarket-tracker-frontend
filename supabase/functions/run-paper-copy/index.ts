@@ -53,8 +53,8 @@ type PaperPortfolio = {
 
 const DEFAULT_COPY_FACTOR = 0.1;
 const DEFAULT_PRICE_PENALTY = 0.01;
-const DEFAULT_MIN_PRICE = 0.45; // Raised from 0.05 — longshots (<45¢) bleed: 7% WR at <30¢, 36% at 30-50¢
-const DEFAULT_MAX_PRICE = 0.80;
+const DEFAULT_MIN_PRICE = 0.30; // TESTING: Lowered from 0.45 to capture more elite trader flow
+const DEFAULT_MAX_PRICE = 0.85; // TESTING: Raised from 0.80 to allow favorites
 const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
 const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.6;
@@ -62,7 +62,7 @@ const DEFAULT_MARKET_EXPOSURE_CAP_PCT = 0.2;
 const DEFAULT_FIXED_USD_PER_TRADE = 25; // Raised from $10 — amplify edge on 50¢+ trades (67-91% WR)
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
-const DEFAULT_MAX_TRADE_AGE_MINUTES = 10; // Avoid late/backfilled entries that are no longer actionable
+const DEFAULT_MAX_TRADE_AGE_MINUTES = 10; // Only copy very fresh trades (5min polling now)
 const SIZING_METHOD = "fixed_stake";
 const PRICE_RULE = "source_price_plus_penalty";
 
