@@ -51,6 +51,8 @@ type AggregateMetrics = {
   countStructuralGroups: number;
   openCount: number;
   settledCount: number;
+  wins: number;
+  losses: number;
   totalStaked: number;
   realizedPnl: number;
   unrealizedPnl: number;
@@ -66,6 +68,8 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
   const structuralGroups = new Set<string>();
   let openCount = 0;
   let settledCount = 0;
+  let wins = 0;
+  let losses = 0;
   let totalStaked = 0;
   let realizedPnl = 0;
   let unrealizedPnl = 0;
@@ -95,6 +99,7 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
     if (row.status === "SETTLED") {
       settledCount += 1;
       const pnl = toNumber(row.pnl_usd) ?? 0;
+      if (pnl > 0) wins += 1; else losses += 1;
       realizedPnl += pnl;
       pnlContribution = pnl;
       laneProjected[lane] += pnl;
@@ -129,6 +134,8 @@ function aggregatePositions(rows: PositionWithPriceRow[]): AggregateMetrics {
     countStructuralGroups: structuralGroups.size,
     openCount,
     settledCount,
+    wins,
+    losses,
     totalStaked,
     realizedPnl,
     unrealizedPnl,
@@ -231,13 +238,8 @@ serve(async (req) => {
       const projectedTotal = toNumber(summary.projected_total_pnl) ?? 0;
       const missingPrices = toNumber(summary.open_missing_price) ?? 0;
 
-      let message = "PAPER COPY (all-time)";
-      message += `\nTotal positions: ${totalPositions}`;
-      message += `\nTotal paper staked: ${formatAbsUsd(totalStaked)}`;
-      message += `\nOpen exposure: ${formatAbsUsd(openExposure)}`;
-      message += `\nRealized P/L: ${formatUsd(realizedPnl)}`;
-      message += `\nProjected total P/L: ${formatUsd(projectedTotal)} (unrealized: ${formatUsd(projectedUnrealized)})`;
-      message += `\nMissing prices on open positions: ${missingPrices}`;
+      let message = "📊 PAPER COPY (all-time)";
+      message += `\nRealized: ${formatUsd(realizedPnl)} | Projected: ${formatUsd(projectedTotal)}`;
 
       if (!dryRun) {
         await sendTelegramMessage(message);
@@ -307,19 +309,24 @@ serve(async (req) => {
       }
 
       const metrics = aggregatePositions((positions || []) as PositionWithPriceRow[]);
-      const tradeLine = metrics.countStructuralGroups > 0
-        ? `${metrics.countPositions} legs across ${metrics.countStructuralGroups} structural groups`
-        : String(metrics.countPositions);
 
-      let message = "PAPER PORTFOLIO (since reset)";
-      message += `\nTrades: ${tradeLine}`;
-      message += `\nOpen positions: ${metrics.openCount} | Settled: ${metrics.settledCount}`;
-      message += `\nProjected P/L: ${formatUsd(metrics.projectedTotal)} (Realized: ${formatUsd(metrics.realizedPnl)}, Unrealized: ${formatUsd(metrics.unrealizedPnl)})`;
-      const laneLine = Object.entries(metrics.laneProjected)
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([lane, pnl]) => `${lane} ${formatUsd(pnl)}`)
-        .join(" | ");
-      message += `\nLane split: ${laneLine}`;
+      // Load starting budget from portfolio
+      let startingUsd = 1000;
+      const { data: portfolioRow } = await supabase
+        .from("paper_portfolios")
+        .select("starting_usd")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (portfolioRow?.starting_usd) startingUsd = toNumber(portfolioRow.starting_usd) ?? startingUsd;
+      const remainingUsd = startingUsd + metrics.projectedTotal;
+      const totalSettled = metrics.wins + metrics.losses;
+      const winPct = totalSettled > 0 ? ((metrics.wins / totalSettled) * 100).toFixed(0) : "0";
+
+      let message = "📊 PAPER PORTFOLIO";
+      message += `\nBudget: ${formatAbsUsd(startingUsd)} | Remaining: ${formatAbsUsd(remainingUsd)}`;
+      message += `\nRecord: ${metrics.wins}W-${metrics.losses}L (${winPct}%) | Open: ${metrics.openCount}`;
+      message += `\nRealized: ${formatUsd(metrics.realizedPnl)} | Projected: ${formatUsd(metrics.projectedTotal)}`;
 
       if (!dryRun) {
         await sendTelegramMessage(message);
@@ -392,18 +399,11 @@ serve(async (req) => {
 
     const metrics = aggregatePositions((positions || []) as PositionWithPriceRow[]);
 
-    let message = `PAPER COPY (last ${windowHours}h)`;
-    message += `\nCopied trades: ${metrics.countPositions}`;
-    message += `\nStaked: ${formatAbsUsd(metrics.totalStaked)}`;
-    message += `\nOpen: ${metrics.openCount} | Settled: ${metrics.settledCount}`;
-    message += `\nProjected P/L: ${formatUsd(metrics.projectedTotal)} (Realized: ${formatUsd(metrics.realizedPnl)}, Unrealized: ${formatUsd(metrics.unrealizedPnl)})`;
-
-    if (metrics.missingPrices > 0) {
-      message += `\nMissing prices: ${metrics.missingPrices}`;
-    }
-
-    message += `\nTop traders: ${buildTopList(metrics.pnlByTrader)}`;
-    message += `\nTop markets: ${buildTopList(metrics.pnlByMarket)}`;
+    const totalSettledW = metrics.wins + metrics.losses;
+    const winPctW = totalSettledW > 0 ? ((metrics.wins / totalSettledW) * 100).toFixed(0) : "0";
+    let message = `📊 PAPER COPY (last ${windowHours}h)`;
+    message += `\nRecord: ${metrics.wins}W-${metrics.losses}L (${winPctW}%) | Open: ${metrics.openCount}`;
+    message += `\nRealized: ${formatUsd(metrics.realizedPnl)} | Projected: ${formatUsd(metrics.projectedTotal)}`;
 
     if (!dryRun) {
       await sendTelegramMessage(message);
