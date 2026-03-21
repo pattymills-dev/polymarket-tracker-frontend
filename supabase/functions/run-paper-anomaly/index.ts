@@ -40,6 +40,8 @@ const MIN_FIXED_USD = 6;
 const MAX_FIXED_USD = 12;
 const TAKE_PROFIT_PCT = 0.08;
 const STOP_LOSS_PCT = -0.12;
+const MAX_ENTRY_PRICE = 0.85; // Skip if market has moved far from signal — entering near-resolved markets causes instant stop-outs
+const MAX_PRICE_DRIFT_RATIO = 1.25; // Skip if ask is >25% above source_price — signal is stale
 const SOFT_MAX_HOLD_HOURS = 4;
 const HARD_MAX_HOLD_HOURS = 12;
 const CLOSE_TIME_GUARD_MINUTES = 30;
@@ -1075,6 +1077,14 @@ serve(async (req) => {
       const entryPrice = applyBuyCosts(rawAsk, quote.feeBps, quote.latencyBps);
       if (entryPrice <= 0 || entryPrice >= 1) {
         noteSkip("entry_price_out_of_bounds");
+        continue;
+      }
+      if (entryPrice > MAX_ENTRY_PRICE) {
+        noteSkip("entry_price_too_high");
+        continue;
+      }
+      if (price > 0 && entryPrice > price * MAX_PRICE_DRIFT_RATIO) {
+        noteSkip("price_drift_too_large");
         continue;
       }
       const shares = sizing.usdSize / entryPrice;
