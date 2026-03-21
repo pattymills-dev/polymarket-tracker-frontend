@@ -417,8 +417,8 @@ jobs:
         continue-on-error: true
         run: |
           hour=$(date -u +%H)
-          if [ $((10#$hour % 2)) -ne 0 ]; then
-            echo "Skipping paper PnL Telegram update this hour (runs every 2h UTC)."
+          if [ $((10#$hour % 4)) -ne 0 ]; then
+            echo "Skipping paper PnL Telegram update this hour (runs every 4h UTC)."
             exit 0
           fi
 
