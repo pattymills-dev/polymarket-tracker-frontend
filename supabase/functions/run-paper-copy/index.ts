@@ -599,7 +599,10 @@ serve(async (req) => {
         const startFrom = traderRaw.start_from_ts
           ? new Date(traderRaw.start_from_ts)
           : null;
-        const initTs = startFrom ?? now;
+        // Initialize cursor to max_trade_age_minutes ago so newly enabled traders
+        // immediately pick up recent trades instead of starting from now.
+        const defaultLookback = new Date(now.getTime() - maxTradeAgeMinutes * 60 * 1000);
+        const initTs = startFrom ?? defaultLookback;
 
         if (!dryRun) {
           const { error: initError } = await supabase
