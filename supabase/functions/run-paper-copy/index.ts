@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { computeFixedStakeUsdSize } from "./sizing.ts";
+import { computeFixedStakeUsdSize, computeKellyUsdSize } from "./sizing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -70,13 +70,17 @@ const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
 const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.35;
 const DEFAULT_MARKET_EXPOSURE_CAP_PCT = 0.08;
-const DEFAULT_FIXED_USD_PER_TRADE = 10;
-const SAFETY_MAX_FIXED_USD_PER_TRADE = 10;
+const DEFAULT_FIXED_USD_PER_TRADE = 25;
+const SAFETY_MAX_FIXED_USD_PER_TRADE = 200; // Raised — was hard-capped at $10, blocking DB config
+// Quarter-Kelly sizing bounds
+const KELLY_FRACTION = 0.25;
+const KELLY_MIN_USD = 15;   // Never bet less than $15
+const KELLY_MAX_USD = 150;  // Never bet more than $150 per trade
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
-const DEFAULT_MAX_TRADE_AGE_MINUTES = 20; // Match the 15-minute workflow cadence without backfilling stale flow.
+const DEFAULT_MAX_TRADE_AGE_MINUTES = 120; // Wide window to avoid missing trades between workflow runs.
 const MAX_NEW_POSITIONS_PER_RUN = 6; // Keep activity focused and avoid burst overtrading
-const SIZING_METHOD = "fixed_stake";
+const SIZING_METHOD = "quarter_kelly";
 const PRICE_RULE = "source_price_plus_penalty";
 
 // Data freshness check - don't copy if rankings are stale
@@ -87,7 +91,7 @@ const DEFAULT_MAX_OPEN_POSITIONS_PER_TRADER = 3;
 
 // Default shortlist gates - runtime fallback if a copy_traders row is missing explicit thresholds.
 const DEFAULT_MAX_COPYABLE_RANK = 25;
-const DEFAULT_MIN_RESOLVED_TRADES_30D = 25;
+const DEFAULT_MIN_RESOLVED_TRADES_30D = 10;
 const DEFAULT_MIN_CONFIDENCE_30D = 2;
 const DEFAULT_PER_TRADER_COOLDOWN_MINUTES = 240;
 const DEFAULT_MAX_ENTRIES_PER_TRADER_MARKET_24H = 1;
@@ -95,17 +99,18 @@ const DEFAULT_MAX_ENTRIES_PER_TRADER_MARKET_24H = 1;
 // Rank decay threshold - if a trader falls this many spots, flag them
 const RANK_DECAY_WARNING_THRESHOLD = 10;
 
-// Paper win-rate auto-gate - skip traders whose paper performance is poor
-const PAPER_WIN_RATE_MIN = 0.50;            // 50% win rate floor
-const PAPER_WIN_RATE_MIN_POSITIONS = 10;    // Only apply after 10+ settled positions
-const PAPER_LOSS_GATE_MIN_POSITIONS = 4;    // Apply drawdown gate after a small sample
-const PAPER_REALIZED_LOSS_GATE_USD = -20;   // Stop copying traders who lose $20+ in paper
+// Paper win-rate auto-gate - DISABLED: paper P/L driven by bad stop-loss/time-exit mechanics,
+// not trader skill. Gates were blocking all 3 enabled traders. Re-evaluate after fixing exits.
+const PAPER_WIN_RATE_MIN = 0.0;             // Disabled (was 0.50)
+const PAPER_WIN_RATE_MIN_POSITIONS = 9999;  // Disabled (was 10)
+const PAPER_LOSS_GATE_MIN_POSITIONS = 9999; // Disabled (was 4)
+const PAPER_REALIZED_LOSS_GATE_USD = -9999; // Disabled (was -20)
 
 // Copy lane risk controls: close before resolution when drift edge is captured/lost.
 const COPY_TAKE_PROFIT_PCT = 0.12;
 const COPY_STOP_LOSS_PCT = -0.22;
-const COPY_SOFT_MAX_HOLD_HOURS = 8;
-const COPY_HARD_MAX_HOLD_HOURS = 20;
+const COPY_SOFT_MAX_HOLD_HOURS = 24;  // Was 8 — too short for sports bets placed before game time
+const COPY_HARD_MAX_HOLD_HOURS = 48;  // Was 20 — allow full 48h for game + resolution to settle
 
 // Market category filters - esports markets have been unprofitable
 // Blacklist slugs that start with these prefixes
@@ -516,8 +521,9 @@ serve(async (req) => {
         let exitReason: string | null = null;
         if (pnlPct >= COPY_TAKE_PROFIT_PCT) {
           exitReason = "copy_take_profit";
-        } else if (pnlPct <= COPY_STOP_LOSS_PCT) {
-          exitReason = "copy_stop_loss";
+          // Stop loss removed: for binary sports markets it fired after the market
+          // had already crashed, providing no protection while locking in worst-case
+          // exits. Positions now ride to resolution or hard time-stop.
         } else if (holdHours >= COPY_HARD_MAX_HOLD_HOURS) {
           exitReason = "copy_time_stop";
         } else if (holdHours >= COPY_SOFT_MAX_HOLD_HOURS && pnlPct >= -0.02) {
@@ -644,6 +650,31 @@ serve(async (req) => {
 
       summary.trades_scanned += trades.length;
 
+      // Two-sided bet detection: if a trader bets BOTH outcomes on the same market
+      // within 30 minutes, it's a market-making strategy — skip all sides.
+      // Key example: 0x2a2c53bd27 bets $400K YES and $130K NO on the same CBB game.
+      const twoSidedMarkets = new Set<string>();
+      {
+        type BetEntry = { outcome: string; ts: number };
+        const marketBets = new Map<string, BetEntry[]>();
+        for (const t of trades) {
+          if (!t.market_id || !t.outcome || !t.timestamp) continue;
+          const ts = new Date(t.timestamp).getTime();
+          const list = marketBets.get(t.market_id) ?? [];
+          list.push({ outcome: t.outcome, ts });
+          marketBets.set(t.market_id, list);
+        }
+        for (const [mId, bets] of marketBets) {
+          const outcomes = new Set(bets.map((b) => b.outcome));
+          if (outcomes.size < 2) continue;
+          const times = bets.map((b) => b.ts).sort((a, b) => a - b);
+          const windowMs = 30 * 60 * 1000;
+          if (times[times.length - 1] - times[0] <= windowMs) {
+            twoSidedMarkets.add(mId);
+          }
+        }
+      }
+
       let maxSeen = lastSeen;
       let earliestRetryableTradeTs: Date | null = null;
 
@@ -750,6 +781,27 @@ serve(async (req) => {
         ) ?? DEFAULT_MAX_TRADER_EXPOSURE_PCT;
         const penalty = toNumber(traderRaw.price_penalty) ??
           DEFAULT_PRICE_PENALTY;
+
+        // Two-sided bet filter: skip if trader placed opposing bets within 30 min
+        if (trade.market_id && twoSidedMarkets.has(trade.market_id)) {
+          logTradeSkip(trade.tx_hash ?? null, wallet, trade.market_id, "two_sided_bet");
+          await recordDecision({
+            decision: "SKIPPED",
+            reason: "two_sided_bet",
+            source_trade_id: trade.tx_hash ?? null,
+            source_wallet: wallet,
+            source_trade_ts: trade.timestamp ?? null,
+            market_id: trade.market_id,
+            market_slug: trade.market_slug ?? null,
+            market_title: trade.market_title ?? null,
+            outcome: trade.outcome ?? null,
+            side: trade.side ?? null,
+            source_price: toNumber(trade.price) ?? null,
+            sizing_method: SIZING_METHOD,
+            fixed_usd_per_trade: fixedUsdPerTrade,
+          });
+          continue;
+        }
 
         if (!trade.tx_hash || !trade.market_id) {
           logTradeSkip(trade.tx_hash ?? null, wallet, trade.market_id ?? null, "missing_trade_fields");
@@ -994,10 +1046,12 @@ serve(async (req) => {
           continue;
         }
 
-        // Rank gate - use configured or default (DEFAULT_MAX_COPYABLE_RANK)
-        const maxRank = toNumber(traderRaw.max_copyable_rank_30d) ?? DEFAULT_MAX_COPYABLE_RANK;
+        // Rank gate — only enforced when max_copyable_rank_30d is explicitly set.
+        // Null means "no rank requirement" (manually curated traders).
+        const configuredMaxRank = toNumber(traderRaw.max_copyable_rank_30d);
+        const maxRank = configuredMaxRank ?? DEFAULT_MAX_COPYABLE_RANK;
         const currentRank = toNumber(ranking?.copyable_rank_30d);
-        if (currentRank == null || currentRank > maxRank) {
+        if (configuredMaxRank !== null && (currentRank == null || currentRank > maxRank)) {
           logTradeSkip(trade.tx_hash, wallet, trade.market_id, "rank_gate");
           await recordDecision({
             decision: "SKIPPED",
@@ -1273,10 +1327,14 @@ serve(async (req) => {
           trade.market_id,
         );
 
-        const sizingResult = computeFixedStakeUsdSize({
-          fixedUsd: fixedUsdPerTrade,
+        const roiEdge = toNumber(ranking?.realized_roi_30d) ?? 0.10; // default 10% edge if no ranking
+        const sizingResult = computeKellyUsdSize({
+          sourcePrice: price,
+          roiEdge,
+          kellyFraction: KELLY_FRACTION,
+          minUsd: KELLY_MIN_USD,
+          maxUsd: KELLY_MAX_USD,
           equityUsd: portfolioEquityUsd,
-          maxTradeRiskPct: portfolioMaxTradeRiskPct,
           maxTotalExposurePct: portfolioMaxTotalExposurePct,
           marketExposureCapPct: portfolioMarketExposureCapPct,
           maxTraderExposurePct,
