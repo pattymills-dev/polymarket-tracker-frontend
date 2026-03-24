@@ -117,7 +117,7 @@ jobs:
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=20")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=120")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "Response (paper copy): $body"
@@ -418,9 +418,10 @@ jobs:
         run: |
           hour=$(date -u +%H)
           if [ $((10#$hour % 4)) -ne 0 ]; then
-            echo "Skipping paper PnL Telegram update this hour (runs every 4h UTC)."
+            echo "Skipping paper PnL Telegram update this hour (runs every 4h UTC on hours 0,4,8,12,16,20)."
             exit 0
           fi
+          echo "Sending Telegram update for hour $hour UTC..."
 
           response=$(curl -s -w "\n%{http_code}" -X GET \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
