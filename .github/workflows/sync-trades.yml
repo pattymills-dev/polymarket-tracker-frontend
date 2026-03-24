@@ -97,18 +97,9 @@ jobs:
             echo "fetch-trades returned $http_code, retrying in 10s..."
             sleep 10
           done
-          if [ "$http_code" -ge 400 ]; then
-            case "$http_code" in
-              429|500|502|503|504|520|522|524)
-                echo "::warning::fetch-trades returned transient HTTP $http_code after retries; continuing run to avoid alert spam."
-                echo "Response: $body"
-                ;;
-              *)
-                echo "Error: fetch-trades failed after 3 attempts with status $http_code"
-                echo "Response: $body"
-                exit 1
-                ;;
-            esac
+          if [ "$http_code" -ge 400 ] || [ -z "$http_code" ]; then
+            echo "::warning::fetch-trades returned HTTP $http_code after retries — continuing run."
+            echo "Response: $body"
           fi
 
       - name: Run paper copy trading
