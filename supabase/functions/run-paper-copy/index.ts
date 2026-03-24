@@ -79,7 +79,7 @@ const KELLY_MAX_USD = 150;  // Never bet more than $150 per trade
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
 const DEFAULT_MAX_TRADE_AGE_MINUTES = 120; // Wide window to avoid missing trades between workflow runs.
-const MAX_NEW_POSITIONS_PER_RUN = 6; // Keep activity focused and avoid burst overtrading
+const MAX_NEW_POSITIONS_PER_RUN = 15; // Allow up to 15 positions per run across 14 active traders
 const SIZING_METHOD = "quarter_kelly";
 const PRICE_RULE = "source_price_plus_penalty";
 
