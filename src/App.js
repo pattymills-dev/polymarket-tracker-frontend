@@ -18,19 +18,26 @@ import {
 import { useTheme } from './ThemeContext';
 import SnakeGameModal from './snake/SnakeGameModal';
 
-// Pixelated sonar whale logo — 12×7 pixel grid, each pixel rendered as a rect
-const PixelWhale = ({ size = 40, color = '#5a8a6a' }) => {
+// Pixelated sonar whale logo — 20×13 pixel grid, each pixel rendered as a rect
+// Shape: head left, curved body, tail fluke upper-right, forked tail lower-left
+const PixelWhale = ({ size = 44, color = '#5a8a6a' }) => {
   const grid = [
-    [0,0,0,1,1,1,0,0,0,0,0,0],
-    [0,0,1,1,1,1,1,1,0,0,0,0],
-    [0,1,1,1,1,1,1,1,1,0,0,0],
-    [1,1,1,1,1,1,1,1,1,1,0,0],
-    [0,1,1,1,1,1,1,1,0,1,1,0],
-    [0,0,0,0,0,0,0,0,0,0,0,1],
-    [0,0,0,0,0,0,0,0,0,1,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0], // upper tail fin
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0], // upper tail fin
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0], // tail neck
+    [0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0], // upper body
+    [0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0], // upper body
+    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0], // wide body
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0], // head / widest
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0], // head / widest
+    [0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0], // lower body
+    [0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0], // lower body
+    [0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0], // belly / flipper start
+    [0,0,1,1,1,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0], // forked tail
+    [0,1,1,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0], // forked tail tips
   ];
-  const cols = 12, rows = 7;
-  const px = Math.floor(size / (cols + 1));
+  const cols = 20, rows = 13;
+  const px = Math.floor(size / cols);
   const ox = Math.floor((size - cols * px) / 2);
   const oy = Math.floor((size - rows * px) / 2);
   return (
@@ -1407,10 +1414,10 @@ setMarketStats({
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${isRetro ? '' : 'bg-slate-900 border border-slate-800'}`}
+                <div className={`h-11 w-11 rounded-lg flex items-center justify-center ${isRetro ? '' : 'bg-slate-900 border border-slate-800'}`}
                      style={isRetro ? { border: `1px solid ${retroColors.border}` } : {}}>
                   {isRetro ? (
-                    <PixelWhale size={36} color={retroColors.text} />
+                    <PixelWhale size={44} color={retroColors.text} />
                   ) : (
                     <TrendingUp className="w-5 h-5 text-slate-200" />
                   )}
