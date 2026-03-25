@@ -65,11 +65,11 @@ jobs:
           else
             minute=$(date -u +%M)
             hour=$(date -u +%H)
-            # GitHub scheduled runs can start a few minutes late; treat first quarter-hour as the hourly window.
-            if [ $((10#$minute)) -lt 15 ]; then
+            # GitHub scheduled runs can start up to 20+ minutes late; use first 25 minutes as the hourly window.
+            if [ $((10#$minute)) -lt 25 ]; then
               hourly=true
             fi
-            if [ "$hour" = "00" ] && [ $((10#$minute)) -lt 15 ]; then
+            if [ "$hour" = "00" ] && [ $((10#$minute)) -lt 25 ]; then
               daily=true
             fi
           fi
