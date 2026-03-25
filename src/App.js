@@ -1414,14 +1414,11 @@ setMarketStats({
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <div className={`h-11 w-11 rounded-lg flex items-center justify-center ${isRetro ? '' : 'bg-slate-900 border border-slate-800'}`}
-                     style={isRetro ? { border: `1px solid ${retroColors.border}` } : {}}>
-                  {isRetro ? (
-                    <PixelWhale size={44} color={retroColors.text} />
-                  ) : (
+                {!isRetro && (
+                  <div className="h-11 w-11 rounded-lg flex items-center justify-center bg-slate-900 border border-slate-800">
                     <TrendingUp className="w-5 h-5 text-slate-200" />
-                  )}
-                </div>
+                  </div>
+                )}
                 <div>
                   <h1 className={`text-3xl font-semibold tracking-tight ${isRetro ? '' : 'text-slate-100'}`}
                       style={isRetro ? { color: retroColors.textBright, textShadow: 'none', letterSpacing: '0.05em' } : {}}>
