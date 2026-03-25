@@ -36,7 +36,7 @@ const PolymarketTracker = () => {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [betSearchQuery, setBetSearchQuery] = useState(''); // Search filter for large bets
-  const [traderSortBy, setTraderSortBy] = useState('suspect'); // 'suspect', 'total_pl', 'copyable', 'whale_volume'
+  const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'total_pl', 'copyable', 'whale_volume', 'suspect'
   const [showSignalKey, setShowSignalKey] = useState(false);
   const [showTipJar, setShowTipJar] = useState(false);
   const [showSnake, setShowSnake] = useState(false);
@@ -2079,25 +2079,6 @@ setMarketStats({
                   <div className="space-y-2">
                     <div className="flex gap-1 text-xs">
                         <button
-                          onClick={() => setTraderSortBy('suspect')}
-                          className={`px-3 py-1.5 rounded transition-colors ${
-                            isRetro
-                              ? ''
-                              : (traderSortBy === 'suspect'
-                                ? 'bg-cyan-600 text-white'
-                                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
-                          }`}
-                          style={isRetro ? {
-                            backgroundColor: traderSortBy === 'suspect' ? retroColors.text : retroColors.bg,
-                            color: traderSortBy === 'suspect' ? retroColors.bg : retroColors.textDim,
-                            border: `1px solid ${traderSortBy === 'suspect' ? retroColors.text : retroColors.borderEtched}`,
-                            fontSize: '0.9rem'
-                          } : {}}
-                          title="Weighted suspicion score from alert history, position concentration, and trade behavior"
-                        >
-                          {isRetro ? '⚠ SUS' : '⚠ Suspect'}
-                        </button>
-                        <button
                           onClick={() => setTraderSortBy('total_pl')}
                           className={`px-3 py-1.5 rounded transition-colors ${
                             isRetro
@@ -2131,9 +2112,9 @@ setMarketStats({
                             border: `1px solid ${traderSortBy === 'copyable' ? retroColors.text : retroColors.borderEtched}`,
                             fontSize: '0.9rem'
                           } : {}}
-                          title="Ranked by copyability score: ROI potential + meaningful size + evidence (excludes extreme-price trades)"
+                          title="Ranked by 30-day ROI potential — excludes extreme-price trades"
                         >
-                          {isRetro ? '📈 ROI' : '📈 Copyable'}
+                          {isRetro ? '📈 ROI' : '📈 ROI'}
                         </button>
                         <button
                           onClick={() => setTraderSortBy('whale_volume')}
@@ -2154,12 +2135,31 @@ setMarketStats({
                         >
                           {isRetro ? '💸 VOL' : '💸 Volume'}
                         </button>
+                        <button
+                          onClick={() => setTraderSortBy('suspect')}
+                          className={`px-3 py-1.5 rounded transition-colors ${
+                            isRetro
+                              ? ''
+                              : (traderSortBy === 'suspect'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
+                          }`}
+                          style={isRetro ? {
+                            backgroundColor: traderSortBy === 'suspect' ? retroColors.text : retroColors.bg,
+                            color: traderSortBy === 'suspect' ? retroColors.bg : retroColors.textDim,
+                            border: `1px solid ${traderSortBy === 'suspect' ? retroColors.text : retroColors.borderEtched}`,
+                            fontSize: '0.9rem'
+                          } : {}}
+                          title="Ranked by insider signal score — alert history, position concentration, trade behavior"
+                        >
+                          {isRetro ? '⚠ INSIDER' : '⚠ Insider'}
+                        </button>
                     </div>
                     <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
-                      {traderSortBy === 'suspect' && (isRetro ? '> RANKED BY INSIDER SIGNAL SCORE' : '⚠ Ranked by insider signal score')}
                       {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
-                      {traderSortBy === 'copyable' && (isRetro ? '> RANKED BY ROI POTENTIAL (EXCL. EXTREME-PRICE TRADES)' : '📈 Ranked by ROI potential (excludes extreme-price trades)')}
+                      {traderSortBy === 'copyable' && (isRetro ? '> RANKED BY 30D ROI POTENTIAL' : '📈 Ranked by 30-day ROI potential')}
                       {traderSortBy === 'whale_volume' && (isRetro ? '> RANKED BY 30D VOLUME' : '💸 Ranked by 30-day volume')}
+                      {traderSortBy === 'suspect' && (isRetro ? '> RANKED BY INSIDER SIGNAL SCORE' : '⚠ Ranked by insider signal score')}
                     </p>
                   </div>
 
