@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import './retro.css';
 import App from './App';
-import SonarInterstitial from './SonarInterstitial';
+import SonarInterstitial from './WhiteWhaleInterstitial';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import reportWebVitals from './reportWebVitals';
 
