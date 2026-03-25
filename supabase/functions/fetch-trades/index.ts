@@ -462,6 +462,15 @@ serve(async (req) => {
         }
       }
 
+      // Fetch confirmed insider watchlist addresses for high-priority alerting
+      const { data: confirmedInsiderRows } = await supabase
+        .from("watchlist")
+        .select("trader_address")
+        .eq("category", "confirmed_insider");
+      const confirmedInsiderAddresses = new Set(
+        (confirmedInsiderRows || []).map((r: any) => String(r.trader_address || '').toLowerCase())
+      );
+
       // Fetch canonical rankings for alerts (single source of truth)
       const { data: copyableRankings } = await supabase
         .from("trader_rankings")
@@ -478,7 +487,7 @@ serve(async (req) => {
         .from("alerts")
         .select("id", { count: "exact", head: true })
         .gte("created_at", globalSince)
-        .in("type", ["dormant_whale", "isolated_contact"]);
+        .in("type", ["confirmed_insider", "dormant_whale", "isolated_contact"]);
       let globalRemaining = Math.max(0, GLOBAL_ALERTS_PER_HOUR - (recentGlobalAlerts || 0));
 
       // Heater-aware dedupe: fetch recent alerts with rank/score for material-change detection
@@ -784,26 +793,43 @@ serve(async (req) => {
           }
         }
 
-        // TAIL RISK: Large bet at extreme price (<10¢ or >90¢) — any trader, any status
-        // This DELIBERATELY triggers on extreme prices (the opposite of copyable alerts which SUPPRESS them)
-        if (r.amount >= 5000 && priceNum != null) {
-          if (priceNum < 0.10 || priceNum > 0.90) {
-            alertRows.push({
-              type: "tail_risk",
-              alert_source: "tail_risk",
-              trade_hash: r.tx_hash,
-              trader_address: r.trader_address,
-              market_id: r.market_id,
-              market_title: r.market_title,
-              market_slug: r.market_slug,
-              outcome: r.outcome,
-              side: r.side || 'BUY',
-              price: r.price,
-              amount: r.amount,
-              message: `🔥 TAIL RISK: $${Math.round(r.amount).toLocaleString()} ${betDirection} at ${Math.round(priceNum * 100)}¢ on ${r.market_title || r.market_id}`,
-              sent: false,
-            });
-          }
+        // CONFIRMED INSIDER: Any trade from a manually confirmed insider wallet — highest priority
+        if (confirmedInsiderAddresses.has(traderLower)) {
+          alertRows.push({
+            type: "confirmed_insider",
+            alert_source: "confirmed_insider",
+            trade_hash: r.tx_hash,
+            trader_address: r.trader_address,
+            market_id: r.market_id,
+            market_title: r.market_title,
+            market_slug: r.market_slug,
+            outcome: r.outcome,
+            side: r.side || 'BUY',
+            price: r.price,
+            amount: r.amount,
+            message: `🚨 CONFIRMED INSIDER: $${Math.round(r.amount).toLocaleString()} ${betDirection} on ${r.market_title || r.market_id}`,
+            sent: false,
+          });
+        }
+
+        // LONG SHOT: Large bet ($3K+) at low price (<15¢) — someone backing the improbable
+        // NOTE: >90¢ trigger deliberately removed — high-price bets on near-resolved markets are noise, not signal.
+        if (r.amount >= 3000 && priceNum != null && priceNum < 0.15) {
+          alertRows.push({
+            type: "tail_risk",
+            alert_source: "tail_risk",
+            trade_hash: r.tx_hash,
+            trader_address: r.trader_address,
+            market_id: r.market_id,
+            market_title: r.market_title,
+            market_slug: r.market_slug,
+            outcome: r.outcome,
+            side: r.side || 'BUY',
+            price: r.price,
+            amount: r.amount,
+            message: `🎯 LONG SHOT: $${Math.round(r.amount).toLocaleString()} ${betDirection} at ${Math.round(priceNum * 100)}¢ on ${r.market_title || r.market_id}`,
+            sent: false,
+          });
         }
       }
 
@@ -1003,18 +1029,20 @@ serve(async (req) => {
             const insertedHashes = new Set(newAlerts.map((a: any) => a.trade_hash));
 
             // Send Telegram for high-signal inside-trading indicators only:
-            // 1. dormant_whale
-            // 2. isolated_contact
-            // NOT sent: copyable, tail_risk, whale_position
+            // 1. confirmed_insider (highest priority)
+            // 2. dormant_whale
+            // 3. isolated_contact
+            // NOT sent: copyable, tail_risk (long shot), whale_position
             for (const alert of alertRows) {
               if (insertedHashes.has(alert.trade_hash) &&
-                  (alert.type === 'dormant_whale' || alert.type === 'isolated_contact')) {
+                  (alert.type === 'confirmed_insider' || alert.type === 'dormant_whale' || alert.type === 'isolated_contact')) {
                 const meta = tradeMetaByHash.get(alert.trade_hash) ?? null;
                 await sendTelegramAlert(alert, meta);
               }
             }
 
             // Auto-add anomaly traders to watchlist for ongoing monitoring
+            // Note: confirmed_insider excluded here — those are manually curated and shouldn't be overwritten
             const autoWatchTypes = ['tail_risk', 'isolated_contact', 'dormant_whale'];
             const autoWatchCandidates = alertRows
               .filter(a => insertedHashes.has(a.trade_hash) && autoWatchTypes.includes(a.type) && a.trader_address)

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   TrendingUp,
   Trophy,
@@ -25,6 +25,7 @@ const PolymarketTracker = () => {
   const [topTraders, setTopTraders] = useState([]);
   const [whaleVolumeTraders, setWhaleVolumeTraders] = useState([]);
   const [watchedTraders, setWatchedTraders] = useState([]);
+  const [confirmedInsiders, setConfirmedInsiders] = useState(new Set());
   const [alerts, setAlerts] = useState([]);
   const [marketStats, setMarketStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -35,12 +36,12 @@ const PolymarketTracker = () => {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [searchAddress, setSearchAddress] = useState('');
   const [betSearchQuery, setBetSearchQuery] = useState(''); // Search filter for large bets
-  const [traderSortBy, setTraderSortBy] = useState('total_pl'); // 'total_pl', 'copyable', 'whale_volume'
+  const [traderSortBy, setTraderSortBy] = useState('suspect'); // 'suspect', 'total_pl', 'copyable', 'whale_volume'
   const [showSignalKey, setShowSignalKey] = useState(false);
   const [showTipJar, setShowTipJar] = useState(false);
   const [showSnake, setShowSnake] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
-  const [feedFilter, setFeedFilter] = useState('anomaly'); // 'anomaly' | 'isolated' | 'top10' | 'top20' | 'large' | 'all'
+  const [feedFilter, setFeedFilter] = useState('suspect'); // 'suspect' | 'top20' | 'large' | 'all'
   const [selectedFeedTrader, setSelectedFeedTrader] = useState(null); // selected trader address (UI highlight + panel)
   const [onlySelectedWallet, setOnlySelectedWallet] = useState(false); // explicit filter toggle for Activity Feed
   const [selectedTraderTab, setSelectedTraderTab] = useState('activity'); // 'activity' | 'record'
@@ -205,6 +206,36 @@ const formatTimestamp = (ts) => {
   });
 };
 
+const SPORTS_EVENT_SLUG_REGEX = /^(nba|nhl|mlb|nfl|cbb|cwbb|ahl|epl|efl|bun|mls|lal|ser|lig1|copa|mex|bl2|aus|fl1|ere|elc|sea|spl|cbl|udi|acm|por|tur|egy1|bra|arg|chi1|col1|rou1|rusrp|es2|fr2|itsb|den|wta|atp|ufc|cs2|val|lol|dota2|rl|lec|lpl|lck|vct|hok|r6siege|sc2|codmw|bkkbl|bknbl|euroleague|shl|khl|crint|wttmen|wttwom|scop|cze1|mwoh|rusixnat)-(.+)-(\d{4}-\d{2}-\d{2})(?:-.+)?$/i;
+
+const extractSportsEventDate = (slug) => {
+  if (typeof slug !== 'string') return null;
+  const match = slug.match(SPORTS_EVENT_SLUG_REGEX);
+  return match ? match[3] : null;
+};
+
+const isLikelyResolutionSyncGap = (trade, market) => {
+  const resolved = Boolean(market?.resolved) || market?.winning_outcome != null;
+  if (resolved) return false;
+
+  const tradeMs = toMs(trade?.timestamp);
+  if (!tradeMs) return false;
+
+  const ageMs = Date.now() - tradeMs;
+  if (ageMs < 24 * 60 * 60 * 1000) return false;
+
+  const checkedMs = toMs(market?.resolution_checked_at);
+  if (checkedMs && Date.now() - checkedMs < 6 * 60 * 60 * 1000) return false;
+
+  const eventDate = extractSportsEventDate(trade?.market_slug);
+  if (eventDate) {
+    const eventMs = Date.parse(`${eventDate}T00:00:00Z`);
+    return Number.isFinite(eventMs) && (Date.now() - eventMs) >= 24 * 60 * 60 * 1000;
+  }
+
+  return ageMs >= 72 * 60 * 60 * 1000;
+};
+
 // Format game title for spread/O-U markets to show "Team vs Team" instead of "Spread: Team (-X.X)"
 // Uses the slug to extract team codes and format them properly
 // e.g., slug "nba-bkn-uta-2026-01-30-spread-home-2pt5" + title "Spread: Jazz (-2.5)" → "Nets vs Jazz"
@@ -351,7 +382,7 @@ const tradesRes = await fetch(
       }
 
       const alertsRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/alerts?order=created_at.desc&limit=50`,
+        `${SUPABASE_URL}/rest/v1/alerts?order=created_at.desc&limit=200`,
         { headers }
       );
       
@@ -432,6 +463,10 @@ setMarketStats({
         const data = await response.json();
         if (response.ok && Array.isArray(data)) {
           setWatchedTraders(data.map(w => w.trader_address));
+          setConfirmedInsiders(new Set(
+            data.filter(w => w.category === 'confirmed_insider')
+                .map(w => String(w.trader_address || '').toLowerCase())
+          ));
         }
       } catch (error) {
         console.error('Error loading watchlist:', error);
@@ -537,7 +572,7 @@ setMarketStats({
       const chunkSize = 40;
       for (let start = 0; start < marketIds.length; start += chunkSize) {
         const chunk = marketIds.slice(start, start + chunkSize);
-        const url = `${SUPABASE_URL}/rest/v1/markets?id=in.(${chunk.join(',')})&select=id,resolved,winning_outcome`;
+        const url = `${SUPABASE_URL}/rest/v1/markets?id=in.(${chunk.join(',')})&select=id,resolved,winning_outcome,resolution_checked_at`;
         const marketsResponse = await fetch(url, { headers });
         const data = await marketsResponse.json();
 
@@ -567,7 +602,9 @@ setMarketStats({
         return {
           ...trade,
           market_resolved: marketResolved,
-          winning_outcome: market?.winning_outcome || null
+          winning_outcome: market?.winning_outcome || null,
+          resolution_checked_at: market?.resolution_checked_at || null,
+          resolution_sync_stale: isLikelyResolutionSyncGap(trade, market),
         };
       });
 
@@ -595,7 +632,7 @@ setMarketStats({
 
       if (!Array.isArray(trades) || trades.length === 0) {
         setSelectedTraderTrades([]);
-        setSelectedTraderRecord({ wins: 0, losses: 0, pending: 0, resolvedTrades: [] });
+        setSelectedTraderRecord({ wins: 0, losses: 0, pending: 0, pendingSync: 0, resolvedTrades: [] });
         return;
       }
 
@@ -605,7 +642,7 @@ setMarketStats({
       const chunkSize = 40;
       for (let start = 0; start < marketIds.length; start += chunkSize) {
         const chunk = marketIds.slice(start, start + chunkSize);
-        const url = `${SUPABASE_URL}/rest/v1/markets?id=in.(${chunk.join(',')})&select=id,resolved,winning_outcome`;
+        const url = `${SUPABASE_URL}/rest/v1/markets?id=in.(${chunk.join(',')})&select=id,resolved,winning_outcome,resolution_checked_at`;
         const marketsResponse = await fetch(url, { headers });
         const data = await marketsResponse.json();
         if (marketsResponse.ok && Array.isArray(data)) {
@@ -622,13 +659,15 @@ setMarketStats({
           ...trade,
           market_resolved: marketResolved,
           winning_outcome: market?.winning_outcome || null,
+          resolution_checked_at: market?.resolution_checked_at || null,
+          resolution_sync_stale: isLikelyResolutionSyncGap(trade, market),
         };
       });
 
       setSelectedTraderTrades(tradesWithResolution);
 
       // Build record from resolved trades (dedupe by market_id)
-      let wins = 0, losses = 0, pending = 0;
+      let wins = 0, losses = 0, pending = 0, pendingSync = 0;
       const seenMarkets = new Set();
       const resolvedTrades = [];
       for (const trade of tradesWithResolution) {
@@ -650,11 +689,12 @@ setMarketStats({
             isWin,
           });
         } else {
-          pending++;
+          if (trade.resolution_sync_stale) pendingSync++;
+          else pending++;
         }
       }
 
-      setSelectedTraderRecord({ wins, losses, pending, resolvedTrades });
+      setSelectedTraderRecord({ wins, losses, pending, pendingSync, resolvedTrades });
     } catch (error) {
       console.error('Error fetching selected trader data:', error);
       setSelectedTraderTrades([]);
@@ -815,28 +855,25 @@ setMarketStats({
   }, []);
 
   // Derived data for Activity Feed filters
-  const top10Addresses = useMemo(() => {
-    return new Set(copyableTraders.slice(0, 10).map(t => t.address));
-  }, [copyableTraders]);
-
   const top20Addresses = useMemo(() => {
-    return new Set(copyableTraders.slice(0, 20).map(t => t.address));
+    return new Set(copyableTraders.slice(0, 20).map(t => (t.address || '').toLowerCase()));
   }, [copyableTraders]);
 
   const top20MedianMap = useMemo(() => {
     const map = new Map();
     copyableTraders.slice(0, 20).forEach(t => {
-      map.set(t.address, t.median_trade_notional || 0);
+      map.set((t.address || '').toLowerCase(), t.median_trade_notional || 0);
     });
     return map;
   }, [copyableTraders]);
 
-  // Trader behavioral profiles — pre-computed from available trade data for anomaly detection
+  // Trader behavioral profiles — pre-computed from available trade data for suspect scoring
   const traderProfiles = useMemo(() => {
     const source = recentTrades.length > 0 ? recentTrades : largeBets;
     const profiles = new Map();
     for (const trade of source) {
-      const addr = trade.trader_address;
+      const addr = (trade.trader_address || '').toLowerCase();
+      if (!addr) continue;
       if (!profiles.has(addr)) {
         profiles.set(addr, { trades: [], eventSlugs: new Map(), totalVolume: 0 });
       }
@@ -854,105 +891,122 @@ setMarketStats({
     return profiles;
   }, [recentTrades, largeBets]);
 
-  // Set of trader addresses from isolated_contact or dormant_whale alerts (for "Isolated" feed filter)
-  const alertTraderSet = useMemo(() => {
-    const set = new Set();
-    for (const alert of alerts) {
-      if (['isolated_contact', 'dormant_whale', 'tail_risk'].includes(alert.type) && alert.trader_address) {
-        set.add(alert.trader_address);
+  const watchedTraderSet = useMemo(() => {
+    return new Set((watchedTraders || []).map((addr) => String(addr || '').toLowerCase()));
+  }, [watchedTraders]);
+
+  // Weighted by insider signal severity.
+  const suspectAlertByTrader = useMemo(() => {
+    const ALERT_WEIGHTS = {
+      confirmed_insider: 15,
+      dormant_whale: 10,
+      isolated_contact: 8,
+    };
+    const map = new Map();
+    for (const alert of alerts || []) {
+      const addr = String(alert?.trader_address || '').toLowerCase();
+      if (!addr) continue;
+      const type = String(alert?.type || '');
+      const weight = ALERT_WEIGHTS[type] || 0;
+      if (!weight) continue;
+      if (!map.has(addr)) {
+        map.set(addr, { score: 0, count: 0, types: new Set() });
       }
+      const entry = map.get(addr);
+      entry.score += weight;
+      entry.count += 1;
+      entry.types.add(type);
     }
-    return set;
+    return map;
   }, [alerts]);
 
-  // Multi-signal anomaly classifier — returns array of anomaly type strings
-  // Types: 'tail_risk', 'size_spike', 'event_specialist', 'rapid_fire', 'watched', 'isolated'
-  // IMPORTANT: Must be defined BEFORE filteredBets useMemo which calls it
-  const classifyAnomaly = (bet) => {
-    const labels = [];
+  // Insider signal classifier — focused on potential inside trading only.
+  const classifySuspect = useCallback((bet) => {
     const amount = Number(bet.amount || 0);
     const price = Number(bet.price || 0);
-    const addr = bet.trader_address;
-    const profile = traderProfiles.get(addr);
+    const addr = String(bet.trader_address || '').toLowerCase();
+    if (!addr) return { score: 0, level: null, reasons: [], primarySignal: null };
 
-    // 1. TAIL RISK: Large bet at extreme price (<10¢ or >90¢)
-    if (price > 0 && price < 0.10 && amount >= 5000) {
-      labels.push('tail_risk');
-    } else if (price > 0.90 && price < 1.0 && amount >= 5000) {
-      labels.push('tail_risk');
+    const reasons = [];
+    let score = 0;
+
+    const alertSignal = suspectAlertByTrader.get(addr);
+
+    // Signal 1: CONFIRMED INSIDER — manually flagged known insider
+    if (confirmedInsiders.has(addr) || alertSignal?.types?.has('confirmed_insider')) {
+      score += 15;
+      reasons.push('confirmed');
     }
 
-    // 2. SIZE SPIKE: Ranked trader making 3x their median (existing logic, renamed)
-    if (top20MedianMap.has(addr)) {
-      const median = top20MedianMap.get(addr);
-      const threshold = Math.max(median * 3, 1000);
-      if (amount >= threshold && price >= 0.05 && price <= 0.95) {
-        labels.push('size_spike');
-      }
+    // Signal 2: DORMANT WHALE — wallet inactive 180+ days suddenly trades
+    if (alertSignal?.types?.has('dormant_whale')) {
+      score += 10;
+      reasons.push('dormant');
     }
 
-    // 3. EVENT SPECIALIST: 3+ sub-markets of the same event from one trader
-    if (profile) {
-      const thisEventKey = extractEventKey(bet.market_slug);
-      if (thisEventKey) {
-        for (const [eventKey, marketIds] of profile.eventSlugs) {
-          if (marketIds.size >= 3 && thisEventKey === eventKey) {
-            labels.push('event_specialist');
-            break;
-          }
-        }
-      }
+    // Signal 3: NEW MONEY — rare/first-time trader in thin market (isolated contact)
+    if (alertSignal?.types?.has('isolated_contact')) {
+      score += 8;
+      reasons.push('new-money');
     }
 
-    // 4. RAPID FIRE: 5+ trades within 10-minute window from same wallet
-    if (profile && profile.trades.length >= 5) {
-      const betTs = new Date(bet.timestamp).getTime();
-      if (betTs) {
-        const windowMs = 10 * 60 * 1000; // 10 minutes
-        let nearbyCount = 0;
-        for (const t of profile.trades) {
-          const ts = new Date(t.timestamp).getTime();
-          if (ts && Math.abs(ts - betTs) <= windowMs) {
-            nearbyCount++;
-            if (nearbyCount >= 5) {
-              labels.push('rapid_fire');
-              break;
-            }
-          }
-        }
-      }
+    // Signal 4: LONG SHOT — large bet at low price (<15¢), someone backing the improbable
+    if (amount >= 3000 && price > 0 && price < 0.15) {
+      score += 6;
+      reasons.push('long-shot');
     }
 
-    // 5. ISOLATED: Trader appears in isolated_contact/dormant_whale/tail_risk alerts
-    if (alertTraderSet.has(addr) && labels.length === 0) {
-      labels.push('isolated');
-    }
+    const rounded = Math.round(score);
+    let level = null;
+    if (rounded >= 10) level = 'high';
+    else if (rounded >= 6) level = 'medium';
+    else if (rounded >= 3) level = 'low';
 
-    // 6. WATCHED: Watchlisted trader making >= $1K trade (catch-all if no other signals)
-    if (watchedTraders.includes(addr) && amount >= 1000 && labels.length === 0) {
-      labels.push('watched');
-    }
+    // Primary signal drives the badge label
+    let primarySignal = null;
+    if (reasons.includes('confirmed')) primarySignal = 'confirmed';
+    else if (reasons.includes('dormant')) primarySignal = 'dormant';
+    else if (reasons.includes('new-money')) primarySignal = 'new-money';
+    else if (reasons.includes('long-shot')) primarySignal = 'long-shot';
 
-    return labels;
+    return { score: rounded, level, reasons: [...new Set(reasons)], primarySignal };
+  }, [confirmedInsiders, suspectAlertByTrader]);
+
+  // Insider badge config — keyed by primarySignal
+  const insiderBadgeConfig = {
+    confirmed: {
+      modern: 'border-emerald-500/50 text-emerald-300 bg-emerald-500/15',
+      label: 'CONFIRMED INSIDER',
+      retro: { border: 'rgba(90, 200, 140, 0.5)', color: 'rgba(90, 200, 140, 0.95)' },
+    },
+    dormant: {
+      modern: 'border-amber-500/50 text-amber-300 bg-amber-500/15',
+      label: 'DORMANT WHALE',
+      retro: { border: 'rgba(184, 160, 80, 0.5)', color: 'rgba(184, 160, 80, 0.95)' },
+    },
+    'new-money': {
+      modern: 'border-orange-500/50 text-orange-300 bg-orange-500/15',
+      label: 'NEW MONEY',
+      retro: { border: 'rgba(200, 130, 60, 0.5)', color: 'rgba(200, 130, 60, 0.95)' },
+    },
+    'long-shot': {
+      modern: 'border-rose-500/50 text-rose-300 bg-rose-500/15',
+      label: 'LONG SHOT',
+      retro: { border: 'rgba(160, 80, 80, 0.5)', color: 'rgba(160, 80, 80, 0.95)' },
+    },
   };
 
-  // Anomaly badge color mapping
-  const anomalyBadgeStyles = {
-    tail_risk:        { modern: 'border-rose-500/40 text-rose-300 bg-rose-500/10', label: 'TAIL RISK' },
-    size_spike:       { modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', label: 'SIZE SPIKE' },
-    event_specialist: { modern: 'border-amber-500/40 text-amber-300 bg-amber-500/10', label: 'EVENT SPECIALIST' },
-    rapid_fire:       { modern: 'border-orange-500/40 text-orange-300 bg-orange-500/10', label: 'RAPID FIRE' },
-    watched:          { modern: 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10', label: 'WATCHED' },
-    isolated:         { modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', label: 'ISOLATED' },
+  // Fallback styles for backward compat (level-based)
+  const suspectBadgeStyles = {
+    high: { modern: 'border-rose-500/50 text-rose-300 bg-rose-500/15', label: 'INSIDER SIGNAL' },
+    medium: { modern: 'border-amber-500/50 text-amber-300 bg-amber-500/15', label: 'INSIDER SIGNAL' },
+    low: { modern: 'border-slate-500/50 text-slate-300 bg-slate-500/15', label: 'SIGNAL' },
   };
 
-  const anomalyRetroColors = {
-    tail_risk:        { border: 'rgba(160, 112, 112, 0.4)', color: 'rgba(160, 112, 112, 0.9)' },
-    size_spike:       { border: 'rgba(140, 120, 180, 0.3)', color: 'rgba(140, 120, 180, 0.9)' },
-    event_specialist: { border: 'rgba(184, 160, 80, 0.4)', color: 'rgba(184, 160, 80, 0.9)' },
-    rapid_fire:       { border: 'rgba(184, 160, 80, 0.4)', color: 'rgba(184, 160, 80, 0.9)' },
-    watched:          { border: 'rgba(69, 160, 106, 0.4)', color: 'rgba(69, 160, 106, 0.9)' },
-    isolated:         { border: 'rgba(160, 112, 112, 0.4)', color: 'rgba(160, 112, 112, 0.9)' },
+  const suspectRetroColors = {
+    high: { border: 'rgba(160, 112, 112, 0.45)', color: 'rgba(160, 112, 112, 0.95)' },
+    medium: { border: 'rgba(184, 160, 80, 0.45)', color: 'rgba(184, 160, 80, 0.95)' },
+    low: { border: 'rgba(120, 130, 145, 0.45)', color: 'rgba(140, 150, 165, 0.95)' },
   };
 
   // Activity Feed: filtered trades based on feedFilter + optional onlySelectedWallet + keyword search
@@ -983,27 +1037,16 @@ setMarketStats({
         result = (largeBets || []).filter(bet => Number(bet.amount || 0) >= 5000);
         break;
 
-      case 'top10':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(
-          bet => top10Addresses.has(bet.trader_address)
-        );
-        break;
-
       case 'top20':
         result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(
-          bet => top20Addresses.has(bet.trader_address)
+          bet => top20Addresses.has(String(bet.trader_address || '').toLowerCase())
         );
         break;
 
-      case 'anomaly':
+      case 'suspect':
         result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
-          return classifyAnomaly(bet).length > 0;
-        });
-        break;
-
-      case 'isolated':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
-          return alertTraderSet.has(bet.trader_address);
+          const signal = classifySuspect(bet);
+          return signal.level === 'high' || signal.level === 'medium';
         });
         break;
 
@@ -1015,7 +1058,7 @@ setMarketStats({
 
     return keywordFilter(walletFilter(result));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [largeBets, recentTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top10Addresses, top20Addresses, top20MedianMap, traderProfiles, alertTraderSet, watchedTraders]);
+  }, [largeBets, recentTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top20Addresses, top20MedianMap, traderProfiles, watchedTraderSet, suspectAlertByTrader]);
 
   // Close tip jar dropdown when clicking outside
   useEffect(() => {
@@ -1099,17 +1142,114 @@ setMarketStats({
       smart_score: (trader.total_volume / 1000) + (trader.avg_bet_size / 100) + (trader.total_bets * 2)
     }));
 
-    // Sort by smart money score
-    return traders.sort((a, b) => b.smart_score - a.smart_score).slice(0, 20);
+  // Sort by smart money score
+  return traders.sort((a, b) => b.smart_score - a.smart_score).slice(0, 20);
   }, [recentTrades, largeBets]);
+
+  const traderMetricsByAddress = useMemo(() => {
+    const map = new Map();
+    const addRows = (rows) => {
+      for (const row of rows || []) {
+        const addr = String(row?.address || '').toLowerCase();
+        if (!addr) continue;
+        if (!map.has(addr)) {
+          map.set(addr, row);
+        }
+      }
+    };
+    // Priority order: copyability/profitability metrics first.
+    addRows(copyableTraders);
+    addRows(profitabilityTraders);
+    addRows(whaleVolumeTraders || []);
+    addRows(recentActiveTraders);
+    addRows(topTraders || []);
+    return map;
+  }, [copyableTraders, profitabilityTraders, whaleVolumeTraders, recentActiveTraders, topTraders]);
+
+  const suspectTraders = useMemo(() => {
+    const sourceTrades = recentTrades.length > 0 ? recentTrades : largeBets;
+    const map = new Map();
+
+    for (const trade of sourceTrades || []) {
+      const addrRaw = String(trade?.trader_address || '');
+      const addr = addrRaw.toLowerCase();
+      if (!addr) continue;
+
+      const signal = classifySuspect(trade);
+      if (!signal.level) continue;
+
+      const alertScore = Math.min(12, Number(suspectAlertByTrader.get(addr)?.score || 0));
+      const tradeOnlyScore = Math.max(0, signal.score - alertScore);
+      const ts = toMs(trade.timestamp) || 0;
+
+      if (!map.has(addr)) {
+        map.set(addr, {
+          address: addrRaw,
+          tradeScore: 0,
+          peakScore: 0,
+          tradeCount: 0,
+          lastActivity: ts,
+          reasonCounts: new Map(),
+        });
+      }
+
+      const entry = map.get(addr);
+      entry.tradeScore += tradeOnlyScore;
+      entry.peakScore = Math.max(entry.peakScore, signal.score);
+      entry.tradeCount += 1;
+      entry.lastActivity = Math.max(entry.lastActivity, ts);
+      for (const reason of signal.reasons) {
+        entry.reasonCounts.set(reason, (entry.reasonCounts.get(reason) || 0) + 1);
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([addr, entry]) => {
+        const alertData = suspectAlertByTrader.get(addr);
+        const alertScore = Math.min(12, Number(alertData?.score || 0));
+        const totalScore = Math.round(entry.tradeScore + alertScore);
+        const level = totalScore >= 10 ? 'high' : totalScore >= 6 ? 'medium' : 'low';
+        const topReasons = Array.from(entry.reasonCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2)
+          .map(([reason]) => reason);
+        const metrics = traderMetricsByAddress.get(addr) || {};
+
+        return {
+          ...metrics,
+          address: entry.address,
+          suspect_total_score: totalScore,
+          suspect_peak_score: Math.max(entry.peakScore, alertScore),
+          suspect_level: level,
+          suspect_trade_count: entry.tradeCount,
+          suspect_alert_count: Number(alertData?.count || 0),
+          suspect_alert_types: alertData ? Array.from(alertData.types || []) : [],
+          suspect_reasons: topReasons,
+          last_activity: entry.lastActivity || metrics.last_activity || 0,
+          source: 'suspect',
+        };
+      })
+      .sort((a, b) => {
+        if ((b.suspect_total_score || 0) !== (a.suspect_total_score || 0)) {
+          return (b.suspect_total_score || 0) - (a.suspect_total_score || 0);
+        }
+        if ((b.suspect_peak_score || 0) !== (a.suspect_peak_score || 0)) {
+          return (b.suspect_peak_score || 0) - (a.suspect_peak_score || 0);
+        }
+        return (b.last_activity || 0) - (a.last_activity || 0);
+      })
+      .slice(0, 30);
+  }, [recentTrades, largeBets, suspectAlertByTrader, traderMetricsByAddress, classifySuspect]);
 
   // Derive selected trader info from all available trader lists
   const selectedTraderInfo = useMemo(() => {
     if (!selectedFeedTrader) return null;
     const addr = selectedFeedTrader;
+    const addrLower = String(addr || '').toLowerCase();
 
     // Search in all trader sources
     const allSources = [
+      ...suspectTraders.map((t, i) => ({ ...t, sourceRank: i + 1, source: 'suspect' })),
       ...copyableTraders.map((t, i) => ({ ...t, sourceRank: i + 1, source: 'copyable' })),
       ...profitabilityTraders.map((t, i) => ({ ...t, sourceRank: i + 1, source: 'profitability' })),
       ...(whaleVolumeTraders || []).map((t, i) => ({ ...t, sourceRank: i + 1, source: 'whale' })),
@@ -1118,7 +1258,8 @@ setMarketStats({
 
     // Prefer copyable data (has most metrics)
     const match = allSources.find(t => t.address === addr && t.source === 'copyable')
-      || allSources.find(t => t.address === addr);
+      || allSources.find(t => String(t.address || '').toLowerCase() === addrLower && t.source === 'suspect')
+      || allSources.find(t => String(t.address || '').toLowerCase() === addrLower);
 
     if (!match) return { address: addr };
 
@@ -1127,7 +1268,7 @@ setMarketStats({
 
     return {
       address: addr,
-      rank: match.source === 'copyable' ? match.sourceRank : null,
+      rank: match.source === 'copyable' || match.source === 'suspect' ? match.sourceRank : null,
       rank_24h_ago: match.rank_24h_ago ?? null,
       total_pl: Number(match.total_pl || 0),
       roiPct,
@@ -1135,13 +1276,17 @@ setMarketStats({
       losses: Number(match.losses || 0),
       median_trade_notional: match.median_trade_notional || null,
       resolved_markets: Number(match.resolved_markets || 0),
+      suspect_total_score: Number(match.suspect_total_score || 0),
+      suspect_level: match.suspect_level || null,
+      suspect_reasons: match.suspect_reasons || [],
       source: match.source,
     };
-  }, [selectedFeedTrader, copyableTraders, profitabilityTraders, whaleVolumeTraders, recentActiveTraders]);
+  }, [selectedFeedTrader, suspectTraders, copyableTraders, profitabilityTraders, whaleVolumeTraders, recentActiveTraders]);
 
   const visibleTraders = useMemo(() => {
     const q = (searchAddress || '').trim().toLowerCase();
     const hasResolvedTraders = profitabilityTraders.length >= 5;
+    const isSuspect = traderSortBy === 'suspect';
     const isCopyable = traderSortBy === 'copyable';
     const isWhale = traderSortBy === 'whale_volume';
 
@@ -1152,6 +1297,9 @@ setMarketStats({
         ? recentActiveTraders
         : topTraders || [];
 
+    if (isSuspect) {
+      tradersToShow = suspectTraders;
+    }
     if (isCopyable) {
       tradersToShow = copyableTraders;
     }
@@ -1165,7 +1313,9 @@ setMarketStats({
     }
 
     // Apply sorting
-    if (hasResolvedTraders && !isCopyable && !isWhale) {
+    if (isSuspect) {
+      tradersToShow = [...tradersToShow].sort((a, b) => (b.suspect_total_score || 0) - (a.suspect_total_score || 0));
+    } else if (hasResolvedTraders && !isCopyable && !isWhale) {
       tradersToShow = [...tradersToShow].sort((a, b) => {
         if (traderSortBy === 'total_pl') {
           return (b.total_pl || 0) - (a.total_pl || 0);
@@ -1175,7 +1325,7 @@ setMarketStats({
     }
 
     return tradersToShow;
-  }, [profitabilityTraders, copyableTraders, recentActiveTraders, topTraders, whaleVolumeTraders, searchAddress, traderSortBy]);
+  }, [profitabilityTraders, suspectTraders, copyableTraders, recentActiveTraders, topTraders, whaleVolumeTraders, searchAddress, traderSortBy]);
 
   // SONAR TERMINAL PALETTE - Unified token system
   // Desaturated phosphor green, NOT neon/LED. Brightest reserved for numbers only.
@@ -1514,9 +1664,7 @@ setMarketStats({
                     {filteredBets.length} trades
                     {onlySelectedWallet && selectedFeedTrader && ` by ${selectedFeedTrader.slice(0, 6)}...`}
                     {feedFilter === 'large' && ' (>=$5k)'}
-                    {feedFilter === 'anomaly' && ' (anomaly)'}
-                    {feedFilter === 'isolated' && ' (isolated)'}
-                    {feedFilter === 'top10' && ' (top 10)'}
+                    {feedFilter === 'suspect' && ' (insider)'}
                     {feedFilter === 'top20' && ' (top 20)'}
                   </div>
                 </div>
@@ -1524,9 +1672,7 @@ setMarketStats({
                 {/* Feed filter pills */}
                 <div className="flex items-center gap-1 mb-3 flex-wrap">
                   {[
-                    { key: 'anomaly', label: isRetro ? 'ANOMALY' : 'Anomaly' },
-                    { key: 'isolated', label: isRetro ? 'ISOLATED' : 'Isolated' },
-                    { key: 'top10', label: isRetro ? 'TOP 10' : 'Top 10' },
+                    { key: 'suspect', label: isRetro ? 'INSIDER' : 'Insider Signals' },
                     { key: 'top20', label: isRetro ? 'TOP 20' : 'Top 20' },
                     { key: 'large', label: isRetro ? 'LARGE' : 'Large Bets' },
                     { key: 'all', label: isRetro ? 'ALL' : 'All Activity' },
@@ -1580,17 +1726,13 @@ setMarketStats({
                         } : {}}
                       >
                         <div className="font-medium mb-3 text-xs" style={isRetro ? { color: retroColors.header, letterSpacing: '0.08em' } : { color: 'rgb(226, 232, 240)' }}>
-                          {isRetro ? '> SIGNAL CLASSIFICATIONS' : 'Signal Classifications'}
+                          {isRetro ? '> SUSPECT SCORE' : 'Suspect Score'}
                         </div>
                         <div className="space-y-2">
                           {[
-                            { label: 'TAIL RISK', desc: '$5K+ bet at extreme odds (<10¢ or >90¢)', modern: 'border-rose-500/40 text-rose-300 bg-rose-500/10', retroColor: retroColors.danger },
-                            { label: 'SIZE SPIKE', desc: 'Ranked trader betting 3x their median', modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', retroColor: retroColors.textDim },
-                            { label: 'EVENT SPECIALIST', desc: '3+ sub-markets of same event from one wallet', modern: 'border-amber-500/40 text-amber-300 bg-amber-500/10', retroColor: retroColors.warn },
-                            { label: 'RAPID FIRE', desc: '5+ trades within 10 minutes', modern: 'border-orange-500/40 text-orange-300 bg-orange-500/10', retroColor: retroColors.warn },
-                            { label: 'ISOLATED', desc: 'Rare trader, outsized bet in thin market', modern: 'border-purple-500/40 text-purple-300 bg-purple-500/10', retroColor: retroColors.danger },
-                            { label: 'DORMANT', desc: 'Wallet inactive 180+ days suddenly active', modern: 'border-amber-500/40 text-amber-300 bg-amber-500/10', retroColor: retroColors.warn },
-                            { label: 'WATCHED', desc: 'Watchlisted trader making $1K+ trade', modern: 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10', retroColor: retroColors.text },
+                            { label: 'HIGH', desc: 'Alert history + large/extreme or concentrated activity', modern: 'border-rose-500/40 text-rose-300 bg-rose-500/10', retroColor: retroColors.danger },
+                            { label: 'MEDIUM', desc: 'Multiple suspicious signals, worth immediate review', modern: 'border-amber-500/40 text-amber-300 bg-amber-500/10', retroColor: retroColors.warn },
+                            { label: 'LOW', desc: 'Early signal; monitor but lower urgency', modern: 'border-slate-500/40 text-slate-300 bg-slate-500/10', retroColor: retroColors.textDim },
                           ].map(({ label, desc, modern, retroColor }) => (
                             <div key={label} className="flex items-start gap-2">
                               <span
@@ -1683,12 +1825,10 @@ setMarketStats({
                         ? (isRetro ? `> NO MATCHES FOR "${betSearchQuery.toUpperCase()}"` : `No trades matching "${betSearchQuery}" found.`)
                         : onlySelectedWallet && selectedFeedTrader
                           ? (isRetro ? '> NO TRADES FOUND FOR THIS TRADER' : 'No trades found for this trader in the current dataset.')
-                          : feedFilter === 'anomaly'
-                            ? (isRetro ? '> NO ANOMALIES DETECTED' : 'No anomalous trades detected right now.')
-                            : feedFilter === 'isolated'
-                              ? (isRetro ? '> NO ISOLATED CONTACTS DETECTED' : 'No recent isolated contact activity.')
-                              : feedFilter === 'top10' || feedFilter === 'top20'
-                              ? (isRetro ? '> NO RECENT TRADES FROM TOP TRADERS' : `No recent trades from ${feedFilter === 'top10' ? 'top 10' : 'top 20'} traders.`)
+                          : feedFilter === 'suspect'
+                            ? (isRetro ? '> NO INSIDER SIGNALS DETECTED' : 'No insider signals detected right now.')
+                            : feedFilter === 'top20'
+                              ? (isRetro ? '> NO RECENT TRADES FROM TOP 20' : 'No recent trades from top 20 traders.')
                               : feedFilter === 'large'
                                 ? (isRetro ? '> NO TRADES ABOVE $5,000 YET. MONITORING...' : 'No trades above $5,000 yet.')
                                 : (isRetro ? '> NO TRADES YET. MONITORING...' : 'No trades yet. Data syncs automatically.')
@@ -1710,11 +1850,18 @@ setMarketStats({
                 ) : (
                   <div ref={largeBetsScrollRef} className="flex-1 overflow-y-auto pr-2 space-y-3">
                     {filteredBets.map((bet, idx) => {
-                      const isWatched = watchedTraders.includes(bet.trader_address);
+                      const isWatched = watchedTraderSet.has(String(bet.trader_address || '').toLowerCase());
                       const sizeLabel = getBetSizeLabel(bet.amount);
                       const sideInfo = getSideLabel(bet.side);
                       const isSelectedTraderTrade = selectedFeedTrader && bet.trader_address === selectedFeedTrader;
-                      const anomalyLabels = classifyAnomaly(bet);
+                      const suspectSignal = classifySuspect(bet);
+                      const insiderCfg = suspectSignal.primarySignal ? insiderBadgeConfig[suspectSignal.primarySignal] : null;
+                      const suspectStyle = insiderCfg
+                        ? { modern: insiderCfg.modern, label: insiderCfg.label }
+                        : (suspectSignal.level ? suspectBadgeStyles[suspectSignal.level] : null);
+                      const suspectRetroStyle = insiderCfg
+                        ? insiderCfg.retro
+                        : (suspectSignal.level ? suspectRetroColors[suspectSignal.level] : null);
                       return (
                         <div
                           key={idx}
@@ -1760,26 +1907,21 @@ setMarketStats({
                                     {isRetro ? 'WATCHING' : 'Watching'}
                                   </span>
                                 )}
-                                {anomalyLabels.slice(0, 2).map(label => {
-                                  const style = anomalyBadgeStyles[label];
-                                  const retroStyle = anomalyRetroColors[label];
-                                  if (!style) return null;
-                                  return (
-                                    <span
-                                      key={label}
-                                      className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${
-                                        isRetro ? '' : style.modern
-                                      }`}
-                                      style={isRetro ? {
-                                        border: `1px solid ${retroStyle?.border || 'rgba(140, 120, 180, 0.3)'}`,
-                                        color: retroStyle?.color || 'rgba(140, 120, 180, 0.9)',
-                                        fontSize: '0.7rem',
-                                      } : {}}
-                                    >
-                                      {style.label}
-                                    </span>
-                                  );
-                                })}
+                                {suspectStyle && (
+                                  <span
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${
+                                      isRetro ? '' : suspectStyle.modern
+                                    }`}
+                                    style={isRetro ? {
+                                      border: `1px solid ${suspectRetroStyle?.border || 'rgba(140, 120, 180, 0.3)'}`,
+                                      color: suspectRetroStyle?.color || 'rgba(140, 120, 180, 0.9)',
+                                      fontSize: '0.7rem',
+                                    } : {}}
+                                    title={suspectSignal.reasons.join(', ')}
+                                  >
+                                    {suspectStyle.label} · {suspectSignal.score}
+                                  </span>
+                                )}
                               </div>
 
                               {/* Market Title - primary tier, readable at a glance */}
@@ -1888,19 +2030,25 @@ setMarketStats({
                   <h2 className={`flex items-center gap-2 ${isRetro ? '' : 'text-lg font-semibold'}`} style={isRetro ? { color: retroColors.header, fontWeight: 500, letterSpacing: '0.08em', fontSize: '1.2rem' } : {}}>
                     <Trophy className="w-5 h-5" style={isRetro ? { color: retroColors.textDim } : {}} />
                     {isRetro
-                      ? (traderSortBy === 'whale_volume'
+                      ? (traderSortBy === 'suspect'
+                        ? 'INSIDER SIGNALS'
+                        : traderSortBy === 'whale_volume'
                         ? 'TOP SPENDERS'
                         : traderSortBy === 'copyable'
                           ? 'TOP TRADERS (30D)'
                           : (profitabilityTraders.length >= 5 ? 'TOP PERFORMERS' : 'SMART MONEY'))
-                      : (traderSortBy === 'whale_volume'
+                      : (traderSortBy === 'suspect'
+                        ? 'Insider Signals'
+                        : traderSortBy === 'whale_volume'
                         ? 'Top Spenders'
                         : traderSortBy === 'copyable'
                           ? 'Top Traders (30D)'
                           : (profitabilityTraders.length >= 5 ? 'Top Performers' : 'Smart money (7d)'))}
                     {isRetro && (
                       <span style={{ color: retroColors.textMuted, fontSize: '0.75rem', marginLeft: '0.5rem', fontWeight: 400 }}>
-                        {traderSortBy === 'whale_volume'
+                        {traderSortBy === 'suspect'
+                          ? 'INSIDER SIGNAL SCORE'
+                          : traderSortBy === 'whale_volume'
                           ? 'VOLUME (30D)'
                           : traderSortBy === 'copyable'
                             ? '30D ROI'
@@ -1928,9 +2076,27 @@ setMarketStats({
                     </button>
                   </div>
 
-                  {(profitabilityTraders.length >= 5 || whaleVolumeTraders.length > 0) && (
-                    <div className="space-y-2">
-                      <div className="flex gap-1 text-xs">
+                  <div className="space-y-2">
+                    <div className="flex gap-1 text-xs">
+                        <button
+                          onClick={() => setTraderSortBy('suspect')}
+                          className={`px-3 py-1.5 rounded transition-colors ${
+                            isRetro
+                              ? ''
+                              : (traderSortBy === 'suspect'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800')
+                          }`}
+                          style={isRetro ? {
+                            backgroundColor: traderSortBy === 'suspect' ? retroColors.text : retroColors.bg,
+                            color: traderSortBy === 'suspect' ? retroColors.bg : retroColors.textDim,
+                            border: `1px solid ${traderSortBy === 'suspect' ? retroColors.text : retroColors.borderEtched}`,
+                            fontSize: '0.9rem'
+                          } : {}}
+                          title="Weighted suspicion score from alert history, position concentration, and trade behavior"
+                        >
+                          {isRetro ? '⚠ SUS' : '⚠ Suspect'}
+                        </button>
                         <button
                           onClick={() => setTraderSortBy('total_pl')}
                           className={`px-3 py-1.5 rounded transition-colors ${
@@ -1988,20 +2154,22 @@ setMarketStats({
                         >
                           {isRetro ? '💸 VOL' : '💸 Volume'}
                         </button>
-                      </div>
-                      <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
-                        {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
-                        {traderSortBy === 'copyable' && (isRetro ? '> RANKED BY ROI POTENTIAL (EXCL. EXTREME-PRICE TRADES)' : '📈 Ranked by ROI potential (excludes extreme-price trades)')}
-                        {traderSortBy === 'whale_volume' && (isRetro ? '> RANKED BY 30D VOLUME' : '💸 Ranked by 30-day volume')}
-                      </p>
                     </div>
-                  )}
+                    <p className="text-[10px] italic" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.8rem' } : {}}>
+                      {traderSortBy === 'suspect' && (isRetro ? '> RANKED BY INSIDER SIGNAL SCORE' : '⚠ Ranked by insider signal score')}
+                      {traderSortBy === 'total_pl' && (isRetro ? '> RANKED BY TOTAL PROFIT/LOSS' : '💰 Ranked by total realized P/L')}
+                      {traderSortBy === 'copyable' && (isRetro ? '> RANKED BY ROI POTENTIAL (EXCL. EXTREME-PRICE TRADES)' : '📈 Ranked by ROI potential (excludes extreme-price trades)')}
+                      {traderSortBy === 'whale_volume' && (isRetro ? '> RANKED BY 30D VOLUME' : '💸 Ranked by 30-day volume')}
+                    </p>
+                  </div>
 
                 </div>
 
                 {visibleTraders.length === 0 ? (
                   <p className="text-sm text-center py-8" style={isRetro ? { color: retroColors.textDim } : {}}>
-                    {traderSortBy === 'copyable'
+                    {traderSortBy === 'suspect'
+                      ? (isRetro ? '> NO INSIDER SIGNALS DETECTED YET' : 'No insider signals detected yet')
+                      : traderSortBy === 'copyable'
                       ? (isRetro ? '> NO COPYABLE DATA YET' : 'No copyable traders yet')
                       : traderSortBy === 'whale_volume'
                         ? (isRetro ? '> NO VOLUME DATA YET' : 'No volume data yet')
@@ -2010,7 +2178,7 @@ setMarketStats({
                 ) : (
                   <div ref={tradersScrollRef} className="flex-1 overflow-y-auto pr-2 space-y-4">
                     {visibleTraders.map((trader, index) => {
-                      const isWatched = watchedTraders.includes(trader.address);
+                      const isWatched = watchedTraderSet.has(String(trader.address || '').toLowerCase());
                       const rankColor = index === 0 ? (isRetro ? retroColors.warn : 'text-amber-400') : index === 1 ? (isRetro ? retroColors.textDim : 'text-slate-300') : index === 2 ? (isRetro ? 'rgba(184, 160, 80, 0.7)' : 'text-orange-600') : (isRetro ? retroColors.textMuted : 'text-slate-500');
                       // Confidence calculation based on resolved trades
                       const resolvedCount = Number(trader.resolved_markets || 0);
@@ -2114,25 +2282,47 @@ setMarketStats({
 
                           {/* Secondary row: Record + Median + Confidence */}
                           <p className="text-xs font-mono mt-1 mb-2" style={isRetro ? { fontSize: '0.85rem' } : {}}>
-                            <span style={isRetro ? { color: retroColors.textBright, fontWeight: 500 } : { color: 'rgb(226, 232, 240)' }}>
-                              {trader.wins || 0}W–{trader.losses || 0}L
-                            </span>
-                            {traderSortBy === 'copyable' && trader.median_trade_notional && (
+                            {traderSortBy === 'suspect' ? (
                               <>
-                                <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
-                                <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>Med </span>
                                 <span style={isRetro ? { color: retroColors.textBright, fontWeight: 500 } : { color: 'rgb(226, 232, 240)' }}>
-                                  {formatCurrency(trader.median_trade_notional)}
+                                  Score {trader.suspect_total_score || 0}
+                                </span>
+                                <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
+                                <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(148, 163, 184)' }}>
+                                  Alerts {trader.suspect_alert_count || 0}
+                                </span>
+                                {trader.suspect_reasons?.[0] && (
+                                  <>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
+                                    <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(148, 163, 184)' }}>
+                                      {String(trader.suspect_reasons[0]).replace('-', ' ')}
+                                    </span>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span style={isRetro ? { color: retroColors.textBright, fontWeight: 500 } : { color: 'rgb(226, 232, 240)' }}>
+                                  {trader.wins || 0}W–{trader.losses || 0}L
+                                </span>
+                                {traderSortBy === 'copyable' && trader.median_trade_notional && (
+                                  <>
+                                    <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
+                                    <span style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(100, 116, 139)' }}>Med </span>
+                                    <span style={isRetro ? { color: retroColors.textBright, fontWeight: 500 } : { color: 'rgb(226, 232, 240)' }}>
+                                      {formatCurrency(trader.median_trade_notional)}
+                                    </span>
+                                  </>
+                                )}
+                                <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
+                                <span
+                                  title={`Confidence\n━━━━━━━━━━━━━━━━\nReliability based on sample size.\n\n• Resolved: ${resolvedCount} trades${traderSortBy === 'copyable' ? '\n• Timeframe: 30 days' : ''}\n\n●●● = 30+ trades\n●●○ = 15-29 trades\n●○○ = 10-14 trades\n○○○ = <10 trades`}
+                                  style={isRetro ? { color: retroColors.textMuted, cursor: 'help' } : { color: 'rgb(100, 116, 139)', cursor: 'help' }}
+                                >
+                                  {confidenceDots}
                                 </span>
                               </>
                             )}
-                            <span style={isRetro ? { color: retroColors.textMuted } : { color: 'rgb(100, 116, 139)' }}> · </span>
-                            <span
-                              title={`Confidence\n━━━━━━━━━━━━━━━━\nReliability based on sample size.\n\n• Resolved: ${resolvedCount} trades${traderSortBy === 'copyable' ? '\n• Timeframe: 30 days' : ''}\n\n●●● = 30+ trades\n●●○ = 15-29 trades\n●○○ = 10-14 trades\n○○○ = <10 trades`}
-                              style={isRetro ? { color: retroColors.textMuted, cursor: 'help' } : { color: 'rgb(100, 116, 139)', cursor: 'help' }}
-                            >
-                              {confidenceDots}
-                            </span>
                           </p>
 
                           {/* View Profile button */}
@@ -2273,7 +2463,13 @@ setMarketStats({
                 )}
 
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500">
-                  {traderSortBy === 'copyable' && copyableTraders.length > 0 ? (
+                  {traderSortBy === 'suspect' ? (
+                    <>
+                      <p>Ranked by weighted suspect score (alerts + behavior + size).</p>
+                      <p className="mt-1">Focus first on high-score traders for manual review.</p>
+                      <p className="mt-1">Click a trader to inspect activity and record in one place.</p>
+                    </>
+                  ) : traderSortBy === 'copyable' && copyableTraders.length > 0 ? (
                     <>
                       <p>Ranked by ROI potential (excludes extreme-price trades).</p>
                       <p className="mt-1">Realized P/L and ROI are resolved BUYs only (v1 approximation).</p>
@@ -2431,40 +2627,55 @@ setMarketStats({
                             </p>
                           </div>
                         )}
-                        {/* Anomaly signals for this trader */}
+                        {/* Suspect summary for this trader */}
                         {(() => {
                           const traderTrades = selectedTraderTrades.length > 0 ? selectedTraderTrades : (recentTrades.length > 0 ? recentTrades : largeBets).filter(t => t.trader_address === selectedFeedTrader);
-                          const allLabels = new Set();
+                          const reasonCounts = new Map();
+                          let maxScore = 0;
+                          let totalScore = 0;
+                          let signaledTrades = 0;
                           for (const trade of traderTrades.slice(0, 50)) {
-                            for (const label of classifyAnomaly(trade)) {
-                              allLabels.add(label);
+                            const signal = classifySuspect(trade);
+                            if (signal.score > 0) {
+                              signaledTrades += 1;
+                              totalScore += signal.score;
+                              maxScore = Math.max(maxScore, signal.score);
+                            }
+                            for (const reason of signal.reasons) {
+                              reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
                             }
                           }
-                          if (allLabels.size === 0) return null;
+                          if (signaledTrades === 0) return null;
+                          const avgScore = Math.round(totalScore / signaledTrades);
+                          const level = maxScore >= 10 ? 'high' : maxScore >= 6 ? 'medium' : 'low';
+                          const style = suspectBadgeStyles[level];
+                          const retroStyle = suspectRetroColors[level];
+                          const topReasons = Array.from(reasonCounts.entries())
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 2)
+                            .map(([reason]) => reason.replace('-', ' '))
+                            .join(', ');
                           return (
                             <div className="col-span-2">
                               <p className="text-[10px] uppercase tracking-wide mb-1" style={isRetro ? { color: retroColors.textMuted, fontSize: '0.7rem' } : { color: 'rgb(100, 116, 139)' }}>
-                                {isRetro ? 'SIGNALS' : 'Signals'}
+                                {isRetro ? 'SUSPECT PROFILE' : 'Suspect Profile'}
                               </p>
                               <div className="flex flex-wrap gap-1">
-                                {[...allLabels].map(label => {
-                                  const style = anomalyBadgeStyles[label];
-                                  const retroStyle = anomalyRetroColors[label];
-                                  if (!style) return null;
-                                  return (
-                                    <span
-                                      key={label}
-                                      className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${isRetro ? '' : style.modern}`}
-                                      style={isRetro ? {
-                                        border: `1px solid ${retroStyle?.border || 'rgba(140, 120, 180, 0.3)'}`,
-                                        color: retroStyle?.color || 'rgba(140, 120, 180, 0.9)',
-                                        fontSize: '0.7rem',
-                                      } : {}}
-                                    >
-                                      {style.label}
-                                    </span>
-                                  );
-                                })}
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${isRetro ? '' : style.modern}`}
+                                  style={isRetro ? {
+                                    border: `1px solid ${retroStyle?.border || 'rgba(140, 120, 180, 0.3)'}`,
+                                    color: retroStyle?.color || 'rgba(140, 120, 180, 0.9)',
+                                    fontSize: '0.7rem',
+                                  } : {}}
+                                >
+                                  {style.label} · peak {maxScore} · avg {avgScore}
+                                </span>
+                                {topReasons && (
+                                  <span className="text-[10px]" style={isRetro ? { color: retroColors.textDim } : { color: 'rgb(148, 163, 184)' }}>
+                                    {topReasons}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );
@@ -2608,7 +2819,8 @@ setMarketStats({
                                   </span>
                                   {isWin && <span className="ml-1.5 font-bold" style={isRetro ? { color: retroColors.win } : { color: 'rgb(52, 211, 153)' }}>✓ WIN</span>}
                                   {isLoss && <span className="ml-1.5 font-bold" style={isRetro ? { color: retroColors.loss } : { color: 'rgb(251, 113, 133)' }}>✗ LOSS</span>}
-                                  {!isResolved && <span className="ml-1.5" style={isRetro ? { color: retroColors.warn } : { color: 'rgb(251, 191, 36)' }}>(Pending)</span>}
+                                  {!isResolved && !trade.resolution_sync_stale && <span className="ml-1.5" style={isRetro ? { color: retroColors.warn } : { color: 'rgb(251, 191, 36)' }}>(Pending)</span>}
+                                  {!isResolved && trade.resolution_sync_stale && <span className="ml-1.5 font-semibold" style={isRetro ? { color: retroColors.warn } : { color: 'rgb(251, 191, 36)' }}>(Pending Sync)</span>}
                                 </div>
                               </div>
                             );
@@ -2650,6 +2862,24 @@ setMarketStats({
                                 </p>
                               </div>
                             </div>
+
+                            {(selectedTraderRecord.pendingSync || 0) > 0 && (
+                              <div
+                                className={`rounded-md border px-3 py-2 mb-3 ${isRetro ? '' : 'border-amber-500/20 bg-amber-500/5'}`}
+                                style={isRetro ? {
+                                  backgroundColor: retroColors.surfaceDark,
+                                  border: `1px solid ${retroColors.border}`,
+                                  borderLeft: `3px solid ${retroColors.warn}`,
+                                } : {}}
+                              >
+                                <p className="text-[10px] uppercase tracking-wide" style={isRetro ? { color: retroColors.textDim, fontSize: '0.65rem' } : { color: 'rgb(100, 116, 139)' }}>
+                                  Resolution Sync Lag
+                                </p>
+                                <p className="text-xs mt-1" style={isRetro ? { color: retroColors.warn, fontSize: '0.8rem' } : { color: 'rgb(251, 191, 36)' }}>
+                                  {selectedTraderRecord.pendingSync} older markets are likely resolved upstream but still missing `winning_outcome` in our database.
+                                </p>
+                              </div>
+                            )}
 
                             {/* Win rate bar */}
                             {(selectedTraderRecord.wins + selectedTraderRecord.losses) > 0 && (
@@ -3033,7 +3263,8 @@ setMarketStats({
                             Bet: <span style={isRetro ? { color: isWin ? retroColors.numbers : isLoss ? retroColors.loss : retroColors.text, fontWeight: isWin ? 600 : 400 } : {}} className={isRetro ? '' : (isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-slate-400')}>{formatBetPosition(trade.market_title, trade.outcome)}</span>
                             {isWin && <span style={isRetro ? { color: retroColors.numbers, marginLeft: '0.5rem', fontWeight: 600 } : {}} className={isRetro ? '' : 'ml-2 text-emerald-400 font-semibold'}>✓ WIN</span>}
                             {isLoss && <span style={isRetro ? { color: retroColors.loss, marginLeft: '0.5rem', fontWeight: 500 } : {}} className={isRetro ? '' : 'ml-2 text-rose-400 font-semibold'}>✗ LOSS</span>}
-                            {!isResolved && <span style={isRetro ? { color: retroColors.warn, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-amber-500'}>(Pending)</span>}
+                            {!isResolved && !trade.resolution_sync_stale && <span style={isRetro ? { color: retroColors.warn, marginLeft: '0.5rem' } : {}} className={isRetro ? '' : 'ml-2 text-amber-500'}>(Pending)</span>}
+                            {!isResolved && trade.resolution_sync_stale && <span style={isRetro ? { color: retroColors.warn, marginLeft: '0.5rem', fontWeight: 600 } : {}} className={isRetro ? '' : 'ml-2 text-amber-400 font-semibold'}>(Pending Sync)</span>}
                           </span>
                           <span style={isRetro ? { color: retroColors.textDim } : {}} className={isRetro ? '' : 'text-slate-500'}>
                             Price: <span style={isRetro ? { color: retroColors.text } : {}} className={isRetro ? '' : 'text-slate-300'}>
