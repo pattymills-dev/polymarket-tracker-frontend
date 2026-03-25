@@ -18,6 +18,32 @@ import {
 import { useTheme } from './ThemeContext';
 import SnakeGameModal from './snake/SnakeGameModal';
 
+// Pixelated sonar whale logo — 12×7 pixel grid, each pixel rendered as a rect
+const PixelWhale = ({ size = 40, color = '#5a8a6a' }) => {
+  const grid = [
+    [0,0,0,1,1,1,0,0,0,0,0,0],
+    [0,0,1,1,1,1,1,1,0,0,0,0],
+    [0,1,1,1,1,1,1,1,1,0,0,0],
+    [1,1,1,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,1,1,1,0,1,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1],
+    [0,0,0,0,0,0,0,0,0,1,0,0],
+  ];
+  const cols = 12, rows = 7;
+  const px = Math.floor(size / (cols + 1));
+  const ox = Math.floor((size - cols * px) / 2);
+  const oy = Math.floor((size - rows * px) / 2);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {grid.flatMap((row, r) =>
+        row.map((cell, c) =>
+          cell ? <rect key={`${r}-${c}`} x={ox + c * px} y={oy + r * px} width={px} height={px} fill={color} /> : null
+        )
+      )}
+    </svg>
+  );
+};
+
 const PolymarketTracker = () => {
   const { isRetro, toggleTheme } = useTheme();
   const [largeBets, setLargeBets] = useState([]);
@@ -1384,7 +1410,7 @@ setMarketStats({
                 <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${isRetro ? '' : 'bg-slate-900 border border-slate-800'}`}
                      style={isRetro ? { border: `1px solid ${retroColors.border}` } : {}}>
                   {isRetro ? (
-                    <span style={{ color: retroColors.text, fontSize: '1.25rem' }}>▓</span>
+                    <PixelWhale size={36} color={retroColors.text} />
                   ) : (
                     <TrendingUp className="w-5 h-5 text-slate-200" />
                   )}
