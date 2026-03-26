@@ -506,9 +506,9 @@ setMarketStats({
           if (insiderAddrs.length > 0) {
             try {
               const thirtyDaysIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-              const addrFilter = insiderAddrs.map(a => `trader_address.eq.${a}`).join(',');
+              const addrList = insiderAddrs.join(',');
               const histRes = await fetch(
-                `${SUPABASE_URL}/rest/v1/trades?or=(${addrFilter})&amount=gte.250&timestamp=gte.${thirtyDaysIso}&order=timestamp.desc&limit=2000`,
+                `${SUPABASE_URL}/rest/v1/trades?trader_address=in.(${addrList})&amount=gte.250&timestamp=gte.${thirtyDaysIso}&order=timestamp.desc&limit=2000`,
                 { headers }
               );
               const histData = await histRes.json();
