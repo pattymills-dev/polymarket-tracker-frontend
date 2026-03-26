@@ -55,6 +55,7 @@ const PolymarketTracker = () => {
   const { isRetro, toggleTheme } = useTheme();
   const [largeBets, setLargeBets] = useState([]);
   const [recentTrades, setRecentTrades] = useState([]);
+  const [insiderHistoryTrades, setInsiderHistoryTrades] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
   const [whaleVolumeTraders, setWhaleVolumeTraders] = useState([]);
   const [watchedTraders, setWatchedTraders] = useState([]);
@@ -496,10 +497,28 @@ setMarketStats({
         const data = await response.json();
         if (response.ok && Array.isArray(data)) {
           setWatchedTraders(data.map(w => w.trader_address));
-          setConfirmedInsiders(new Set(
-            data.filter(w => w.category === 'confirmed_insider')
-                .map(w => String(w.trader_address || '').toLowerCase())
-          ));
+          const insiderAddrs = data
+            .filter(w => w.category === 'confirmed_insider')
+            .map(w => String(w.trader_address || '').toLowerCase());
+          setConfirmedInsiders(new Set(insiderAddrs));
+
+          // Fetch 30-day trade history for all confirmed insider wallets (≥$250)
+          if (insiderAddrs.length > 0) {
+            try {
+              const thirtyDaysIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+              const addrFilter = insiderAddrs.map(a => `trader_address.eq.${a}`).join(',');
+              const histRes = await fetch(
+                `${SUPABASE_URL}/rest/v1/trades?or=(${addrFilter})&amount=gte.250&timestamp=gte.${thirtyDaysIso}&order=timestamp.desc&limit=2000`,
+                { headers }
+              );
+              const histData = await histRes.json();
+              if (histRes.ok && Array.isArray(histData)) {
+                setInsiderHistoryTrades(histData);
+              }
+            } catch (e) {
+              console.error('Error fetching insider history:', e);
+            }
+          }
         }
       } catch (error) {
         console.error('Error loading watchlist:', error);
@@ -1076,12 +1095,20 @@ setMarketStats({
         );
         break;
 
-      case 'suspect':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
+      case 'suspect': {
+        // Signal-based trades from the live feed
+        const signalTrades = (recentTrades.length > 0 ? recentTrades : largeBets).filter(bet => {
           const signal = classifySuspect(bet);
           return signal.level === 'high' || signal.level === 'medium';
         });
+        // Merge confirmed insider 30-day history (deduplicate by id)
+        const seenIds = new Set(signalTrades.map(t => t.id));
+        const insiderOnly = insiderHistoryTrades.filter(t => !seenIds.has(t.id));
+        result = [...signalTrades, ...insiderOnly].sort(
+          (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+        );
         break;
+      }
 
       case 'all':
       default:
@@ -1091,7 +1118,7 @@ setMarketStats({
 
     return keywordFilter(walletFilter(result));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [largeBets, recentTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top20Addresses, top20MedianMap, traderProfiles, watchedTraderSet, suspectAlertByTrader]);
+  }, [largeBets, recentTrades, insiderHistoryTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top20Addresses, top20MedianMap, traderProfiles, watchedTraderSet, suspectAlertByTrader]);
 
   // Close tip jar dropdown when clicking outside
   useEffect(() => {
