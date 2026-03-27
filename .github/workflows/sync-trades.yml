@@ -79,6 +79,7 @@ jobs:
           echo "Run profile: hourly=$hourly daily=$daily"
 
       - name: Sync trades from Polymarket
+        continue-on-error: true
         run: |
           FETCH_TRADES_URL="https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/fetch-trades?max_pages=3&page_size=250"
           for attempt in 1 2 3; do
@@ -88,6 +89,7 @@ jobs:
               -H "Content-Type: application/json" \
               "$FETCH_TRADES_URL")
             http_code=$(echo "$response" | tail -n1)
+            http_code=${http_code:-000}
             body=$(echo "$response" | sed '$d')
             echo "Attempt $attempt - HTTP $http_code"
             if [ "$http_code" -lt 400 ]; then
