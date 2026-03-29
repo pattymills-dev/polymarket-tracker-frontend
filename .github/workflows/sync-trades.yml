@@ -432,20 +432,3 @@ jobs:
             exit 1
           fi
 
-      - name: Send daily strategy lane report
-        if: always() && steps.profile.outputs.daily == 'true'
-        continue-on-error: true
-        run: |
-          response=$(curl -s -w "\n%{http_code}" -X GET \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/paper-strategy-report")
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
-          echo "Response (paper strategy report): $body"
-          echo "HTTP Status: $http_code"
-          if [ "$http_code" -ge 400 ]; then
-            echo "Error: paper-strategy-report failed with status $http_code"
-            exit 1
-          fi
