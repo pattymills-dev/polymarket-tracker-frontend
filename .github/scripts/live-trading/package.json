@@ -1,0 +1,12 @@
+{
+  "name": "polymarket-live-trading",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Live copy trading bot for Polymarket CLOB",
+  "dependencies": {
+    "@polymarket/clob-client": "^4.0.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "ethers": "^5.7.2"
+  }
+}

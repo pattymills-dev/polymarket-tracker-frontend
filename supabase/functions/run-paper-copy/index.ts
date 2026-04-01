@@ -59,13 +59,14 @@ type OpenCopyPositionWithPrice = {
   shares: number | string | null;
   usd_size: number | string | null;
   current_price: number | string | null;
+  entry_price: number | string | null;
   entry_ts: string | null;
 };
 
 const DEFAULT_COPY_FACTOR = 0.1;
 const DEFAULT_PRICE_PENALTY = 0.01;
 const DEFAULT_MIN_PRICE = 0.15; // Let curated top traders express moderate underdog conviction without reopening deep longshot bleed.
-const DEFAULT_MAX_PRICE = 0.92; // Allow late, high-conviction entries from elite traders near resolution.
+const DEFAULT_MAX_PRICE = 0.80; // Cap at 80¢ — prevents oversizing on high-probability bets (payout ratio is poor above this).
 const DEFAULT_MAX_TRADE_RISK_PCT = 0.03;
 const DEFAULT_MAX_TRADER_EXPOSURE_PCT = 0.25;
 const DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 0.35;
@@ -74,11 +75,15 @@ const DEFAULT_FIXED_USD_PER_TRADE = 25;
 const SAFETY_MAX_FIXED_USD_PER_TRADE = 200; // Raised — was hard-capped at $10, blocking DB config
 // Quarter-Kelly sizing bounds
 const KELLY_FRACTION = 0.25;
-const KELLY_MIN_USD = 15;   // Never bet less than $15
-const KELLY_MAX_USD = 150;  // Never bet more than $150 per trade
+const KELLY_MIN_USD = 15;  // Never bet less than $15
+const KELLY_MAX_USD = 20;  // Align with DB config (max_usd = 20 per trader row)
 const DEFAULT_LOOKBACK_SECONDS = 1;
 const DEFAULT_LIMIT = 200;
-const DEFAULT_MAX_TRADE_AGE_MINUTES = 120; // Wide window to avoid missing trades between workflow runs.
+const DEFAULT_MAX_TRADE_AGE_MINUTES = 45; // Tighter window for live trading — 120min was too stale (price moves 20¢+ during a game).
+// Skip markets whose close_time is more than this many hours away.
+// Season-long and multi-week markets always hit the 48h hard-stop before resolving.
+// 36h gives buffer for games starting up to ~1.5 days ahead (close_time ≈ game start for sports).
+const MAX_MARKET_HOLD_HOURS = 36;
 const MAX_NEW_POSITIONS_PER_RUN = 15; // Allow up to 15 positions per run across 14 active traders
 const SIZING_METHOD = "quarter_kelly";
 const PRICE_RULE = "source_price_plus_penalty";
@@ -99,16 +104,20 @@ const DEFAULT_MAX_ENTRIES_PER_TRADER_MARKET_24H = 1;
 // Rank decay threshold - if a trader falls this many spots, flag them
 const RANK_DECAY_WARNING_THRESHOLD = 10;
 
-// Paper win-rate auto-gate - DISABLED: paper P/L driven by bad stop-loss/time-exit mechanics,
-// not trader skill. Gates were blocking all 3 enabled traders. Re-evaluate after fixing exits.
-const PAPER_WIN_RATE_MIN = 0.0;             // Disabled (was 0.50)
-const PAPER_WIN_RATE_MIN_POSITIONS = 9999;  // Disabled (was 10)
-const PAPER_LOSS_GATE_MIN_POSITIONS = 9999; // Disabled (was 4)
-const PAPER_REALIZED_LOSS_GATE_USD = -9999; // Disabled (was -20)
+// Paper win-rate auto-gate — re-enabled with conservative thresholds.
+// Exit mechanics are now fixed (40% take-profit, 36h market filter, soft exit respects close_time)
+// so paper P/L reflects actual trader skill rather than bad exit timing.
+const PAPER_WIN_RATE_MIN = 0.35;            // Pause trader if win rate drops below 35%
+const PAPER_WIN_RATE_MIN_POSITIONS = 12;    // Need 12 settled positions before gate can fire
+const PAPER_LOSS_GATE_MIN_POSITIONS = 8;    // Need 8 settled before loss gate fires
+const PAPER_REALIZED_LOSS_GATE_USD = -60;   // Pause if down $60 realized from a single trader
 
 // Copy lane risk controls: close before resolution when drift edge is captured/lost.
-const COPY_TAKE_PROFIT_PCT = 0.12;
-const COPY_STOP_LOSS_PCT = -0.22;
+const COPY_TAKE_PROFIT_PCT = 0.40;
+// Stop loss re-enabled at -50% (current price halved relative to entry).
+// Guard: only fires when currentPrice > 0.05 — prevents locking in losses on already-crashed
+// binary outcomes (price 0.02 = team lost) that settle-paper-positions handles at correct value.
+const COPY_STOP_LOSS_PCT = -0.50;
 const COPY_SOFT_MAX_HOLD_HOURS = 24;  // Was 8 — too short for sports bets placed before game time
 const COPY_HARD_MAX_HOLD_HOURS = 48;  // Was 20 — allow full 48h for game + resolution to settle
 
@@ -409,6 +418,32 @@ serve(async (req) => {
       return openUsd;
     };
 
+    // Cache of market metadata (close_time, resolved) to avoid repeated DB hits per market.
+    // Pre-populated in bulk for open positions; lazily filled for entry-filter lookups.
+    const marketMetaMap = new Map<string, { closeTime: Date | null; resolved: boolean }>();
+
+    const getMarketMeta = async (
+      marketId: string,
+    ): Promise<{ closeTime: Date | null; resolved: boolean }> => {
+      if (marketMetaMap.has(marketId)) {
+        return marketMetaMap.get(marketId)!;
+      }
+      const { data, error } = await supabase
+        .from("markets")
+        .select("close_time, resolved")
+        .eq("id", marketId)
+        .maybeSingle();
+      if (error) {
+        console.warn(`Failed to load market meta for ${marketId}:`, error.message);
+      }
+      const meta = {
+        closeTime: data?.close_time ? new Date(data.close_time) : null,
+        resolved: data?.resolved ?? false,
+      };
+      marketMetaMap.set(marketId, meta);
+      return meta;
+    };
+
     const portfolioMaxTradeRiskPct =
       toNumber(portfolio.max_trade_risk_pct) ?? DEFAULT_MAX_TRADE_RISK_PCT;
     const portfolioMaxTotalExposurePct =
@@ -496,7 +531,7 @@ serve(async (req) => {
     // Risk-first behavior: close copy positions pre-resolution when edge is captured/lost.
     const { data: openCopyRows, error: openCopyRowsError } = await supabase
       .from("paper_positions_with_price")
-      .select("id,source_wallet,market_id,shares,usd_size,current_price,entry_ts")
+      .select("id,source_wallet,market_id,shares,usd_size,current_price,entry_price,entry_ts")
       .eq("portfolio_id", portfolioId)
       .eq("strategy_lane", "copy")
       .eq("status", "OPEN")
@@ -505,28 +540,73 @@ serve(async (req) => {
     if (openCopyRowsError) {
       console.warn("Failed to load open copy positions for risk manager:", openCopyRowsError.message);
     } else {
+      // Batch-fetch market metadata for all open positions in one query.
+      // This is used to make the soft time-exit aware of whether the market has closed:
+      // pre-game positions (market still open) should not be soft-exited at 24h.
+      const openPositionMarketIds = [
+        ...new Set(
+          (openCopyRows || [])
+            .map((r) => r.market_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      if (openPositionMarketIds.length > 0) {
+        const { data: mData, error: mError } = await supabase
+          .from("markets")
+          .select("id, close_time, resolved")
+          .in("id", openPositionMarketIds);
+        if (mError) {
+          console.warn("Failed to batch-fetch market meta for open positions:", mError.message);
+        } else {
+          for (const m of mData || []) {
+            if (m?.id) {
+              marketMetaMap.set(m.id, {
+                closeTime: m.close_time ? new Date(m.close_time) : null,
+                resolved: m.resolved ?? false,
+              });
+            }
+          }
+        }
+      }
+
       const nowIso = now.toISOString();
       for (const row of (openCopyRows || []) as OpenCopyPositionWithPrice[]) {
         const currentPrice = toNumber(row.current_price);
+        const entryPrice = toNumber(row.entry_price);
         const shares = toNumber(row.shares) ?? 0;
         const usdSize = toNumber(row.usd_size) ?? 0;
         if (currentPrice == null || usdSize <= 0 || shares <= 0) continue;
 
         const pnlUsd = shares * currentPrice - usdSize;
-        const pnlPct = pnlUsd / usdSize;
+        const pnlPct = usdSize > 0 ? pnlUsd / usdSize : 0;
         const holdHours = row.entry_ts
           ? (now.getTime() - new Date(row.entry_ts).getTime()) / (1000 * 60 * 60)
           : 0;
 
+        // Determine if the underlying market has already closed (betting stopped / game started).
+        // Unresolved-but-closed markets will be settled by settle-paper-positions once the
+        // resolution syncs. We use this to avoid soft-exiting pre-game positions.
+        const marketMeta = row.market_id
+          ? (marketMetaMap.get(row.market_id) ?? { closeTime: null, resolved: false })
+          : { closeTime: null, resolved: false };
+        const marketClosed =
+          marketMeta.resolved ||
+          (marketMeta.closeTime != null && marketMeta.closeTime <= now);
+
         let exitReason: string | null = null;
         if (pnlPct >= COPY_TAKE_PROFIT_PCT) {
           exitReason = "copy_take_profit";
-          // Stop loss removed: for binary sports markets it fired after the market
-          // had already crashed, providing no protection while locking in worst-case
-          // exits. Positions now ride to resolution or hard time-stop.
+        } else if (pnlPct <= COPY_STOP_LOSS_PCT && currentPrice > 0.05) {
+          // Stop loss: market still actively traded (price > 5¢) and position has lost ≥50%.
+          // Guard on currentPrice prevents locking in losses on already-crashed binary markets
+          // (e.g. price 0.02 after team lost) — those settle correctly via settle-paper-positions.
+          exitReason = "copy_stop_loss";
         } else if (holdHours >= COPY_HARD_MAX_HOLD_HOURS) {
           exitReason = "copy_time_stop";
-        } else if (holdHours >= COPY_SOFT_MAX_HOLD_HOURS && pnlPct >= -0.02) {
+        } else if (holdHours >= COPY_SOFT_MAX_HOLD_HOURS && marketClosed) {
+          // Soft exit: market has closed but position hasn't settled yet (resolution sync lag).
+          // Only fires on already-closed markets — pre-game positions are allowed to run to
+          // take-profit or hard-stop rather than being killed at 24h with 0% P&L.
           exitReason = "copy_time_exit";
         }
         if (!exitReason) continue;
@@ -991,6 +1071,46 @@ serve(async (req) => {
           continue;
         }
 
+        // Market duration filter: skip markets that close too far in the future.
+        // Season-long and multi-week markets (EPL winner, NBA champion, etc.) will always hit
+        // the 48h hard time-stop before resolving, guaranteeing a suboptimal exit.
+        // Uses close_time from the markets table (≈ game start for sports, betting cutoff for others).
+        // Already-resolved markets are allowed through (they'll be caught by duplicate checks).
+        if (trade.market_id) {
+          const meta = await getMarketMeta(trade.market_id);
+          if (meta.closeTime && !meta.resolved) {
+            const hoursUntilClose =
+              (meta.closeTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+            if (hoursUntilClose > MAX_MARKET_HOLD_HOURS) {
+              logTradeSkip(trade.tx_hash, wallet, trade.market_id, "market_too_long");
+              await recordDecision({
+                decision: "SKIPPED",
+                reason: "market_too_long",
+                source_trade_id: trade.tx_hash,
+                source_wallet: wallet,
+                source_trade_ts: trade.timestamp ?? null,
+                market_id: trade.market_id,
+                market_slug: trade.market_slug ?? null,
+                market_title: trade.market_title ?? null,
+                outcome: trade.outcome ?? null,
+                side,
+                source_price: price,
+                sizing_method: SIZING_METHOD,
+                fixed_usd_per_trade: fixedUsdPerTrade,
+                copy_factor: copyFactor,
+                max_trader_exposure_pct: maxTraderExposurePct,
+                min_price: minPrice,
+                max_price: maxPrice,
+                allow_sells: allowSells,
+                ranking_snapshot: rankingSnapshot,
+                hours_until_close: hoursUntilClose,
+                max_market_hold_hours: MAX_MARKET_HOLD_HOURS,
+              });
+              continue;
+            }
+          }
+        }
+
         const signalKey = `${wallet}:${trade.market_id}:${(trade.outcome ?? "").toLowerCase()}:${side}`;
         if (copiedSignalKeysThisRun.has(signalKey)) {
           logTradeSkip(trade.tx_hash, wallet, trade.market_id, "duplicate_signal_same_run");
@@ -1330,7 +1450,14 @@ serve(async (req) => {
           trade.market_id,
         );
 
-        const roiEdge = toNumber(ranking?.realized_roi_30d) ?? 0.10; // default 10% edge if no ranking
+        const roiEdgeRaw = toNumber(ranking?.realized_roi_30d);
+        if (roiEdgeRaw == null) {
+          console.warn(
+            `No realized_roi_30d for ${wallet.slice(0, 10)} — using 10% Kelly edge fallback. ` +
+            `Check trader_rankings table if this persists.`,
+          );
+        }
+        const roiEdge = roiEdgeRaw ?? 0.10; // default 10% edge if no ranking data
         const sizingResult = computeKellyUsdSize({
           sourcePrice: price,
           roiEdge,

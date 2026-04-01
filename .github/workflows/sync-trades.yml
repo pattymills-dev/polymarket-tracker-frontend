@@ -110,7 +110,7 @@ jobs:
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy?max_trade_age_minutes=120")
+            "https://smuktlgclwvaxnduuinm.supabase.co/functions/v1/run-paper-copy")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "Response (paper copy): $body"
@@ -120,6 +120,22 @@ jobs:
             echo "Error: run-paper-copy failed with status $http_code"
             exit 1
           fi
+
+      - name: Run live copy trading
+        if: ${{ secrets.POLYMARKET_PK != '' }}
+        continue-on-error: true
+        run: |
+          cd .github/scripts/live-trading
+          npm install --silent
+          node run-live-copy.mjs
+        env:
+          SUPABASE_URL: https://smuktlgclwvaxnduuinm.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          POLYMARKET_PK: ${{ secrets.POLYMARKET_PK }}
+          POLYMARKET_API_KEY: ${{ secrets.POLYMARKET_API_KEY }}
+          POLYMARKET_API_SECRET: ${{ secrets.POLYMARKET_API_SECRET }}
+          POLYMARKET_API_PASSPHRASE: ${{ secrets.POLYMARKET_API_PASSPHRASE }}
+          DRY_RUN: ${{ secrets.POLYMARKET_PK == '' && '1' || '0' }}
 
       - name: Refresh market stats and close times
         continue-on-error: true
