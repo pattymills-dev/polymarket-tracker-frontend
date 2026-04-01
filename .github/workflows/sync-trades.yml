@@ -122,7 +122,7 @@ jobs:
           fi
 
       - name: Run live copy trading
-        if: ${{ secrets.POLYMARKET_PK != '' }}
+        if: secrets.POLYMARKET_PK != ''
         continue-on-error: true
         run: |
           cd .github/scripts/live-trading
@@ -135,7 +135,6 @@ jobs:
           POLYMARKET_API_KEY: ${{ secrets.POLYMARKET_API_KEY }}
           POLYMARKET_API_SECRET: ${{ secrets.POLYMARKET_API_SECRET }}
           POLYMARKET_API_PASSPHRASE: ${{ secrets.POLYMARKET_API_PASSPHRASE }}
-          DRY_RUN: ${{ secrets.POLYMARKET_PK == '' && '1' || '0' }}
 
       - name: Refresh market stats and close times
         continue-on-error: true
