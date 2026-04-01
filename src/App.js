@@ -20,6 +20,7 @@ import SnakeGameModal from './snake/SnakeGameModal';
 
 // Pixelated sonar whale logo — 20×13 pixel grid, each pixel rendered as a rect
 // Shape: head left, curved body, tail fluke upper-right, forked tail lower-left
+// eslint-disable-next-line no-unused-vars
 const PixelWhale = ({ size = 44, color = '#5a8a6a' }) => {
   const grid = [
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0], // upper tail fin
@@ -56,6 +57,7 @@ const PolymarketTracker = () => {
   const [largeBets, setLargeBets] = useState([]);
   const [recentTrades, setRecentTrades] = useState([]);
   const [insiderHistoryTrades, setInsiderHistoryTrades] = useState([]);
+  const [top20Trades, setTop20Trades] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
   const [whaleVolumeTraders, setWhaleVolumeTraders] = useState([]);
   const [watchedTraders, setWatchedTraders] = useState([]);
@@ -487,43 +489,44 @@ setMarketStats({
   };
 
   // Load watchlist from database on startup
-  useEffect(() => {
-    const loadWatchlist = async () => {
-      try {
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/watchlist?select=trader_address,category`,
-          { headers }
-        );
-        const data = await response.json();
-        if (response.ok && Array.isArray(data)) {
-          setWatchedTraders(data.map(w => w.trader_address));
-          const insiderAddrs = data
-            .filter(w => w.category === 'confirmed_insider')
-            .map(w => String(w.trader_address || '').toLowerCase());
-          setConfirmedInsiders(new Set(insiderAddrs));
+  const loadWatchlist = async () => {
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/watchlist?select=trader_address,category`,
+        { headers }
+      );
+      const data = await response.json();
+      if (response.ok && Array.isArray(data)) {
+        setWatchedTraders(data.map(w => w.trader_address));
+        const insiderAddrs = data
+          .filter(w => w.category === 'confirmed_insider')
+          .map(w => String(w.trader_address || '').toLowerCase());
+        setConfirmedInsiders(new Set(insiderAddrs));
 
-          // Fetch 30-day trade history for all confirmed insider wallets (≥$250)
-          if (insiderAddrs.length > 0) {
-            try {
-              const thirtyDaysIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-              const addrList = insiderAddrs.join(',');
-              const histRes = await fetch(
-                `${SUPABASE_URL}/rest/v1/trades?trader_address=in.(${addrList})&amount=gte.250&timestamp=gte.${thirtyDaysIso}&order=timestamp.desc&limit=2000`,
-                { headers }
-              );
-              const histData = await histRes.json();
-              if (histRes.ok && Array.isArray(histData)) {
-                setInsiderHistoryTrades(histData);
-              }
-            } catch (e) {
-              console.error('Error fetching insider history:', e);
+        // Fetch 30-day trade history for all confirmed insider wallets (≥$250)
+        if (insiderAddrs.length > 0) {
+          try {
+            const thirtyDaysIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+            const addrList = insiderAddrs.join(',');
+            const histRes = await fetch(
+              `${SUPABASE_URL}/rest/v1/trades?trader_address=in.(${addrList})&amount=gte.250&timestamp=gte.${thirtyDaysIso}&order=timestamp.desc&limit=2000`,
+              { headers }
+            );
+            const histData = await histRes.json();
+            if (histRes.ok && Array.isArray(histData)) {
+              setInsiderHistoryTrades(histData);
             }
+          } catch (e) {
+            console.error('Error fetching insider history:', e);
           }
         }
-      } catch (error) {
-        console.error('Error loading watchlist:', error);
       }
-    };
+    } catch (error) {
+      console.error('Error loading watchlist:', error);
+    }
+  };
+
+  useEffect(() => {
     loadWatchlist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -545,6 +548,7 @@ setMarketStats({
         fetchCopyableTraders(),
         fetchWhaleVolumeTraders(),
         fetchOpenExposure(),
+        loadWatchlist(),
       ]).then(() => {
         // Restore scroll positions after data loads
         requestAnimationFrame(() => {
@@ -888,6 +892,7 @@ setMarketStats({
           };
         });
         setCopyableTraders(mapped);
+        fetchTop20Trades(mapped.slice(0, 20).map(t => t.address));
       } else {
         console.error('Copyable traders error:', data);
         setCopyableTraders([]);
@@ -895,6 +900,27 @@ setMarketStats({
     } catch (error) {
       console.error('Error fetching copyable traders:', error);
       setCopyableTraders([]);
+    }
+  };
+
+  // Fetch recent trades specifically from top-20 copyable traders (7-day window).
+  // Uses a dedicated query so the feed works even when top traders aren't in the
+  // generic recentTrades window (which only covers the last ~6 hours).
+  const fetchTop20Trades = async (addresses) => {
+    if (!addresses || addresses.length === 0) return;
+    try {
+      const sevenDaysIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const addrList = addresses.slice(0, 20).join(',');
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/trades?trader_address=in.(${addrList})&amount=gte.250&timestamp=gte.${sevenDaysIso}&order=timestamp.desc&limit=1000`,
+        { headers }
+      );
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) {
+        setTop20Trades(data);
+      }
+    } catch (e) {
+      console.error('Error fetching top20 trades:', e);
     }
   };
 
@@ -1090,9 +1116,11 @@ setMarketStats({
         break;
 
       case 'top20':
-        result = (recentTrades.length > 0 ? recentTrades : largeBets).filter(
-          bet => top20Addresses.has(String(bet.trader_address || '').toLowerCase())
-        );
+        result = top20Trades.length > 0
+          ? top20Trades
+          : (recentTrades.length > 0 ? recentTrades : largeBets).filter(
+              bet => top20Addresses.has(String(bet.trader_address || '').toLowerCase())
+            );
         break;
 
       case 'suspect': {
@@ -1118,7 +1146,7 @@ setMarketStats({
 
     return keywordFilter(walletFilter(result));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [largeBets, recentTrades, insiderHistoryTrades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top20Addresses, top20MedianMap, traderProfiles, watchedTraderSet, suspectAlertByTrader]);
+  }, [largeBets, recentTrades, insiderHistoryTrades, top20Trades, feedFilter, onlySelectedWallet, selectedFeedTrader, betSearchQuery, top20Addresses, top20MedianMap, traderProfiles, watchedTraderSet, suspectAlertByTrader]);
 
   // Close tip jar dropdown when clicking outside
   useEffect(() => {
