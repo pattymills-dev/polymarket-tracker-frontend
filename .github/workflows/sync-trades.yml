@@ -100,7 +100,7 @@ jobs:
             sleep 10
           done
           if [ "$http_code" -ge 400 ] || [ -z "$http_code" ]; then
-            echo "::warning::fetch-trades returned HTTP $http_code after retries — continuing run."
+            echo "::warning::fetch-trades returned HTTP $http_code after retries -- continuing run."
             echo "Response: $body"
           fi
 
@@ -224,11 +224,11 @@ jobs:
         run: |
           hour=$(date -u +%H)
           # Send at 4h boundaries (hours 0, 4, 8, 12, 16, 20 UTC).
-          # No minute gate — GitHub's scheduler runs 30-55 min late, so a minute
-          # restriction (e.g. minute < 45) reliably misses every window.
-          # Accept up to 4 sends per 4h window (one per 15-min cron tick in that hour).
+          # No minute gate -- GitHub scheduler runs 30-55 min late, so the old
+          # minute<45 restriction reliably missed every send window.
+          # Accept up to 4 sends per 4h boundary (one per 15-min cron tick).
           if [ $((10#$hour % 4)) -ne 0 ]; then
-            echo "Skipping Telegram update (hour=$hour — not a 4h boundary)."
+            echo "Skipping Telegram update (hour=$hour, not a 4h boundary)."
             exit 0
           fi
           echo "Sending Telegram update for hour $hour UTC..."
