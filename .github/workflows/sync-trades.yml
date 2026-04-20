@@ -223,9 +223,12 @@ jobs:
         continue-on-error: true
         run: |
           hour=$(date -u +%H)
-          minute=$(date -u +%M)
-          if [ $((10#$hour % 4)) -ne 0 ] || [ $((10#$minute)) -ge 45 ]; then
-            echo "Skipping Telegram update (hour=$hour, minute=$minute — not in 4h send window)."
+          # Send at 4h boundaries (hours 0, 4, 8, 12, 16, 20 UTC).
+          # No minute gate — GitHub's scheduler runs 30-55 min late, so a minute
+          # restriction (e.g. minute < 45) reliably misses every window.
+          # Accept up to 4 sends per 4h window (one per 15-min cron tick in that hour).
+          if [ $((10#$hour % 4)) -ne 0 ]; then
+            echo "Skipping Telegram update (hour=$hour — not a 4h boundary)."
             exit 0
           fi
           echo "Sending Telegram update for hour $hour UTC..."
