@@ -2,8 +2,8 @@ name: Sync Polymarket Trades
 
 on:
   schedule:
-    # Run every 15 minutes
-    - cron: '*/15 * * * *'
+    # Run every 15 minutes (1,16,31,46 = force re-register after scheduler stall)
+    - cron: '1,16,31,46 * * * *'
   workflow_dispatch: # Allow manual trigger
     inputs:
       run_maintenance:
