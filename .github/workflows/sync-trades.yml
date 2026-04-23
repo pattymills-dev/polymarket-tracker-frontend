@@ -122,7 +122,6 @@ jobs:
           fi
 
       - name: Run live copy trading
-        if: secrets.POLYMARKET_PK != ''
         continue-on-error: true
         run: |
           cd .github/scripts/live-trading
